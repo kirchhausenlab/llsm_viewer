@@ -274,7 +274,10 @@ export function createVolumeRenderContext(
   const renderer = new THREE.WebGLRenderer({
     antialias: true,
     alpha: true,
-    powerPreference: 'high-performance'
+    powerPreference: 'high-performance',
+    // Screenshots read back the live WebGL canvas; without this the browser may discard
+    // the rendered frame before `toBlob()` / `toDataURL()` runs, yielding a blank PNG.
+    preserveDrawingBuffer: true
   });
 
   renderer.outputColorSpace = THREE.SRGBColorSpace;

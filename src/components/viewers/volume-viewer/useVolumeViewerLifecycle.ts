@@ -54,6 +54,8 @@ type UseVolumeViewerLifecycleParams = {
   followTargetOffsetRef: RenderLoopOptions['followTargetOffsetRef'];
   resourcesRef: MutableRefObject<Map<string, VolumeResources>>;
   onCameraNavigationSample: RenderLoopOptions['onCameraNavigationSample'];
+  emitCameraWindowState: RenderLoopOptions['emitCameraWindowState'];
+  onCameraWindowStateChange: RenderLoopOptions['onCameraWindowStateChange'];
   rotationTargetRef: RenderLoopOptions['rotationTargetRef'];
   refreshVrHudPlacementsRef: MutableRefObject<(() => void) | undefined>;
   currentDimensionsRef: MutableRefObject<{ width: number; height: number; depth: number } | null>;
@@ -161,6 +163,8 @@ export function useVolumeViewerLifecycle({
   followTargetOffsetRef,
   resourcesRef,
   onCameraNavigationSample,
+  emitCameraWindowState,
+  onCameraWindowStateChange,
   rotationTargetRef,
   refreshVrHudPlacementsRef,
   currentDimensionsRef,
@@ -262,6 +266,10 @@ export function useVolumeViewerLifecycle({
   refreshTrackOverlayRef.current = refreshTrackOverlay;
   const onCameraNavigationSampleRef = useRef(onCameraNavigationSample);
   onCameraNavigationSampleRef.current = onCameraNavigationSample;
+  const emitCameraWindowStateRef = useRef(emitCameraWindowState);
+  emitCameraWindowStateRef.current = emitCameraWindowState;
+  const onCameraWindowStateChangeRef = useRef(onCameraWindowStateChange);
+  onCameraWindowStateChangeRef.current = onCameraWindowStateChange;
   const updateVoxelHoverRef = useRef(updateVoxelHover);
   updateVoxelHoverRef.current = updateVoxelHover;
   const isRoiDrawToolActiveRefRef = useRef(isRoiDrawToolActiveRef);
@@ -572,6 +580,8 @@ export function useVolumeViewerLifecycle({
       resourcesRef,
       currentDimensionsRef,
       onCameraNavigationSample: (sample) => onCameraNavigationSampleRef.current?.(sample),
+      emitCameraWindowState: () => emitCameraWindowStateRef.current?.() ?? null,
+      onCameraWindowStateChange: (state) => onCameraWindowStateChangeRef.current?.(state),
       advancePlaybackFrame: (timestamp) => advancePlaybackFrameRef.current(timestamp),
       refreshVrHudPlacements: () => refreshVrHudPlacementsRef.current?.(),
       updateControllerRays: () => updateControllerRaysRef.current(),

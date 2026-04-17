@@ -52,10 +52,13 @@ export default function TopMenu(props: TopMenuProps) {
     onResetLayout,
     openHelpMenu,
     onOpenChannelsWindow,
+    onOpenCameraWindow,
+    onOpenCameraSettingsWindow,
     onOpenPropsWindow,
     onOpenPaintbrush,
     onOpenDrawRoiWindow,
     onOpenRoiManagerWindow,
+    onOpenSetMeasurementsWindow,
     onOpenRecordWindow,
     onOpenRenderSettingsWindow,
     onOpenHoverSettingsWindow,
@@ -158,18 +161,20 @@ export default function TopMenu(props: TopMenuProps) {
         { label: 'Exit', onSelect: onReturnToLauncher }
       ],
       view: [
-        { label: 'Channels window', onSelect: onOpenChannelsWindow },
-        { label: 'Camera', disabled: true },
-        { label: 'Record', onSelect: onOpenRecordWindow },
+        { label: 'Channels', onSelect: onOpenChannelsWindow },
+        { label: 'View selection', onSelect: onOpenCameraWindow },
+        { label: 'Screen capture', onSelect: onOpenRecordWindow },
         { label: 'Background', disabled: true },
         { label: 'Render settings', onSelect: onOpenRenderSettingsWindow },
-        { label: 'Hover Settings', onSelect: onOpenHoverSettingsWindow }
+        { label: 'Camera settings', onSelect: onOpenCameraSettingsWindow },
+        { label: 'Hover settings', onSelect: onOpenHoverSettingsWindow }
       ],
       edit: [
         { label: 'Props', onSelect: onOpenPropsWindow },
         { label: 'Paintbrush', onSelect: onOpenPaintbrush },
         { label: 'Draw ROI', onSelect: onOpenDrawRoiWindow },
-        { label: 'ROI Manager', onSelect: onOpenRoiManagerWindow }
+        { label: 'ROI Manager', onSelect: onOpenRoiManagerWindow },
+        { label: 'Set measurements', onSelect: onOpenSetMeasurementsWindow }
       ],
       tracks: [
         { label: 'Tracks window', onSelect: onOpenTracksWindow },
@@ -184,12 +189,15 @@ export default function TopMenu(props: TopMenuProps) {
     }),
     [
       onOpenAmplitudePlotWindow,
+      onOpenCameraWindow,
+      onOpenCameraSettingsWindow,
       onOpenChannelsWindow,
       onOpenDiagnosticsWindow,
       onOpenDrawRoiWindow,
       onOpenPaintbrush,
       onOpenPlotSettingsWindow,
       onOpenPropsWindow,
+      onOpenSetMeasurementsWindow,
       onOpenRecordWindow,
       onOpenRenderSettingsWindow,
       onOpenHoverSettingsWindow,

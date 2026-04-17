@@ -44,6 +44,28 @@ export function useVolumeViewerFollowTarget({
     return { width, height, depth };
   }, []);
 
+  const resolveCanonicalDimensions = useCallback(() => {
+    let width = 0;
+    let height = 0;
+    let depth = 0;
+
+    for (const layer of layersRef.current) {
+      const dimensions = resolveLayerDimensions(layer);
+      if (!dimensions) {
+        continue;
+      }
+      width = Math.max(width, dimensions.width);
+      height = Math.max(height, dimensions.height);
+      depth = Math.max(depth, dimensions.depth);
+    }
+
+    if (width <= 0 || height <= 0 || depth <= 0) {
+      return null;
+    }
+
+    return { width, height, depth };
+  }, [layersRef, resolveLayerDimensions]);
+
   const computeFollowedVoxelPosition = useCallback(
     (target: FollowedVoxelTarget) => {
       const volumeRootGroup = volumeRootGroupRef.current;
@@ -51,9 +73,8 @@ export function useVolumeViewerFollowTarget({
         return null;
       }
 
-      const layer = layersRef.current.find((entry) => entry.key === target.layerKey);
-      const dimensions = resolveLayerDimensions(layer);
-      if (!layer || !dimensions) {
+      const dimensions = resolveCanonicalDimensions();
+      if (!dimensions) {
         return null;
       }
 
@@ -61,42 +82,35 @@ export function useVolumeViewerFollowTarget({
       const clampedY = THREE.MathUtils.clamp(target.coordinates.y, 0, dimensions.height - 1);
       const clampedZ = THREE.MathUtils.clamp(target.coordinates.z, 0, dimensions.depth - 1);
 
-      const localPosition = new THREE.Vector3(
-        clampedX + (layer.offsetX ?? 0),
-        clampedY + (layer.offsetY ?? 0),
-        clampedZ,
-      );
+      const localPosition = new THREE.Vector3(clampedX, clampedY, clampedZ);
 
       volumeRootGroup.updateMatrixWorld(true);
       return volumeRootGroup.localToWorld(localPosition);
     },
-    [layersRef, resolveLayerDimensions, volumeRootGroupRef],
+    [resolveCanonicalDimensions, volumeRootGroupRef],
   );
 
   const resolveHoveredFollowTarget = useCallback((): FollowedVoxelTarget | null => {
     const hovered = hoveredVoxelRef.current;
     const normalizedPosition = hovered?.normalizedPosition;
-    const layerKey = hovered?.layerKey;
 
-    if (!normalizedPosition || !layerKey) {
+    if (!normalizedPosition) {
       return null;
     }
 
-    const layer = layersRef.current.find((entry) => entry.key === layerKey);
-    const dimensions = resolveLayerDimensions(layer);
-    if (!layer || !dimensions) {
+    const dimensions = resolveCanonicalDimensions();
+    if (!dimensions) {
       return null;
     }
 
     return {
-      layerKey,
       coordinates: {
         x: Math.round(THREE.MathUtils.clamp(normalizedPosition.x * dimensions.width, 0, dimensions.width - 1)),
         y: Math.round(THREE.MathUtils.clamp(normalizedPosition.y * dimensions.height, 0, dimensions.height - 1)),
         z: Math.round(THREE.MathUtils.clamp(normalizedPosition.z * dimensions.depth, 0, dimensions.depth - 1)),
       },
     };
-  }, [hoveredVoxelRef, layersRef, resolveLayerDimensions]);
+  }, [hoveredVoxelRef, resolveCanonicalDimensions]);
 
   return {
     computeFollowedVoxelPosition,

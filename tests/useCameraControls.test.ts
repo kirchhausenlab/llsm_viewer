@@ -58,13 +58,16 @@ function assertNearlyEqual(actual: number, expected: number) {
   assert.ok(Math.abs(actual - expected) < 1e-9, `Expected ${actual} to equal ${expected}`);
 }
 
-test('keyboard movement defaults to the old shift speed and ignores shift key presses', () => {
+test('keyboard movement uses the default translation multiplier and ignores shift key presses', () => {
   withWindowMock((windowMock) => {
     const hook = renderHook(() =>
       useCameraControls({
         trackLinesRef: { current: new Map() },
         roiLinesRef: { current: new Map() },
+        volumeRootGroupRef: { current: null },
+        currentDimensionsRef: { current: null },
         followTargetActiveRef: { current: false },
+        followTargetOffsetRef: { current: null },
         setHasMeasured: () => {},
         projectionMode: 'perspective',
       }),
@@ -85,8 +88,8 @@ test('keyboard movement defaults to the old shift speed and ignores shift key pr
     hook.result.applyKeyboardMovement(renderer, camera, controls);
 
     assert.equal(moveForward.wasPrevented(), true);
-    assertNearlyEqual(camera.position.z, 9.95);
-    assertNearlyEqual(controls.target.z, -0.05);
+    assertNearlyEqual(camera.position.z, 9.9875);
+    assertNearlyEqual(controls.target.z, -0.0125);
 
     hook.act(() => {
       windowMock.dispatchEvent(createKeyboardEvent('keyup', 'KeyW').event);
@@ -107,8 +110,8 @@ test('keyboard movement defaults to the old shift speed and ignores shift key pr
 
     assert.equal(shiftDown.wasPrevented(), false);
     assert.equal(moveForwardWithShift.wasPrevented(), true);
-    assertNearlyEqual(camera.position.z, 9.95);
-    assertNearlyEqual(controls.target.z, -0.05);
+    assertNearlyEqual(camera.position.z, 9.9875);
+    assertNearlyEqual(controls.target.z, -0.0125);
 
     hook.unmount();
   });

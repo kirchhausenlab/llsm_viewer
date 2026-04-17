@@ -10,6 +10,12 @@ type UseViewerPanelWindowsResult = {
   isChannelsWindowOpen: boolean;
   openChannelsWindow: () => void;
   closeChannelsWindow: () => void;
+  isCameraWindowOpen: boolean;
+  openCameraWindow: () => void;
+  closeCameraWindow: () => void;
+  isCameraSettingsWindowOpen: boolean;
+  openCameraSettingsWindow: () => void;
+  closeCameraSettingsWindow: () => void;
   isPropsWindowOpen: boolean;
   openPropsWindow: () => void;
   closePropsWindow: () => void;
@@ -55,6 +61,8 @@ export function useViewerPanelWindows({
 }: UseViewerPanelWindowsOptions): UseViewerPanelWindowsResult {
   const lastHasTrackDataRef = useRef(hasTrackData);
   const [isChannelsWindowOpen, setIsChannelsWindowOpen] = useState(true);
+  const [isCameraWindowOpen, setIsCameraWindowOpen] = useState(false);
+  const [isCameraSettingsWindowOpen, setIsCameraSettingsWindowOpen] = useState(false);
   const [isPropsWindowOpen, setIsPropsWindowOpen] = useState(false);
   const [isTracksWindowOpen, setIsTracksWindowOpen] = useState(hasTrackData);
   const [isViewerSettingsOpen, setIsViewerSettingsOpen] = useState(false);
@@ -74,6 +82,22 @@ export function useViewerPanelWindows({
 
   const closeChannelsWindow = useCallback(() => {
     setIsChannelsWindowOpen(false);
+  }, []);
+
+  const openCameraWindow = useCallback(() => {
+    setIsCameraWindowOpen(true);
+  }, []);
+
+  const closeCameraWindow = useCallback(() => {
+    setIsCameraWindowOpen(false);
+  }, []);
+
+  const openCameraSettingsWindow = useCallback(() => {
+    setIsCameraSettingsWindowOpen(true);
+  }, []);
+
+  const closeCameraSettingsWindow = useCallback(() => {
+    setIsCameraSettingsWindowOpen(false);
   }, []);
 
   const openPropsWindow = useCallback(() => {
@@ -209,6 +233,12 @@ export function useViewerPanelWindows({
     isChannelsWindowOpen,
     openChannelsWindow,
     closeChannelsWindow,
+    isCameraWindowOpen,
+    openCameraWindow,
+    closeCameraWindow,
+    isCameraSettingsWindowOpen,
+    openCameraSettingsWindow,
+    closeCameraSettingsWindow,
     isPropsWindowOpen,
     openPropsWindow,
     closePropsWindow,

@@ -49,6 +49,10 @@
   z-index: 18;
 }
 
+.floating-window--camera {
+  z-index: 18;
+}
+
 .floating-window--props {
   z-index: 19;
 }
@@ -822,6 +826,8 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  font-weight: var(--type-weight-label);
+  letter-spacing: var(--type-tracking-ui);
 }
 
 .roi-manager-list-item.is-selected:not(.is-active) {
@@ -852,6 +858,9 @@
 .roi-manager-empty-state {
   margin: 0;
   color: rgba(255, 255, 255, 0.6);
+  font-size: var(--type-size-meta);
+  font-weight: var(--type-weight-body);
+  line-height: var(--type-line-ui);
 }
 
 .roi-manager-actions {
@@ -860,12 +869,241 @@
   gap: 0.45rem;
 }
 
+.roi-manager-actions button,
+.measurements-window-actions button,
+.set-measurements-actions button {
+  font-weight: var(--type-weight-label);
+  letter-spacing: var(--type-tracking-ui);
+}
+
 .measurements-window,
 .set-measurements-window {
   display: flex;
   flex-direction: column;
   gap: 0.9rem;
   min-height: 0;
+}
+
+.camera-window {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  min-height: 0;
+}
+
+.camera-window-row {
+  display: flex;
+  align-items: center;
+  gap: 0.9rem;
+  min-width: 0;
+}
+
+.camera-window-row--sliders {
+  align-items: stretch;
+}
+
+.camera-window-slider {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  min-width: 0;
+  flex: 1 1 0;
+}
+
+.camera-window-slider-label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  font-size: var(--type-size-label);
+  font-weight: var(--type-weight-label);
+  letter-spacing: var(--type-tracking-ui);
+  color: rgba(255, 255, 255, 0.82);
+}
+
+.camera-window-fieldset {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: none;
+}
+
+.camera-window-fieldset:disabled {
+  opacity: 0.55;
+}
+
+.camera-window-fieldset legend {
+  padding: 0;
+  font-size: var(--type-size-label);
+  font-weight: var(--type-weight-label);
+  letter-spacing: var(--type-tracking-ui);
+  color: rgba(255, 255, 255, 0.82);
+  margin-bottom: 0.25rem;
+}
+
+.camera-window-grid {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.camera-window-grid--triple {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.camera-window-rotation-list {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.85rem;
+}
+
+.camera-window-slider--rotation {
+  min-width: 0;
+}
+
+.camera-window-input {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  min-width: 0;
+}
+
+.camera-window-input span,
+.camera-window-section-label {
+  font-size: var(--type-size-label);
+  font-weight: var(--type-weight-label);
+  letter-spacing: var(--type-tracking-ui);
+  color: rgba(255, 255, 255, 0.82);
+}
+
+.camera-window-section-label--centered {
+  text-align: center;
+}
+
+.camera-window-input input {
+  width: 100%;
+}
+
+.camera-window-row--update {
+  justify-content: center;
+}
+
+.camera-window-row--follow {
+  align-items: center;
+}
+
+.camera-window-row--follow-action {
+  justify-content: center;
+}
+
+.camera-window-section {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.camera-window-divider {
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.camera-window-follow-inputs {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.45rem;
+  flex: 1 1 auto;
+}
+
+.camera-window-inline-input {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 0.35rem;
+  min-width: 0;
+}
+
+.camera-window-inline-input span {
+  font-size: var(--type-size-label);
+  font-weight: var(--type-weight-label);
+  letter-spacing: var(--type-tracking-ui);
+  color: rgba(255, 255, 255, 0.82);
+}
+
+.camera-window-inline-input input {
+  min-width: 0;
+  width: 100%;
+}
+
+.camera-window-library {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 116px;
+  gap: 0.9rem;
+  align-items: start;
+}
+
+.camera-window-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+}
+
+.camera-window-views {
+  min-height: 0;
+}
+
+.camera-window-view {
+  justify-content: flex-start;
+}
+
+.camera-window-view.is-selected:not(.is-active) {
+  border-color: rgba(255, 255, 255, 0.18);
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.camera-window-view-label {
+  min-width: 0;
+  font-weight: var(--type-weight-label);
+  letter-spacing: var(--type-tracking-ui);
+}
+
+.camera-window-empty-state {
+  margin: 0;
+  color: rgba(255, 255, 255, 0.62);
+  font-size: var(--type-size-meta);
+  font-weight: var(--type-weight-body);
+  line-height: var(--type-line-ui);
+}
+
+.camera-window button {
+  font-weight: var(--type-weight-label);
+  letter-spacing: var(--type-tracking-ui);
+}
+
+@media (max-width: 720px) {
+  .camera-window-row--sliders,
+  .camera-window-row--follow {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .camera-window-grid--triple {
+    grid-template-columns: 1fr;
+  }
+
+  .camera-window-rotation-list,
+  .camera-window-follow-inputs {
+    grid-template-columns: 1fr;
+  }
+
+  .camera-window-library {
+    grid-template-columns: 1fr;
+  }
+
+  .camera-window-view {
+    flex-direction: column;
+    align-items: flex-start;
+  }
 }
 
 .measurements-window-actions {
@@ -887,6 +1125,10 @@
   display: inline-flex;
   align-items: center;
   gap: 0.45rem;
+  font-size: var(--type-size-label);
+  font-weight: var(--type-weight-label);
+  letter-spacing: var(--type-tracking-ui);
+  line-height: var(--type-line-ui);
   color: rgba(255, 255, 255, 0.82);
 }
 
@@ -922,6 +1164,9 @@
   top: 0;
   z-index: 1;
   background: rgba(12, 16, 24, 0.96);
+  font-size: var(--type-size-label);
+  font-weight: var(--type-weight-label);
+  letter-spacing: var(--type-tracking-ui);
   color: rgba(255, 255, 255, 0.88);
 }
 
@@ -936,6 +1181,9 @@
 .measurements-empty-state {
   margin: 0;
   color: rgba(255, 255, 255, 0.62);
+  font-size: var(--type-size-meta);
+  font-weight: var(--type-weight-body);
+  line-height: var(--type-line-ui);
 }
 
 .set-measurements-options {

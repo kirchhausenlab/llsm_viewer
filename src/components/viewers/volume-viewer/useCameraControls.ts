@@ -10,7 +10,6 @@ import {
   createDesktopControls,
   createEmptyDesktopViewStateMap,
   createOrthographicViewStateFromPerspective,
-  createPerspectiveViewStateFromOrthographic,
   createVolumeRenderContext,
   isOrthographicDesktopCamera,
   isPerspectiveDesktopCamera,
@@ -21,6 +20,8 @@ import {
   type VolumeRenderContext,
 } from '../../../hooks/useVolumeRenderSetup';
 import type { MovementState, RoiRenderResource, TrackRenderResource } from '../VolumeViewer.types';
+import type { CameraRotation, CameraWindowState } from '../../../types/camera';
+import { normalizeSignedAngleDegrees } from '../../../shared/utils/cameraViews';
 
 const MOVEMENT_KEY_MAP: Record<string, keyof MovementState> = {
   KeyW: 'moveForward',
@@ -47,18 +48,28 @@ type PointerLookHandlers = {
 type UseCameraControlsParams = {
   trackLinesRef: MutableRefObject<Map<string, TrackRenderResource>>;
   roiLinesRef: MutableRefObject<Map<string, RoiRenderResource>>;
+  volumeRootGroupRef: MutableRefObject<THREE.Group | null>;
+  currentDimensionsRef: MutableRefObject<{ width: number; height: number; depth: number } | null>;
   followTargetActiveRef: MutableRefObject<boolean>;
+  followTargetOffsetRef: MutableRefObject<THREE.Vector3 | null>;
   setHasMeasured: (hasMeasured: boolean) => void;
   projectionMode: ViewerProjectionMode;
+  translationSpeedMultiplier?: number;
+  rotationSpeedMultiplier?: number;
   enableKeyboardNavigation?: boolean;
 };
 
 export function useCameraControls({
   trackLinesRef,
   roiLinesRef,
+  volumeRootGroupRef,
+  currentDimensionsRef,
   followTargetActiveRef,
+  followTargetOffsetRef,
   setHasMeasured,
   projectionMode,
+  translationSpeedMultiplier = 1,
+  rotationSpeedMultiplier = 1,
   enableKeyboardNavigation = true,
 }: UseCameraControlsParams) {
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -119,6 +130,8 @@ export function useCameraControls({
 
   const worldUp = useMemo(() => new THREE.Vector3(0, 1, 0), []);
   const lookDirectionRef = useRef(new THREE.Vector3());
+  const centerWorldRef = useRef(new THREE.Vector3());
+  const cornerWorldRef = useRef(new THREE.Vector3());
   const forwardVectorRef = useRef(new THREE.Vector3());
   const horizontalForwardRef = useRef(new THREE.Vector3());
   const rightVectorRef = useRef(new THREE.Vector3());
@@ -132,18 +145,181 @@ export function useCameraControls({
     rotateUp: false,
     rotateDown: false,
   });
+  const translationSpeedMultiplierRef = useRef(translationSpeedMultiplier);
+  translationSpeedMultiplierRef.current = translationSpeedMultiplier;
+  const rotationSpeedMultiplierRef = useRef(rotationSpeedMultiplier);
+  rotationSpeedMultiplierRef.current = rotationSpeedMultiplier;
 
+  const PERSPECTIVE_TRANSLATION_BASE_SPEED = 0.0125;
   const ROLL_SPEED = 0.02;
   const LOOK_SENSITIVITY = 0.0025;
   const MAX_LOOK_PITCH = Math.PI / 2 - 0.001;
   const KEYBOARD_LOOK_SENSITIVITY = 0.02;
+  const TARGET_DISTANCE_FALLBACK = 1;
+
+  const resolveCameraRotation = useCallback((camera: DesktopViewerCamera): CameraRotation => {
+    const euler = new THREE.Euler(0, 0, 0, 'YXZ').setFromQuaternion(camera.quaternion, 'YXZ');
+    return {
+      yaw: normalizeSignedAngleDegrees(THREE.MathUtils.radToDeg(euler.y)),
+      pitch: normalizeSignedAngleDegrees(THREE.MathUtils.radToDeg(euler.x)),
+      roll: normalizeSignedAngleDegrees(THREE.MathUtils.radToDeg(euler.z)),
+    };
+  }, []);
+
+  const resolveOrientationVectors = useCallback((rotation: CameraRotation) => {
+    const euler = new THREE.Euler(
+      THREE.MathUtils.degToRad(rotation.pitch),
+      THREE.MathUtils.degToRad(rotation.yaw),
+      THREE.MathUtils.degToRad(rotation.roll),
+      'YXZ',
+    );
+    const quaternion = new THREE.Quaternion().setFromEuler(euler);
+    const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(quaternion).normalize();
+    const up = new THREE.Vector3(0, 1, 0).applyQuaternion(quaternion).normalize();
+    return { forward, up };
+  }, []);
+
+  const mapWorldToCanonical = useCallback((worldPosition: THREE.Vector3) => {
+    const canonicalPosition = worldPosition.clone();
+    const volumeRootGroup = volumeRootGroupRef.current;
+    if (volumeRootGroup) {
+      volumeRootGroup.updateMatrixWorld(true);
+      volumeRootGroup.worldToLocal(canonicalPosition);
+    }
+    return canonicalPosition;
+  }, [volumeRootGroupRef]);
+
+  const mapCanonicalToWorld = useCallback((canonicalPosition: { x: number; y: number; z: number }) => {
+    const localPosition = new THREE.Vector3(canonicalPosition.x, canonicalPosition.y, canonicalPosition.z);
+    const volumeRootGroup = volumeRootGroupRef.current;
+    if (volumeRootGroup) {
+      volumeRootGroup.updateMatrixWorld(true);
+      return volumeRootGroup.localToWorld(localPosition);
+    }
+    return localPosition;
+  }, [volumeRootGroupRef]);
+
+  const resolveTargetDistance = useCallback((camera: DesktopViewerCamera, controls: OrbitControls) => {
+    const distance = camera.position.distanceTo(controls.target);
+    return Number.isFinite(distance) && distance > 1e-6 ? distance : TARGET_DISTANCE_FALLBACK;
+  }, []);
+
+  const resolveCanonicalBounds = useCallback(() => {
+    const dimensions = currentDimensionsRef.current;
+    const volumeRootGroup = volumeRootGroupRef.current;
+    if (!dimensions || !volumeRootGroup) {
+      return null;
+    }
+
+    const centerLocal = new THREE.Vector3(
+      dimensions.width / 2 - 0.5,
+      dimensions.height / 2 - 0.5,
+      dimensions.depth / 2 - 0.5,
+    );
+    const cornerLocal = new THREE.Vector3(dimensions.width - 1, dimensions.height - 1, dimensions.depth - 1);
+    volumeRootGroup.updateMatrixWorld(true);
+    const centerWorld = volumeRootGroup.localToWorld(centerWorldRef.current.copy(centerLocal));
+    const cornerWorld = volumeRootGroup.localToWorld(cornerWorldRef.current.copy(cornerLocal));
+    return {
+      centerWorld: centerWorld.clone(),
+      radius: Math.max(centerWorld.distanceTo(cornerWorld), 1e-3),
+    };
+  }, [currentDimensionsRef, volumeRootGroupRef]);
+
+  const createWeaklyCanonicalOrthographicState = useCallback(
+    (camera: DesktopViewerCamera) => {
+      const bounds = resolveCanonicalBounds();
+      if (!bounds) {
+        return isPerspectiveDesktopCamera(camera)
+          ? createOrthographicViewStateFromPerspective(camera, rotationTargetRef.current.clone())
+          : captureDesktopViewState(camera, rotationTargetRef.current.clone(), 'orthographic');
+      }
+
+      const rotation = resolveCameraRotation(camera);
+      const { forward, up } = resolveOrientationVectors(rotation);
+      const safeDistance = Math.max(bounds.radius * 3, TARGET_DISTANCE_FALLBACK);
+      const visibleHeight = Math.max(bounds.radius * 2.2, 1e-6);
+      return {
+        projectionMode: 'orthographic' as const,
+        position: bounds.centerWorld.clone().addScaledVector(forward, -safeDistance),
+        target: bounds.centerWorld.clone(),
+        up,
+        zoom: Math.max(2 / visibleHeight, 1e-6),
+        distanceToTarget: safeDistance,
+      };
+    },
+    [resolveCanonicalBounds, resolveCameraRotation, resolveOrientationVectors],
+  );
+
+  const captureCameraWindowState = useCallback((): CameraWindowState | null => {
+    const camera = cameraRef.current;
+    if (!camera) {
+      return null;
+    }
+    const canonicalPosition = mapWorldToCanonical(camera.position);
+    return {
+      cameraPosition: {
+        x: Number(canonicalPosition.x.toFixed(6)),
+        y: Number(canonicalPosition.y.toFixed(6)),
+        z: Number(canonicalPosition.z.toFixed(6)),
+      },
+      cameraRotation: resolveCameraRotation(camera),
+    };
+  }, [mapWorldToCanonical, resolveCameraRotation]);
+
+  const applyCameraPose = useCallback(
+    ({
+      cameraPosition,
+      cameraRotation,
+    }: {
+      cameraPosition?: { x: number; y: number; z: number } | null;
+      cameraRotation: CameraRotation;
+    }): boolean => {
+      const camera = cameraRef.current;
+      const controls = controlsRef.current;
+      if (!camera || !controls) {
+        return false;
+      }
+
+      const nextPosition = cameraPosition ? mapCanonicalToWorld(cameraPosition) : camera.position.clone();
+      const { forward, up } = resolveOrientationVectors(cameraRotation);
+      const nextTarget = followTargetActiveRef.current
+        ? controls.target.clone()
+        : nextPosition.clone().addScaledVector(forward, resolveTargetDistance(camera, controls));
+
+      camera.position.copy(nextPosition);
+      camera.up.copy(up);
+      controls.target.copy(nextTarget);
+      camera.lookAt(nextTarget);
+      camera.updateMatrixWorld(true);
+      controls.update();
+      rotationTargetRef.current.copy(nextTarget);
+
+      if (followTargetActiveRef.current) {
+        if (!followTargetOffsetRef.current) {
+          followTargetOffsetRef.current = new THREE.Vector3();
+        }
+        followTargetOffsetRef.current.copy(camera.position).sub(nextTarget);
+      }
+
+      return true;
+    },
+    [
+      followTargetActiveRef,
+      followTargetOffsetRef,
+      mapCanonicalToWorld,
+      resolveOrientationVectors,
+      resolveTargetDistance,
+    ],
+  );
 
   const resolveMovementScale = useCallback(
-    (camera: DesktopViewerCamera, target: THREE.Vector3) => {
-      if (isPerspectiveDesktopCamera(camera)) {
-        return Math.max(camera.position.distanceTo(target) * 0.005, 0.0006);
+    (camera: DesktopViewerCamera) => {
+      const multiplier = Math.max(0.1, Math.min(3, translationSpeedMultiplierRef.current));
+      if (!isOrthographicDesktopCamera(camera)) {
+        return PERSPECTIVE_TRANSLATION_BASE_SPEED * multiplier;
       }
-      return Math.max(computeOrthographicVisibleHeight(camera) * 0.005, 0.0006);
+      return Math.max(computeOrthographicVisibleHeight(camera) * 0.005 * multiplier, 0.0006);
     },
     [],
   );
@@ -175,7 +351,8 @@ export function useCameraControls({
       if (rollInput !== 0) {
         const rollAxis = rollAxisRef.current.copy(forwardVector).normalize();
         const rollQuaternion = rollQuaternionRef.current;
-        rollQuaternion.setFromAxisAngle(rollAxis, rollInput * ROLL_SPEED);
+        const multiplier = Math.max(0.1, Math.min(3, rotationSpeedMultiplierRef.current));
+        rollQuaternion.setFromAxisAngle(rollAxis, rollInput * ROLL_SPEED * multiplier);
         camera.applyQuaternion(rollQuaternion);
         camera.up.applyQuaternion(rollQuaternion);
       }
@@ -185,7 +362,7 @@ export function useCameraControls({
       }
 
       const rotationTarget = rotationTargetRef.current;
-      const movementScale = resolveMovementScale(camera, rotationTarget);
+      const movementScale = resolveMovementScale(camera);
 
       const horizontalForward = horizontalForwardRef.current;
       horizontalForward.copy(forwardVector).projectOnPlane(worldUp);
@@ -250,14 +427,15 @@ export function useCameraControls({
       }
 
       const cameraEuler = cameraEulerRef.current;
+      const multiplier = Math.max(0.1, Math.min(3, rotationSpeedMultiplierRef.current));
       cameraEuler.setFromQuaternion(camera.quaternion, 'YXZ');
-      cameraEuler.y -= yawInput * KEYBOARD_LOOK_SENSITIVITY;
-      cameraEuler.x -= pitchInput * KEYBOARD_LOOK_SENSITIVITY;
+      cameraEuler.y -= yawInput * KEYBOARD_LOOK_SENSITIVITY * multiplier;
+      cameraEuler.x -= pitchInput * KEYBOARD_LOOK_SENSITIVITY * multiplier;
       cameraEuler.x = THREE.MathUtils.clamp(cameraEuler.x, -MAX_LOOK_PITCH, MAX_LOOK_PITCH);
       camera.quaternion.setFromEuler(cameraEuler);
 
       const orbitCenter = followTargetActiveRef.current ? controls.target : rotationTargetRef.current;
-      const targetDistance = Math.max(camera.position.distanceTo(orbitCenter), 0.0001);
+      const targetDistance = Math.max(camera.position.distanceTo(orbitCenter), TARGET_DISTANCE_FALLBACK);
       const lookDirection = lookDirectionRef.current;
       lookDirection.set(0, 0, -1).applyQuaternion(camera.quaternion);
 
@@ -335,15 +513,16 @@ export function useCameraControls({
         pointerLookState.lastClientX = event.clientX;
         pointerLookState.lastClientY = event.clientY;
 
-        pointerLookState.yaw -= deltaX * LOOK_SENSITIVITY;
-        pointerLookState.pitch -= deltaY * LOOK_SENSITIVITY;
+        const multiplier = Math.max(0.1, Math.min(3, rotationSpeedMultiplierRef.current));
+        pointerLookState.yaw -= deltaX * LOOK_SENSITIVITY * multiplier;
+        pointerLookState.pitch -= deltaY * LOOK_SENSITIVITY * multiplier;
         pointerLookState.pitch = THREE.MathUtils.clamp(pointerLookState.pitch, -MAX_LOOK_PITCH, MAX_LOOK_PITCH);
 
         cameraEuler.set(pointerLookState.pitch, pointerLookState.yaw, pointerLookState.roll, 'YXZ');
         camera.quaternion.setFromEuler(cameraEuler);
 
         const orbitCenter = followTargetActiveRef.current ? controls.target : rotationTargetRef.current;
-        const targetDistance = Math.max(camera.position.distanceTo(orbitCenter), 0.0001);
+        const targetDistance = Math.max(camera.position.distanceTo(orbitCenter), TARGET_DISTANCE_FALLBACK);
         lookDirection.set(0, 0, -1).applyQuaternion(camera.quaternion);
 
         if (followTargetActiveRef.current) {
@@ -418,14 +597,13 @@ export function useCameraControls({
     );
 
     let nextViewState = projectionViewStateRef.current[projectionMode];
-    if (!nextViewState) {
+    if (projectionMode === 'orthographic') {
+      nextViewState = createWeaklyCanonicalOrthographicState(camera);
+      projectionViewStateRef.current.orthographic = nextViewState;
+    } else if (!nextViewState) {
       nextViewState =
-        projectionMode === 'orthographic' && isPerspectiveDesktopCamera(camera)
-          ? createOrthographicViewStateFromPerspective(camera, controls.target)
-          : projectionMode === 'perspective' && isOrthographicDesktopCamera(camera)
-            ? createPerspectiveViewStateFromOrthographic(camera, controls.target)
-            : captureDesktopViewState(camera, controls.target, projectionMode);
-      projectionViewStateRef.current[projectionMode] = nextViewState;
+        defaultViewStateRef.current.perspective ?? captureDesktopViewState(camera, controls.target, projectionMode);
+      projectionViewStateRef.current.perspective = nextViewState;
     }
 
     const nextCamera = createDesktopCamera(
@@ -447,7 +625,7 @@ export function useCameraControls({
     currentProjectionModeRef.current = projectionMode;
     applyDesktopViewState(nextCamera, nextControls, nextViewState, width, height);
     rotationTargetRef.current.copy(nextControls.target);
-  }, [projectionMode]);
+  }, [createWeaklyCanonicalOrthographicState, projectionMode]);
 
   useEffect(() => {
     if (!enableKeyboardNavigation) {
@@ -566,6 +744,8 @@ export function useCameraControls({
     handleResize,
     applyKeyboardRotation,
     applyKeyboardMovement,
+    applyCameraPose,
+    captureCameraWindowState,
     createPointerLookHandlers,
     initializeRenderContext,
   };

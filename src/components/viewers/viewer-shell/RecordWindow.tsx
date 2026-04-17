@@ -74,7 +74,7 @@ export default function RecordWindow({
 
   return (
     <FloatingWindow
-      title="Record"
+      title="Screen capture"
       initialPosition={recordWindowInitialPosition}
       width={`min(${controlWindowWidth}px, calc(100vw - ${windowMargin * 2}px))`}
       className="floating-window--record"

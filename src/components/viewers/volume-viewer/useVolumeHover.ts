@@ -228,7 +228,7 @@ export function useVolumeHover({
         return;
       }
       if (!hoverSettings.enabled) {
-        reportVoxelHoverAbort('Hover disabled in Hover Settings.');
+        reportVoxelHoverAbort('Hover disabled in Hover settings.');
         return;
       }
 

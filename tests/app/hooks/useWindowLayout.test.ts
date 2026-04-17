@@ -2,6 +2,8 @@ import assert from 'node:assert/strict';
 
 import { useWindowLayout } from '../../../src/ui/app/hooks/useWindowLayout.ts';
 import {
+  computeCameraWindowRecenterPosition,
+  computeCameraSettingsWindowRecenterPosition,
   computeDrawRoiWindowRecenterPosition,
   computeLayersWindowDefaultPosition,
   computeMeasurementsWindowRecenterPosition,
@@ -37,6 +39,8 @@ console.log('Starting useWindowLayout tests');
 
   assert.strictEqual(hook.result.layoutResetToken, 1);
   assert.deepStrictEqual(hook.result.layersWindowInitialPosition, computeLayersWindowDefaultPosition());
+  assert.deepStrictEqual(hook.result.cameraWindowInitialPosition, computeCameraWindowRecenterPosition());
+  assert.deepStrictEqual(hook.result.cameraSettingsWindowInitialPosition, computeCameraSettingsWindowRecenterPosition());
   assert.deepStrictEqual(hook.result.propsWindowInitialPosition, computePropsWindowRecenterPosition());
   assert.deepStrictEqual(hook.result.trackWindowInitialPosition, computeTrackWindowDefaultPosition());
   assert.deepStrictEqual(hook.result.paintbrushWindowInitialPosition, computePaintbrushWindowRecenterPosition());

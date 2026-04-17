@@ -65,10 +65,13 @@ export type TopMenuProps = TopMenuChromeProps &
     };
     hoverIntensityValueDigits: number;
     onOpenChannelsWindow: () => void;
+    onOpenCameraWindow: () => void;
+    onOpenCameraSettingsWindow: () => void;
     onOpenPropsWindow: () => void;
     onOpenPaintbrush: () => void;
     onOpenDrawRoiWindow: () => void;
     onOpenRoiManagerWindow: () => void;
+    onOpenSetMeasurementsWindow: () => void;
     onOpenRecordWindow: () => void;
     onOpenRenderSettingsWindow: () => void;
     onOpenHoverSettingsWindow: () => void;
@@ -278,6 +281,8 @@ export type LayoutProps = {
   controlWindowWidth: number;
   selectedTracksWindowWidth: number;
   resetToken: number;
+  cameraWindowInitialPosition: Position;
+  cameraSettingsWindowInitialPosition: Position;
   viewerSettingsWindowInitialPosition: Position;
   recordWindowInitialPosition: Position;
   layersWindowInitialPosition: Position;

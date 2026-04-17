@@ -207,6 +207,10 @@ function VolumeViewer({
   onFpsChange,
   onRegisterVolumeStepScaleChange,
   onCameraNavigationSample,
+  translationSpeedMultiplier = 1,
+  rotationSpeedMultiplier = 1,
+  onCameraWindowStateChange,
+  onRegisterCameraWindowController,
   onRegisterReset,
   onRegisterCaptureTarget,
   trackScale,
@@ -355,16 +359,31 @@ function VolumeViewer({
     handleResize,
     applyKeyboardRotation,
     applyKeyboardMovement,
+    applyCameraPose,
+    captureCameraWindowState,
     createPointerLookHandlers,
     initializeRenderContext,
   } = useCameraControls({
     trackLinesRef,
     roiLinesRef,
+    volumeRootGroupRef,
+    currentDimensionsRef,
     followTargetActiveRef,
+    followTargetOffsetRef,
     setHasMeasured,
     projectionMode,
+    translationSpeedMultiplier,
+    rotationSpeedMultiplier,
     enableKeyboardNavigation,
   });
+  useEffect(() => {
+    onRegisterCameraWindowController?.({
+      applyCameraPose,
+    });
+    return () => {
+      onRegisterCameraWindowController?.(null);
+    };
+  }, [applyCameraPose, onRegisterCameraWindowController]);
   const isDevMode = Boolean(import.meta.env?.DEV);
   const { resolvedAnisotropyScale, anisotropyStepRatio } = useVolumeViewerAnisotropy({
     trackScale,
@@ -1046,6 +1065,8 @@ function VolumeViewer({
       followTargetOffsetRef,
       resourcesRef,
       onCameraNavigationSample,
+      emitCameraWindowState: captureCameraWindowState,
+      onCameraWindowStateChange,
       rotationTargetRef,
       refreshVrHudPlacementsRef,
       currentDimensionsRef,

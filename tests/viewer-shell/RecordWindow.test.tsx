@@ -77,6 +77,7 @@ function createProps(isOpen: boolean, recordingStatus: RecordingStatus = 'idle')
   const renderer = TestRenderer.create(
     <RecordWindow {...(props as any)} />
   );
+  const title = renderer.root.findAllByType('h2')[0];
 
   const screenshotButton = renderer.root.findAll(
     (node) => node.type === 'button' && node.children.join('') === 'Screenshot'
@@ -94,6 +95,7 @@ function createProps(isOpen: boolean, recordingStatus: RecordingStatus = 'idle')
   );
 
   assert.ok(screenshotButton);
+  assert.equal(title?.children.join(''), 'Screen capture');
   assert.ok(recordButton);
   assert.ok(stopButton);
   assert.equal(bitrateSlider.props.value, 24);

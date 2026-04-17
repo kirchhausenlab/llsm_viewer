@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
+import CameraWindow from './viewer-shell/CameraWindow';
+import CameraSettingsWindow from './viewer-shell/CameraSettingsWindow';
 import DrawRoiWindow from './viewer-shell/DrawRoiWindow';
 import HoverSettingsWindow from './viewer-shell/HoverSettingsWindow';
 import VolumeViewer from './VolumeViewer';
@@ -23,7 +25,20 @@ import { useViewerRoiState } from './viewer-shell/hooks/useViewerRoiState';
 import { useViewerRecording } from './viewer-shell/hooks/useViewerRecording';
 import type { ViewerShellProps } from './viewer-shell/types';
 import { createDefaultLayerSettings } from '../../state/layerSettings';
+import type {
+  CameraCoordinate,
+  CameraRotation,
+  CameraWindowController,
+  CameraWindowState,
+  SavedCameraView,
+} from '../../types/camera';
 import { formatIntensityValue } from '../../shared/utils/intensityFormatting';
+import {
+  buildAutoCameraViewLabel,
+  createSavedCameraViewId,
+  parseSavedCameraViewsFromJson,
+  serializeSavedCameraViews,
+} from '../../shared/utils/cameraViews';
 import {
   buildRoiMeasurementsCsv,
   buildRoiMeasurementsSnapshot,
@@ -46,6 +61,91 @@ import {
 } from '../../shared/utils/hoverSettings';
 import type { HoverSettings, HoverType } from '../../types/hover';
 
+type CoordinateDraft = {
+  x: string;
+  y: string;
+  z: string;
+};
+
+type RotationDraft = {
+  yaw: string;
+  pitch: string;
+  roll: string;
+};
+
+const EMPTY_COORDINATE_DRAFT: CoordinateDraft = { x: '', y: '', z: '' };
+
+function coordinateToDraft(
+  coordinate: CameraCoordinate,
+  options?: {
+    decimalPlaces?: number;
+    fixed?: boolean;
+  }
+): CoordinateDraft {
+  const decimalPlaces = options?.decimalPlaces ?? null;
+  const fixed = options?.fixed ?? false;
+  const formatValue = (value: number) => {
+    if (!Number.isFinite(value)) {
+      return '';
+    }
+    if (decimalPlaces === null) {
+      return value.toString();
+    }
+    const rounded = Number(value.toFixed(decimalPlaces));
+    return fixed ? rounded.toFixed(decimalPlaces) : rounded.toString();
+  };
+  return {
+    x: formatValue(coordinate.x),
+    y: formatValue(coordinate.y),
+    z: formatValue(coordinate.z),
+  };
+}
+
+function rotationToDraft(rotation: CameraRotation): RotationDraft {
+  return {
+    yaw: Number.isFinite(rotation.yaw) ? rotation.yaw.toString() : '',
+    pitch: Number.isFinite(rotation.pitch) ? rotation.pitch.toString() : '',
+    roll: Number.isFinite(rotation.roll) ? rotation.roll.toString() : '',
+  };
+}
+
+function parseCoordinateDraft(
+  draft: CoordinateDraft,
+): { value: CameraCoordinate | null; valid: boolean } {
+  const x = Number(draft.x);
+  const y = Number(draft.y);
+  const z = Number(draft.z);
+  if (![x, y, z].every((value) => Number.isFinite(value))) {
+    return { value: null, valid: false };
+  }
+  return {
+    value: { x, y, z },
+    valid: true,
+  };
+}
+
+function parseRotationDraft(
+  draft: RotationDraft,
+): { value: CameraRotation | null; valid: boolean } {
+  const yaw = Number(draft.yaw);
+  const pitch = Number(draft.pitch);
+  const roll = Number(draft.roll);
+  if (![yaw, pitch, roll].every((value) => Number.isFinite(value))) {
+    return { value: null, valid: false };
+  }
+  return {
+    value: { yaw, pitch, roll },
+    valid: true,
+  };
+}
+
+function coordinatesEqual(left: CameraCoordinate | null | undefined, right: CameraCoordinate | null | undefined): boolean {
+  if (!left || !right) {
+    return left === right;
+  }
+  return left.x === right.x && left.y === right.y && left.z === right.z;
+}
+
 function ViewerShell({
   viewerMode,
   volumeViewerProps,
@@ -66,6 +166,8 @@ function ViewerShell({
     controlWindowWidth,
     selectedTracksWindowWidth,
     resetToken,
+    cameraWindowInitialPosition,
+    cameraSettingsWindowInitialPosition,
     viewerSettingsWindowInitialPosition,
     recordWindowInitialPosition,
     layersWindowInitialPosition,
@@ -92,7 +194,7 @@ function ViewerShell({
     () =>
       computeNavigationHelpInitialPosition({
         windowMargin,
-        windowWidth: controlWindowWidth
+        windowWidth: controlWindowWidth * 2
       }),
     [controlWindowWidth, windowMargin]
   );
@@ -149,6 +251,10 @@ function ViewerShell({
       depth: maxDepth
     };
   }, [channelLayersMap]);
+  const volumeShapeZYX = useMemo<[number, number, number]>(
+    () => [volumeDimensions.depth, volumeDimensions.height, volumeDimensions.width],
+    [volumeDimensions.depth, volumeDimensions.height, volumeDimensions.width]
+  );
   const [renderingQuality, setRenderingQuality] = useState(1.1);
   const [hoverSettings, setHoverSettings] = useState<HoverSettings>(() => ({ ...DEFAULT_HOVER_SETTINGS }));
   const [hoverSettingsWindowInitialPosition, setHoverSettingsWindowInitialPosition] = useState(() =>
@@ -196,6 +302,12 @@ function ViewerShell({
     isChannelsWindowOpen,
     openChannelsWindow,
     closeChannelsWindow,
+    isCameraWindowOpen,
+    openCameraWindow,
+    closeCameraWindow,
+    isCameraSettingsWindowOpen,
+    openCameraSettingsWindow,
+    closeCameraSettingsWindow,
     isPropsWindowOpen,
     openPropsWindow,
     closePropsWindow,
@@ -342,6 +454,22 @@ function ViewerShell({
   );
   const [isSetMeasurementsWindowOpen, setIsSetMeasurementsWindowOpen] = useState(false);
   const roiLoadInputRef = useRef<HTMLInputElement | null>(null);
+  const cameraLoadInputRef = useRef<HTMLInputElement | null>(null);
+  const cameraControllerRef = useRef<CameraWindowController | null>(null);
+  const pendingCameraViewRef = useRef<SavedCameraView | null>(null);
+  const [cameraWindowState, setCameraWindowState] = useState<CameraWindowState | null>(null);
+  const [translationSpeedMultiplier, setTranslationSpeedMultiplier] = useState(1);
+  const [rotationSpeedMultiplier, setRotationSpeedMultiplier] = useState(1);
+  const [cameraPositionDraft, setCameraPositionDraft] = useState<CoordinateDraft>(EMPTY_COORDINATE_DRAFT);
+  const [cameraRotationDraft, setCameraRotationDraft] = useState<RotationDraft>({
+    yaw: '0',
+    pitch: '0',
+    roll: '0',
+  });
+  const [isCameraDraftDirty, setIsCameraDraftDirty] = useState(false);
+  const [voxelFollowDraft, setVoxelFollowDraft] = useState<CoordinateDraft>(EMPTY_COORDINATE_DRAFT);
+  const [savedCameraViews, setSavedCameraViews] = useState<SavedCameraView[]>([]);
+  const [selectedCameraViewId, setSelectedCameraViewId] = useState<string | null>(null);
 
   const handleRoiColorChange = useCallback(
     (color: string) => {
@@ -481,12 +609,9 @@ function ViewerShell({
   ]);
 
   const handleOpenSetMeasurementsWindow = useCallback(() => {
-    if (!measurementsSnapshot) {
-      return;
-    }
-    setMeasurementSettingsDraft(measurementsSettings);
+    setMeasurementSettingsDraft(measurementsSnapshot ? measurementsSettings : measurementDefaults);
     setIsSetMeasurementsWindowOpen(true);
-  }, [measurementsSettings, measurementsSnapshot]);
+  }, [measurementDefaults, measurementsSettings, measurementsSnapshot]);
 
   const handleCancelSetMeasurementsWindow = useCallback(() => {
     setMeasurementSettingsDraft(measurementsSettings);
@@ -494,10 +619,12 @@ function ViewerShell({
   }, [measurementsSettings]);
 
   const handleConfirmSetMeasurementsWindow = useCallback(() => {
-    setMeasurementsSettings(measurementSettingsDraft);
     setMeasurementDefaults(measurementSettingsDraft);
+    if (measurementsSnapshot) {
+      setMeasurementsSettings(measurementSettingsDraft);
+    }
     setIsSetMeasurementsWindowOpen(false);
-  }, [measurementSettingsDraft]);
+  }, [measurementSettingsDraft, measurementsSnapshot]);
 
   const handleSaveMeasurements = useCallback(async () => {
     if (!measurementsSnapshot) {
@@ -640,6 +767,349 @@ function ViewerShell({
     }
   }, [canLoadRois, confirmRoiReplacement, handleLoadRoiFile]);
 
+  const handleRegisterCameraWindowController = useCallback((controller: CameraWindowController | null) => {
+    cameraControllerRef.current = controller;
+  }, []);
+
+  const handleCameraWindowStateChange = useCallback((state: CameraWindowState | null) => {
+    setCameraWindowState(state);
+  }, []);
+
+  useEffect(() => {
+    if (!cameraWindowState || isCameraDraftDirty) {
+      return;
+    }
+    setCameraPositionDraft(
+      coordinateToDraft(cameraWindowState.cameraPosition, {
+        decimalPlaces: 2,
+        fixed: true,
+      })
+    );
+    setCameraRotationDraft(rotationToDraft(cameraWindowState.cameraRotation));
+  }, [cameraWindowState, isCameraDraftDirty]);
+
+  useEffect(() => {
+    if (!volumeViewerProps.followedVoxel) {
+      return;
+    }
+    setVoxelFollowDraft(coordinateToDraft(volumeViewerProps.followedVoxel.coordinates));
+  }, [volumeViewerProps.followedVoxel]);
+
+  useEffect(() => {
+    const pendingView = pendingCameraViewRef.current;
+    if (!pendingView || volumeViewerProps.followedTrackId !== null) {
+      return;
+    }
+
+    const controller = cameraControllerRef.current;
+    if (!controller) {
+      return;
+    }
+
+    if (pendingView.mode === 'free-roam') {
+      if (volumeViewerProps.followedVoxel !== null) {
+        return;
+      }
+    } else if (!coordinatesEqual(volumeViewerProps.followedVoxel?.coordinates, pendingView.followedVoxel)) {
+      return;
+    }
+
+    if (
+      controller.applyCameraPose({
+        cameraPosition: pendingView.cameraPosition,
+        cameraRotation: pendingView.cameraRotation,
+      })
+    ) {
+      pendingCameraViewRef.current = null;
+      setIsCameraDraftDirty(false);
+    }
+  }, [volumeViewerProps.followedTrackId, volumeViewerProps.followedVoxel]);
+
+  const translationEnabled = volumeViewerProps.followedTrackId === null && volumeViewerProps.followedVoxel === null;
+  const rotationEnabled = true;
+  const parsedCameraPosition = useMemo(() => parseCoordinateDraft(cameraPositionDraft), [cameraPositionDraft]);
+  const parsedCameraRotation = useMemo(() => parseRotationDraft(cameraRotationDraft), [cameraRotationDraft]);
+  const parsedFollowVoxel = useMemo(() => parseCoordinateDraft(voxelFollowDraft), [voxelFollowDraft]);
+  const canUpdateCamera =
+    cameraControllerRef.current !== null &&
+    parsedCameraRotation.valid &&
+    (translationEnabled ? parsedCameraPosition.valid : true);
+  const voxelFollowLocked = volumeViewerProps.followedTrackId !== null || volumeViewerProps.followedVoxel !== null;
+  const voxelFollowButtonLabel: 'Follow' | 'Stop' = volumeViewerProps.followedVoxel ? 'Stop' : 'Follow';
+  const voxelFollowButtonDisabled =
+    volumeViewerProps.followedTrackId !== null ||
+    (volumeViewerProps.followedVoxel === null && !parsedFollowVoxel.valid);
+  const canAddCameraView = cameraWindowState !== null && volumeViewerProps.followedTrackId === null;
+  const canActivateCameraViews = volumeViewerProps.followedTrackId === null;
+  const canRemoveCameraView = selectedCameraViewId !== null;
+  const canSaveCameraViews = savedCameraViews.length > 0;
+  const canLoadCameraViews = hasVolumeData;
+  const canClearCameraViews = savedCameraViews.length > 0;
+
+  const handleCameraPositionChange = useCallback((axis: keyof CoordinateDraft, value: string) => {
+    setCameraPositionDraft((current) => ({ ...current, [axis]: value }));
+    setIsCameraDraftDirty(true);
+  }, []);
+
+  const handleCameraRotationChange = useCallback((axis: keyof RotationDraft, value: string) => {
+    setCameraRotationDraft((current) => ({ ...current, [axis]: value }));
+    setIsCameraDraftDirty(true);
+  }, []);
+
+  const handleApplyCameraUpdate = useCallback(() => {
+    const controller = cameraControllerRef.current;
+    if (!controller || !parsedCameraRotation.value) {
+      return;
+    }
+
+    const applied = controller.applyCameraPose({
+      cameraPosition: translationEnabled ? parsedCameraPosition.value : undefined,
+      cameraRotation: parsedCameraRotation.value,
+    });
+    if (applied) {
+      setIsCameraDraftDirty(false);
+    }
+  }, [parsedCameraPosition.value, parsedCameraRotation.value, translationEnabled]);
+
+  const handleVoxelFollowChange = useCallback((axis: keyof CoordinateDraft, value: string) => {
+    setVoxelFollowDraft((current) => ({ ...current, [axis]: value }));
+  }, []);
+
+  const handleVoxelFollowButtonClick = useCallback(() => {
+    if (volumeViewerProps.followedTrackId !== null) {
+      return;
+    }
+
+    if (volumeViewerProps.followedVoxel) {
+      topMenu.onStopVoxelFollow();
+      return;
+    }
+
+    if (!parsedFollowVoxel.value) {
+      return;
+    }
+
+    const clampedCoordinates = {
+      x: Math.min(Math.max(Math.round(parsedFollowVoxel.value.x), 0), volumeDimensions.width - 1),
+      y: Math.min(Math.max(Math.round(parsedFollowVoxel.value.y), 0), volumeDimensions.height - 1),
+      z: Math.min(Math.max(Math.round(parsedFollowVoxel.value.z), 0), volumeDimensions.depth - 1),
+    };
+    setVoxelFollowDraft(coordinateToDraft(clampedCoordinates));
+    volumeViewerProps.onVoxelFollowRequest({
+      coordinates: clampedCoordinates,
+    });
+  }, [
+    parsedFollowVoxel.value,
+    topMenu,
+    volumeDimensions.depth,
+    volumeDimensions.height,
+    volumeDimensions.width,
+    volumeViewerProps,
+  ]);
+
+  const handleAddCameraView = useCallback(() => {
+    if (!cameraWindowState || volumeViewerProps.followedTrackId !== null) {
+      return;
+    }
+
+    setSavedCameraViews((current) => {
+      const viewMode = volumeViewerProps.followedVoxel ? 'voxel-follow' : 'free-roam';
+      const nextView: SavedCameraView =
+        viewMode === 'voxel-follow' && volumeViewerProps.followedVoxel
+          ? {
+              id: createSavedCameraViewId(Date.now() + current.length + 1),
+              label: buildAutoCameraViewLabel(current, viewMode, volumeViewerProps.followedVoxel.coordinates),
+              mode: viewMode,
+              cameraPosition: cameraWindowState.cameraPosition,
+              cameraRotation: cameraWindowState.cameraRotation,
+              followedVoxel: volumeViewerProps.followedVoxel.coordinates,
+            }
+          : {
+              id: createSavedCameraViewId(Date.now() + current.length + 1),
+              label: buildAutoCameraViewLabel(current, 'free-roam'),
+              mode: 'free-roam',
+              cameraPosition: cameraWindowState.cameraPosition,
+              cameraRotation: cameraWindowState.cameraRotation,
+            };
+      return [...current, nextView];
+    });
+  }, [cameraWindowState, volumeViewerProps.followedTrackId, volumeViewerProps.followedVoxel]);
+
+  const handleRemoveCameraView = useCallback(() => {
+    if (!selectedCameraViewId) {
+      return;
+    }
+    setSavedCameraViews((current) => current.filter((view) => view.id !== selectedCameraViewId));
+    setSelectedCameraViewId(null);
+  }, [selectedCameraViewId]);
+
+  const handleRenameCameraView = useCallback(() => {
+    if (!selectedCameraViewId) {
+      return;
+    }
+    const activeView = savedCameraViews.find((view) => view.id === selectedCameraViewId) ?? null;
+    if (!activeView) {
+      return;
+    }
+    const nextName =
+      typeof window !== 'undefined' && typeof window.prompt === 'function'
+        ? window.prompt('Rename view', activeView.label)
+        : activeView.label;
+    if (nextName === null) {
+      return;
+    }
+    const normalizedName = nextName.trim();
+    if (!normalizedName) {
+      return;
+    }
+    setSavedCameraViews((current) =>
+      current.map((view) => (view.id === selectedCameraViewId ? { ...view, label: normalizedName } : view))
+    );
+  }, [savedCameraViews, selectedCameraViewId]);
+
+  const handleClearCameraViews = useCallback(() => {
+    setSavedCameraViews([]);
+    setSelectedCameraViewId(null);
+  }, []);
+
+  const handleSelectCameraView = useCallback(
+    (viewId: string) => {
+      setSelectedCameraViewId(viewId);
+      if (volumeViewerProps.followedTrackId !== null) {
+        return;
+      }
+
+      const view = savedCameraViews.find((entry) => entry.id === viewId) ?? null;
+      if (!view) {
+        return;
+      }
+
+      const controller = cameraControllerRef.current;
+      if (!controller) {
+        return;
+      }
+
+      if (view.mode === 'free-roam') {
+        if (volumeViewerProps.followedVoxel) {
+          pendingCameraViewRef.current = view;
+          topMenu.onStopVoxelFollow();
+          return;
+        }
+      } else if (!coordinatesEqual(volumeViewerProps.followedVoxel?.coordinates, view.followedVoxel)) {
+        pendingCameraViewRef.current = view;
+        volumeViewerProps.onVoxelFollowRequest({
+          coordinates: view.followedVoxel,
+        });
+        return;
+      }
+
+      if (
+        controller.applyCameraPose({
+          cameraPosition: view.cameraPosition,
+          cameraRotation: view.cameraRotation,
+        })
+      ) {
+        setIsCameraDraftDirty(false);
+      }
+    },
+    [savedCameraViews, topMenu, volumeViewerProps],
+  );
+
+  const handleSaveCameraViews = useCallback(async () => {
+    if (savedCameraViews.length === 0) {
+      return;
+    }
+
+    const serialized = serializeSavedCameraViews({
+      shapeZYX: volumeShapeZYX,
+      views: savedCameraViews,
+    });
+    await saveTextFile(
+      serialized,
+      buildTimestampedFileName('camera_views', 'json'),
+      'application/json',
+      { 'application/json': ['.json'] },
+    );
+  }, [buildTimestampedFileName, saveTextFile, savedCameraViews, volumeShapeZYX]);
+
+  const handleLoadCameraFile = useCallback(
+    async (file: File) => {
+      try {
+        const loadedViews = parseSavedCameraViewsFromJson(await file.text(), volumeShapeZYX);
+        setSavedCameraViews(loadedViews);
+        setSelectedCameraViewId(null);
+      } catch (error) {
+        if (typeof window !== 'undefined' && typeof window.alert === 'function') {
+          window.alert(error instanceof Error ? error.message : 'Failed to load camera views file.');
+        }
+      }
+    },
+    [volumeShapeZYX],
+  );
+
+  const confirmCameraViewReplacement = useCallback(() => {
+    if (
+      savedCameraViews.length > 0 &&
+      typeof window !== 'undefined' &&
+      typeof window.confirm === 'function'
+    ) {
+      return window.confirm('Load camera views file and replace the current saved views?');
+    }
+    return true;
+  }, [savedCameraViews.length]);
+
+  const handleLoadCameraViews = useCallback(async () => {
+    if (!canLoadCameraViews) {
+      return;
+    }
+
+    const target = window as Window & {
+      showOpenFilePicker?: (options?: {
+        multiple?: boolean;
+        types?: Array<{
+          description?: string;
+          accept: Record<string, string[]>;
+        }>;
+      }) => Promise<FileSystemFileHandle[]>;
+    };
+
+    if (typeof target.showOpenFilePicker === 'function') {
+      try {
+        const [fileHandle] = await target.showOpenFilePicker({
+          multiple: false,
+          types: [{ accept: { 'application/json': ['.json'] } }],
+        });
+        if (!fileHandle) {
+          return;
+        }
+        const file = await fileHandle.getFile();
+        if (!confirmCameraViewReplacement()) {
+          return;
+        }
+        await handleLoadCameraFile(file);
+        return;
+      } catch {
+        // Fall back to the file input below.
+      }
+    }
+
+    const input = cameraLoadInputRef.current;
+    if (!input) {
+      return;
+    }
+    const pickerInput = input as HTMLInputElement & { showPicker?: () => void };
+    input.value = '';
+    if (typeof pickerInput.showPicker === 'function') {
+      try {
+        pickerInput.showPicker();
+        return;
+      } catch {
+        // Fall through to input.click() below.
+      }
+    }
+    input.click();
+  }, [canLoadCameraViews, confirmCameraViewReplacement, handleLoadCameraFile]);
+
   useEffect(() => {
     if (typeof window === 'undefined' || !import.meta.env?.DEV) {
       return;
@@ -691,6 +1161,47 @@ function ViewerShell({
       }
     };
   }, [measurableChannelSources]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || !import.meta.env?.DEV) {
+      return;
+    }
+
+    const getCameraWindowStateForTests = () => ({
+      cameraWindowState,
+      translationSpeedMultiplier,
+      rotationSpeedMultiplier,
+      savedViews: savedCameraViews,
+      selectedCameraViewId,
+      volumeShapeZYX,
+      followedTrackId: volumeViewerProps.followedTrackId,
+      followedVoxel: volumeViewerProps.followedVoxel?.coordinates ?? null,
+    });
+
+    (
+      window as Window & {
+        __LLSM_CAMERA_WINDOW_STATE__?: (() => ReturnType<typeof getCameraWindowStateForTests>) | null;
+      }
+    ).__LLSM_CAMERA_WINDOW_STATE__ = getCameraWindowStateForTests;
+
+    return () => {
+      const target = window as Window & {
+        __LLSM_CAMERA_WINDOW_STATE__?: (() => ReturnType<typeof getCameraWindowStateForTests>) | null;
+      };
+      if (target.__LLSM_CAMERA_WINDOW_STATE__ === getCameraWindowStateForTests) {
+        delete target.__LLSM_CAMERA_WINDOW_STATE__;
+      }
+    };
+  }, [
+    cameraWindowState,
+    rotationSpeedMultiplier,
+    savedCameraViews,
+    selectedCameraViewId,
+    translationSpeedMultiplier,
+    volumeShapeZYX,
+    volumeViewerProps.followedTrackId,
+    volumeViewerProps.followedVoxel,
+  ]);
 
   const showRenderingQualityControl = modeControls.is3dModeAvailable;
   const globalRenderControls = useMemo(() => {
@@ -783,10 +1294,13 @@ function ViewerShell({
     () => ({
       ...topMenu,
       onOpenChannelsWindow: openChannelsWindow,
+      onOpenCameraWindow: openCameraWindow,
+      onOpenCameraSettingsWindow: openCameraSettingsWindow,
       onOpenPropsWindow: openPropsWindow,
       onOpenPaintbrush: openPaintbrush,
       onOpenDrawRoiWindow: openDrawRoiWindow,
       onOpenRoiManagerWindow: openRoiManagerWindow,
+      onOpenSetMeasurementsWindow: handleOpenSetMeasurementsWindow,
       onOpenRecordWindow: openRecordWindow,
       onOpenRenderSettingsWindow: openViewerSettings,
       onOpenHoverSettingsWindow: openHoverSettingsWindow,
@@ -834,12 +1348,15 @@ function ViewerShell({
       hoverIntensityValueDigits,
       modeToggle,
       openAmplitudePlot,
+      openCameraWindow,
+      openCameraSettingsWindow,
       openPlotSettings,
       openChannelsWindow,
       openDiagnosticsWindow,
       openHoverSettingsWindow,
       openPaintbrush,
       openDrawRoiWindow,
+      handleOpenSetMeasurementsWindow,
       openRecordWindow,
       openRoiManagerWindow,
       openPropsWindow,
@@ -857,6 +1374,10 @@ function ViewerShell({
     () => ({
       ...volumeViewerWithCaptureTarget,
       hoverSettings,
+      translationSpeedMultiplier,
+      rotationSpeedMultiplier,
+      onCameraWindowStateChange: handleCameraWindowStateChange,
+      onRegisterCameraWindowController: handleRegisterCameraWindowController,
       viewerPropsConfig: {
         props: propsController.props,
         selectedPropId: propsController.selectedPropId,
@@ -906,6 +1427,10 @@ function ViewerShell({
       volumeViewerProps.temporalResolution,
       volumeViewerWithCaptureTarget,
       hoverSettings,
+      translationSpeedMultiplier,
+      rotationSpeedMultiplier,
+      handleCameraWindowStateChange,
+      handleRegisterCameraWindowController,
       workingRoi,
       playbackState.zSliderValue,
     ]
@@ -939,6 +1464,33 @@ function ViewerShell({
         }}
       />
 
+      <input
+        ref={cameraLoadInputRef}
+        type="file"
+        accept=".json,application/json"
+        data-camera-load-input="true"
+        style={{
+          position: 'fixed',
+          left: '-9999px',
+          top: '-9999px',
+          width: '1px',
+          height: '1px',
+          opacity: 0,
+          pointerEvents: 'none',
+        }}
+        onChange={async (event) => {
+          const file = event.target.files?.[0] ?? null;
+          event.target.value = '';
+          if (!file) {
+            return;
+          }
+          if (!confirmCameraViewReplacement()) {
+            return;
+          }
+          await handleLoadCameraFile(file);
+        }}
+      />
+
       <main className="viewer">
         <VolumeViewer
           {...volumeViewerPropsWithViewerProps}
@@ -968,8 +1520,66 @@ function ViewerShell({
         onClose={closeHelpMenu}
         initialPosition={navigationHelpInitialPosition}
         windowMargin={windowMargin}
-        width={controlWindowWidth}
+        width={controlWindowWidth * 2}
         resetSignal={resetToken}
+      />
+
+      {isCameraWindowOpen ? (
+        <CameraWindow
+          initialPosition={cameraWindowInitialPosition}
+          windowMargin={windowMargin}
+          resetSignal={resetToken}
+          cameraPositionDraft={cameraPositionDraft}
+          cameraRotationDraft={cameraRotationDraft}
+          translationEnabled={translationEnabled}
+          rotationEnabled={rotationEnabled}
+          canUpdate={canUpdateCamera}
+          voxelFollowDraft={
+            volumeViewerProps.followedTrackId !== null
+              ? EMPTY_COORDINATE_DRAFT
+              : voxelFollowDraft
+          }
+          voxelFollowLocked={voxelFollowLocked}
+          voxelFollowButtonLabel={voxelFollowButtonLabel}
+          voxelFollowButtonDisabled={voxelFollowButtonDisabled}
+          savedViews={savedCameraViews}
+          selectedViewId={selectedCameraViewId}
+          canActivateViews={canActivateCameraViews}
+          canAddView={canAddCameraView}
+          canRemoveView={canRemoveCameraView}
+          canSaveViews={canSaveCameraViews}
+          canLoadViews={canLoadCameraViews}
+          canClearViews={canClearCameraViews}
+          onCameraPositionChange={handleCameraPositionChange}
+          onCameraRotationChange={handleCameraRotationChange}
+          onApplyCameraUpdate={handleApplyCameraUpdate}
+          onVoxelFollowChange={handleVoxelFollowChange}
+          onVoxelFollowButtonClick={handleVoxelFollowButtonClick}
+          onAddView={handleAddCameraView}
+          onRemoveView={handleRemoveCameraView}
+          onRenameView={handleRenameCameraView}
+          onSaveViews={handleSaveCameraViews}
+          onLoadViews={handleLoadCameraViews}
+          onClearViews={handleClearCameraViews}
+          onSelectView={handleSelectCameraView}
+          onClose={closeCameraWindow}
+        />
+      ) : null}
+
+      <CameraSettingsWindow
+        layout={{
+          windowMargin,
+          controlWindowWidth,
+          cameraSettingsWindowInitialPosition,
+          resetToken,
+        }}
+        modeToggle={modeToggle}
+        isOpen={isCameraSettingsWindowOpen}
+        onClose={closeCameraSettingsWindow}
+        translationSpeedMultiplier={translationSpeedMultiplier}
+        rotationSpeedMultiplier={rotationSpeedMultiplier}
+        onTranslationSpeedMultiplierChange={setTranslationSpeedMultiplier}
+        onRotationSpeedMultiplierChange={setRotationSpeedMultiplier}
       />
 
       {isPaintbrushOpen ? (
@@ -1137,7 +1747,7 @@ function ViewerShell({
         />
       ) : null}
 
-      {measurementsSnapshot && isSetMeasurementsWindowOpen ? (
+      {isSetMeasurementsWindowOpen ? (
         <SetMeasurementsWindow
           initialPosition={setMeasurementsWindowInitialPosition}
           windowMargin={windowMargin}

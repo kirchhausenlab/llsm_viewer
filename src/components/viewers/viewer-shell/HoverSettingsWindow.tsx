@@ -44,7 +44,7 @@ export default function HoverSettingsWindow({
 
   return (
     <FloatingWindow
-      title="Hover Settings"
+      title="Hover settings"
       initialPosition={hoverSettingsWindowInitialPosition}
       width={`min(${controlWindowWidth}px, calc(100vw - ${windowMargin * 2}px))`}
       className="floating-window--hover-settings"

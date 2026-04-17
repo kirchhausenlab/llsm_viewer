@@ -26,6 +26,10 @@ import type { RenderStyle, SamplingMode } from '../../state/layerSettings';
 import type { TrackSetState } from '../../types/channelTracks';
 import type { PlaybackIndexWindow } from '../../shared/utils';
 import type {
+  CameraWindowController,
+  CameraWindowState,
+} from '../../types/camera';
+import type {
   DesktopViewState,
   DesktopViewStateMap,
   DesktopViewerCamera,
@@ -177,6 +181,10 @@ export type VolumeViewerProps = {
   onVolumeStepScaleChange?: (value: number) => void;
   onRegisterVolumeStepScaleChange?: (handler: ((value: number) => void) | null) => void;
   onCameraNavigationSample?: (sample: ViewerCameraNavigationSample) => void;
+  translationSpeedMultiplier?: number;
+  rotationSpeedMultiplier?: number;
+  onCameraWindowStateChange?: (state: CameraWindowState | null) => void;
+  onRegisterCameraWindowController?: (controller: CameraWindowController | null) => void;
   onRegisterReset: (handler: (() => void) | null) => void;
   onRegisterCaptureTarget?: (
     target: HTMLCanvasElement | (() => HTMLCanvasElement | null) | null,

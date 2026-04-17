@@ -14,12 +14,12 @@ const expectedMenus = [
   {
     buttonLabel: 'View',
     menuLabel: 'view menu',
-    items: ['Channels window', 'Camera', 'Record', 'Background', 'Render settings', 'Hover settings']
+    items: ['Channels', 'View selection', 'Screen capture', 'Background', 'Render settings', 'Camera settings', 'Hover settings']
   },
   {
     buttonLabel: 'Edit',
     menuLabel: 'edit menu',
-    items: ['Props', 'Paintbrush', 'Draw ROI', 'ROI Manager']
+    items: ['Props', 'Paintbrush', 'Draw ROI', 'ROI Manager', 'Set measurements']
   },
   {
     buttonLabel: 'Tracks',
