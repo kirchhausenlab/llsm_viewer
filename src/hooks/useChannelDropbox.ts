@@ -7,7 +7,7 @@ import {
   type DropboxAppKeySource,
   type DropboxChooserRequestOptions
 } from '../integrations/dropbox';
-import type { DropboxTarget } from '../components/pages/ChannelDropboxSection';
+import type { DropboxTarget } from '../types/dropbox';
 
 type UseChannelDropboxParams = {
   disabled: boolean;

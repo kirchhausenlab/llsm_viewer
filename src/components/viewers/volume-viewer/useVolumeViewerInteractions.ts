@@ -2,7 +2,12 @@ import { useCallback } from 'react';
 import * as THREE from 'three';
 import type { MutableRefObject } from 'react';
 import { HOVER_HIGHLIGHT_RADIUS_VOXELS } from './rendering';
-import type { HoveredVoxelInfo } from '../../../types/hover';
+import { RENDER_STYLE_BL } from '../../../state/layerSettings';
+import {
+  resolveDefaultHoverRadiusScale,
+  resolveDefaultHoverStrengthScale,
+} from '../../../shared/utils/hoverSettings';
+import type { HoveredVoxelInfo, HoverSettings } from '../../../types/hover';
 import type { VolumeResources, VolumeViewerProps } from '../VolumeViewer.types';
 
 function clampNumber(value: number, min: number, max: number): number {
@@ -10,6 +15,14 @@ function clampNumber(value: number, min: number, max: number): number {
     return min;
   }
   return Math.min(Math.max(value, min), max);
+}
+
+function resolveDefaultHoverRadiusVoxels(radius: number): number {
+  return HOVER_HIGHLIGHT_RADIUS_VOXELS * resolveDefaultHoverRadiusScale(radius);
+}
+
+function resolveDefaultHoverStrength(strength: number): number {
+  return resolveDefaultHoverStrengthScale(strength);
 }
 
 function resolveSliceTextureSize(resource: VolumeResources): { width: number; height: number } {
@@ -56,6 +69,7 @@ export function useVolumeViewerInteractions({
   voxelHoverDebugRef,
   setVoxelHoverDebug,
   isDevMode,
+  hoverSettings,
   onHoverVoxelChange,
 }: {
   layersRef: MutableRefObject<VolumeViewerProps['layers']>;
@@ -70,6 +84,7 @@ export function useVolumeViewerInteractions({
   voxelHoverDebugRef: MutableRefObject<string | null>;
   setVoxelHoverDebug: (value: string | null) => void;
   isDevMode: boolean;
+  hoverSettings: Pick<HoverSettings, 'type' | 'strength' | 'radius'>;
   onHoverVoxelChange?: (value: HoveredVoxelInfo | null) => void;
 }) {
   const applyHoverHighlightToResources = useCallback(() => {
@@ -80,6 +95,14 @@ export function useVolumeViewerInteractions({
       const uniforms = (resource.mesh.material as THREE.ShaderMaterial).uniforms;
       const layer = layersByKey.get(key);
       const isActive = Boolean(layerKey && normalizedPosition && layerKey === key);
+      const hoverVisualMode =
+        layer?.renderStyle === RENDER_STYLE_BL && hoverSettings.type === 'crosshair' ? 1 : 0;
+      const hoverRadius = hoverVisualMode > 0
+        ? HOVER_HIGHLIGHT_RADIUS_VOXELS
+        : resolveDefaultHoverRadiusVoxels(hoverSettings.radius);
+      const hoverStrength = hoverVisualMode > 0
+        ? 1
+        : resolveDefaultHoverStrength(hoverSettings.strength);
 
       if (resource.mode === 'slice') {
         if (uniforms.u_hoverActive) {
@@ -125,6 +148,12 @@ export function useVolumeViewerInteractions({
       if (uniforms.u_hoverActive) {
         uniforms.u_hoverActive.value = isActive ? 1 : 0;
       }
+      if (uniforms.u_hoverVisualMode) {
+        uniforms.u_hoverVisualMode.value = hoverVisualMode;
+      }
+      if (uniforms.u_hoverStrength) {
+        uniforms.u_hoverStrength.value = isActive ? hoverStrength : 0;
+      }
       if (uniforms.u_hoverSegmentationMode) {
         uniforms.u_hoverSegmentationMode.value = isActive && isSegmentationLayer && hasHoverLabel ? 1 : 0;
       }
@@ -148,17 +177,28 @@ export function useVolumeViewerInteractions({
           resource.dimensions.height * scaleY,
           resource.dimensions.depth * scaleZ,
         );
-        uniforms.u_hoverRadius.value = HOVER_HIGHLIGHT_RADIUS_VOXELS;
+        uniforms.u_hoverRadius.value = hoverRadius;
       } else {
         if (uniforms.u_hoverRadius) {
           uniforms.u_hoverRadius.value = 0;
+        }
+        if (uniforms.u_hoverStrength) {
+          uniforms.u_hoverStrength.value = 0;
         }
         if (uniforms.u_hoverScale) {
           uniforms.u_hoverScale.value.set(0, 0, 0);
         }
       }
     }
-  }, [hoveredVoxelRef, layersRef, resourcesRef, volumeAnisotropyScaleRef]);
+  }, [
+    hoverSettings.radius,
+    hoverSettings.strength,
+    hoverSettings.type,
+    hoveredVoxelRef,
+    layersRef,
+    resourcesRef,
+    volumeAnisotropyScaleRef
+  ]);
 
   const areHoverComponentsEqual = useCallback(
     (

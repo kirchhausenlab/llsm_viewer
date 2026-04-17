@@ -72,7 +72,7 @@ export async function launchViewerFromChannelFixtures(
     await nameInput.fill(channel.name);
     await nameInput.press('Enter');
 
-    const channelRow = targetTab.locator('xpath=ancestor::div[contains(@class,"setup-row")]').first();
+    const channelRow = targetTab.locator('xpath=ancestor::*[@role="listitem"][1]').first();
     const volumeInput = channelRow.locator('input[type="file"][accept*=".tif"]');
     await volumeInput.setInputFiles(channel.tiffPaths);
     const fileCountLabel =
@@ -103,7 +103,7 @@ export async function launchViewerFromChannelFixtures(
     await trackNameInput.fill(`Track ${trackIndex + 1}`);
     await trackNameInput.press('Enter');
 
-    const trackRow = trackTab.locator('xpath=ancestor::div[contains(@class,"setup-row")]').first();
+    const trackRow = trackTab.locator('xpath=ancestor::*[@role="listitem"][1]').first();
     const trackInput = trackRow.locator('input[type="file"][accept=".csv"]');
 
     if (channel.trackCsv) {
@@ -115,7 +115,7 @@ export async function launchViewerFromChannelFixtures(
       await expect(trackRow.locator('.channel-tracks-subtitle')).toContainText('1 file selected');
     }
 
-    const bindSelect = trackRow.locator('.track-card-bind-select');
+    const bindSelect = trackRow.getByLabel('Bind to:');
     await bindSelect.selectOption({ label: channel.name });
   }
 

@@ -11,6 +11,7 @@ import {
 } from '../../../core/volumeProcessing';
 import type { PreprocessedStorage } from '../../storage/preprocessedStorage';
 import { sortVolumeFiles } from '../appHelpers';
+import { resolveImagejPageChannelLayout, type ImagejHyperstackLayout } from '../tiffHyperstack';
 import { computeAnisotropyScale } from '../anisotropyCorrection';
 import type { VolumePayload, VolumeTypedArray } from '../../../types/volume';
 import { createVolumeTypedArray, createWritableVolumeArray, getBytesPerValue } from '../../../types/volume';
@@ -47,17 +48,7 @@ import {
   supportsPreprocessScalePyramidWorker,
   type PreprocessScalePyramidWorkerResultScale
 } from './preprocessScalePyramidWorker';
-import { createZarrChunkKeyFromCoords } from './chunkKey';
 import { computeMultiscaleGeometryLevels } from './mipPolicy';
-import {
-  computeExpectedChunkCountForShard,
-  createShardCoordKey,
-  encodeShardEntries,
-  getShardChunkLocationForLayout,
-  getShardLayoutForArray,
-  isShardedArrayDescriptor,
-  type ShardLayout
-} from './sharding';
 import {
   applyBackgroundMaskInPlace,
   buildBackgroundMaskFromTypedArray,
@@ -72,6 +63,38 @@ import {
   resolveBrickSubcellGrid,
   writeBrickSubcellChunkData
 } from '../brickSubcell';
+import {
+  DEFAULT_CHUNK_TARGET_BYTES,
+  DEFAULT_PREPROCESS_MAX_IN_FLIGHT_WRITES,
+  DEFAULT_SHARD_MAX_CHUNKS_PER_AXIS,
+  DEFAULT_SHARD_TARGET_BYTES,
+  buildSkipHierarchyGridShapes,
+  computeLeafGridShapeForScaleDescriptor,
+  createZarrBackgroundMaskArrayPath,
+  createZarrScaleDataArrayPath,
+  createZarrScaleHistogramArrayPath,
+  createZarrScalePlaybackAtlasDataPath,
+  createZarrScalePlaybackAtlasIndicesArrayPath,
+  createZarrScaleSkipHierarchyArrayPath,
+  createZarrScaleSubcellArrayPath,
+  normalizePositiveInteger,
+  resolvePreprocessExecutionMode,
+  resolvePreprocessStreamingThresholdBytes,
+  resolveWorkerizeNormalizationDownsample,
+  type ResolvedPreprocessExecutionMode
+} from './preprocess/config';
+import { createChunkWriteDispatcher, type ChunkWriteDispatcher } from './preprocess/chunkWriter';
+import {
+  assertSkipHierarchyDescriptorMatchesGrid,
+  buildPlaybackAtlasBlock,
+  buildSkipHierarchyLevelBuffersFromLeaf,
+  chunkLength,
+  chunkStart,
+  createSyntheticDescriptorForBlob,
+  extractDataChunkBytesAndComputeStatistics,
+  writeBackgroundMaskChunksForScale,
+  writeDataChunksForScale
+} from './preprocess/chunkEncoding';
 
 export type PreprocessLayerSource = {
   channelId: string;
@@ -80,6 +103,8 @@ export type PreprocessLayerSource = {
   label: string;
   files: File[];
   isSegmentation: boolean;
+  sourceChannelCount?: number;
+  sourceChannelIndex?: number | null;
 };
 
 export type PreprocessDatasetProgress =
@@ -100,6 +125,27 @@ export type PreprocessDatasetProgress =
 
 type LoadVolumesFromFiles = (files: File[]) => Promise<VolumePayload[]>;
 export type PreprocessInputInterpretation = '3d-movie' | '2d-movie' | 'single-3d-volume';
+
+function getLogicalSourceChannelCount(
+  layer: Pick<PreprocessLayerSource, 'isSegmentation' | 'sourceChannelCount' | 'sourceChannelIndex'>,
+  rawChannels: number
+): number {
+  if (!layer.isSegmentation && rawChannels > 1 && typeof layer.sourceChannelIndex === 'number') {
+    return 1;
+  }
+  return rawChannels;
+}
+
+function getResolvedSourceChannelIndex(
+  layer: Pick<PreprocessLayerSource, 'isSegmentation' | 'sourceChannelIndex'>,
+): number | null {
+  if (layer.isSegmentation) {
+    return null;
+  }
+  return typeof layer.sourceChannelIndex === 'number' && Number.isFinite(layer.sourceChannelIndex)
+    ? Math.max(0, Math.floor(layer.sourceChannelIndex))
+    : null;
+}
 
 export type PreprocessArrayShardingPolicyOverrides = {
   targetShardBytes?: number;
@@ -174,119 +220,6 @@ function isAbortLikeError(error: unknown): boolean {
   );
 }
 
-function resolveWorkerizeNormalizationDownsample(
-  options: PreprocessDatasetToStorageOptions['processingStrategy'] | undefined
-): boolean {
-  if (options?.workerizeNormalizationDownsample === false) {
-    return false;
-  }
-  return true;
-}
-
-type ResolvedPreprocessExecutionMode = 'in-memory' | 'streaming';
-
-function resolvePreprocessExecutionMode(
-  options: PreprocessDatasetToStorageOptions['processingStrategy'] | undefined
-): 'auto' | ResolvedPreprocessExecutionMode {
-  const requested = options?.executionMode ?? DEFAULT_PREPROCESS_EXECUTION_MODE;
-  if (requested === 'auto' || requested === 'in-memory' || requested === 'streaming') {
-    return requested;
-  }
-  return DEFAULT_PREPROCESS_EXECUTION_MODE;
-}
-
-function resolvePreprocessStreamingThresholdBytes(
-  options: PreprocessDatasetToStorageOptions['processingStrategy'] | undefined
-): number {
-  const configured = options?.streamingThresholdBytes;
-  if (!Number.isFinite(configured) || (configured ?? 0) <= 0) {
-    return DEFAULT_PREPROCESS_STREAMING_THRESHOLD_BYTES;
-  }
-  return Math.max(1, Math.floor(configured ?? DEFAULT_PREPROCESS_STREAMING_THRESHOLD_BYTES));
-}
-
-function createZarrScaleDataArrayPath(channelId: string, layerKey: string, scaleLevel: number): string {
-  return `channels/${channelId}/${layerKey}/scales/${scaleLevel}/data`;
-}
-
-function createZarrScaleLabelsArrayPath(channelId: string, layerKey: string, scaleLevel: number): string {
-  return `channels/${channelId}/${layerKey}/scales/${scaleLevel}/labels`;
-}
-
-function createZarrScaleSkipHierarchyArrayPath(
-  channelId: string,
-  layerKey: string,
-  scaleLevel: number,
-  hierarchyLevel: number,
-  stat: 'min' | 'max' | 'occupancy'
-): string {
-  return `channels/${channelId}/${layerKey}/scales/${scaleLevel}/skip-hierarchy/levels/${hierarchyLevel}/${stat}`;
-}
-
-function createZarrScaleHistogramArrayPath(channelId: string, layerKey: string, scaleLevel: number): string {
-  return `channels/${channelId}/${layerKey}/scales/${scaleLevel}/histogram`;
-}
-
-function createZarrScaleSubcellArrayPath(channelId: string, layerKey: string, scaleLevel: number): string {
-  return `channels/${channelId}/${layerKey}/scales/${scaleLevel}/subcell`;
-}
-
-function createZarrScalePlaybackAtlasIndicesArrayPath(
-  channelId: string,
-  layerKey: string,
-  scaleLevel: number
-): string {
-  return `channels/${channelId}/${layerKey}/scales/${scaleLevel}/playback-atlas/indices`;
-}
-
-function createZarrScalePlaybackAtlasDataPath(channelId: string, layerKey: string, scaleLevel: number): string {
-  return `channels/${channelId}/${layerKey}/scales/${scaleLevel}/playback-atlas/data`;
-}
-
-function createZarrBackgroundMaskArrayPath(scaleLevel: number): string {
-  return `background-mask/scales/${scaleLevel}/data`;
-}
-
-function computeLeafGridShapeForScaleDescriptor(dataDescriptor: ZarrArrayDescriptor): [number, number, number] {
-  const chunkDepth = dataDescriptor.chunkShape[1] ?? 1;
-  const chunkHeight = dataDescriptor.chunkShape[2] ?? 1;
-  const chunkWidth = dataDescriptor.chunkShape[3] ?? 1;
-  const depth = dataDescriptor.shape[1] ?? 1;
-  const height = dataDescriptor.shape[2] ?? 1;
-  const width = dataDescriptor.shape[3] ?? 1;
-  return [
-    Math.max(1, Math.ceil(depth / Math.max(1, chunkDepth))),
-    Math.max(1, Math.ceil(height / Math.max(1, chunkHeight))),
-    Math.max(1, Math.ceil(width / Math.max(1, chunkWidth)))
-  ];
-}
-
-function buildSkipHierarchyGridShapes(leafGridShape: [number, number, number]): [number, number, number][] {
-  const levels: [number, number, number][] = [leafGridShape];
-  while (true) {
-    const previous = levels[levels.length - 1];
-    if (!previous) {
-      break;
-    }
-    if (previous[0] === 1 && previous[1] === 1 && previous[2] === 1) {
-      break;
-    }
-    levels.push([
-      Math.max(1, Math.ceil(previous[0] / 2)),
-      Math.max(1, Math.ceil(previous[1] / 2)),
-      Math.max(1, Math.ceil(previous[2] / 2))
-    ]);
-  }
-  return levels;
-}
-
-const DEFAULT_CHUNK_TARGET_BYTES = 256 * 1024;
-const DEFAULT_SHARD_TARGET_BYTES = 16 * 1024 * 1024;
-const DEFAULT_SHARD_MAX_CHUNKS_PER_AXIS = 8;
-const DEFAULT_PREPROCESS_MAX_IN_FLIGHT_WRITES = 4;
-const DEFAULT_PREPROCESS_EXECUTION_MODE = 'auto' as const;
-const DEFAULT_PREPROCESS_STREAMING_THRESHOLD_BYTES = 512 * 1024 * 1024;
-
 type ShardingArrayPolicy = {
   targetShardBytes: number;
   maxChunksPerAxis: number;
@@ -353,16 +286,6 @@ type ShardingStrategy = {
   enabled: boolean;
   arrayPolicies: Record<ZarrArrayShardingPlanArrayKind, ShardingArrayPolicy>;
 };
-
-function normalizePositiveInteger(value: number | undefined, fallback: number, label: string): number {
-  if (value === undefined) {
-    return fallback;
-  }
-  if (!Number.isFinite(value) || value <= 0) {
-    throw new Error(`${label} must be a positive integer, received ${String(value)}.`);
-  }
-  return Math.floor(value);
-}
 
 function resolveShardingStrategy(
   options: PreprocessDatasetToStorageOptions['storageStrategy'] | undefined
@@ -541,26 +464,6 @@ function getPlaybackBrickAtlasTextureChannels(textureFormat: PreprocessedBrickAt
   return 4;
 }
 
-function mapPlaybackSourceChannelToTextureChannel(
-  sourceChannel: number,
-  sourceChannelCount: number,
-  textureFormat: PreprocessedBrickAtlasTextureFormat
-): number | null {
-  if (textureFormat === 'red') {
-    return sourceChannel === 0 ? 0 : null;
-  }
-  if (textureFormat === 'rg') {
-    return sourceChannel >= 0 && sourceChannel <= 1 ? sourceChannel : null;
-  }
-  if (sourceChannel < 0 || sourceChannel > 3) {
-    return null;
-  }
-  if (sourceChannelCount === 3 && sourceChannel === 3) {
-    return null;
-  }
-  return sourceChannel;
-}
-
 function createPlaybackAtlasBlobDescriptor({
   path,
   entryCount,
@@ -598,16 +501,6 @@ function createPlaybackAtlasBlobDescriptor({
         ? policy.reason
         : `Advisory sharding plan. Enable storageStrategy.sharding.enabled to write/read real shards. ${policy.reason}`
     }
-  };
-}
-
-function createSyntheticDescriptorForBlob(descriptor: PreprocessedShardedBlobDescriptor): ZarrArrayDescriptor {
-  return {
-    path: descriptor.path,
-    shape: [descriptor.entryCount],
-    chunkShape: [1],
-    dataType: 'uint8',
-    ...(descriptor.sharding !== undefined ? { sharding: descriptor.sharding } : {})
   };
 }
 
@@ -988,167 +881,6 @@ function buildLayerScaleDescriptors({
   return scales;
 }
 
-type PendingShard = {
-  descriptor: ZarrArrayDescriptor;
-  layout: ShardLayout;
-  shardCoords: number[];
-  shardPath: string;
-  expectedChunkCount: number;
-  entriesByLocalCoords: Map<string, { localChunkCoords: number[]; bytes: Uint8Array }>;
-};
-
-type ChunkWriteDispatcher = {
-  writeChunk: (params: {
-    descriptor: ZarrArrayDescriptor;
-    chunkCoords: readonly number[];
-    bytes: Uint8Array;
-    signal?: AbortSignal;
-  }) => Promise<void>;
-  flush: (signal?: AbortSignal) => Promise<void>;
-};
-
-function createChunkWriteDispatcher(
-  storage: PreprocessedStorage,
-  options?: { maxInFlightWrites?: number }
-): ChunkWriteDispatcher {
-  const pendingShardsByPath = new Map<string, PendingShard>();
-  const shardLayoutByDescriptorPath = new Map<string, ShardLayout>();
-  const maxInFlightWrites = normalizePositiveInteger(
-    options?.maxInFlightWrites,
-    DEFAULT_PREPROCESS_MAX_IN_FLIGHT_WRITES,
-    'storageStrategy.maxInFlightChunkWrites'
-  );
-  const inFlightWrites = new Set<Promise<void>>();
-  let writeFailure: Error | null = null;
-
-  const throwIfWriteFailed = () => {
-    if (writeFailure) {
-      throw writeFailure;
-    }
-  };
-
-  const awaitWriteCapacity = async (signal?: AbortSignal) => {
-    while (inFlightWrites.size >= maxInFlightWrites) {
-      throwIfAborted(signal);
-      const writes = Array.from(inFlightWrites);
-      await Promise.race(writes);
-      throwIfWriteFailed();
-    }
-  };
-
-  const queueWrite = async (writeOp: () => Promise<void>, signal?: AbortSignal) => {
-    throwIfAborted(signal);
-    throwIfWriteFailed();
-    await awaitWriteCapacity(signal);
-    throwIfWriteFailed();
-
-    let writePromise: Promise<void>;
-    writePromise = writeOp()
-      .catch((error) => {
-        if (!writeFailure) {
-          writeFailure = error instanceof Error ? error : new Error(String(error));
-        }
-      })
-      .finally(() => {
-        inFlightWrites.delete(writePromise);
-      });
-
-    inFlightWrites.add(writePromise);
-  };
-
-  const flushQueuedWrites = async (signal?: AbortSignal) => {
-    while (inFlightWrites.size > 0) {
-      throwIfAborted(signal);
-      const writes = Array.from(inFlightWrites);
-      await Promise.allSettled(writes);
-    }
-    throwIfWriteFailed();
-  };
-
-  const flushShard = async (pendingShard: PendingShard, signal?: AbortSignal) => {
-    throwIfAborted(signal);
-    if (pendingShard.entriesByLocalCoords.size === 0) {
-      pendingShardsByPath.delete(pendingShard.shardPath);
-      return;
-    }
-    const encodedShard = encodeShardEntries(
-      pendingShard.shardCoords.length,
-      Array.from(pendingShard.entriesByLocalCoords.values())
-    );
-    await queueWrite(() => storage.writeFile(pendingShard.shardPath, encodedShard), signal);
-    pendingShardsByPath.delete(pendingShard.shardPath);
-  };
-
-  const getCachedShardLayout = (descriptor: ZarrArrayDescriptor): ShardLayout => {
-    const cached = shardLayoutByDescriptorPath.get(descriptor.path);
-    if (cached) {
-      return cached;
-    }
-    const resolved = getShardLayoutForArray(descriptor);
-    if (!resolved) {
-      throw new Error(`Failed to resolve sharding layout for ${descriptor.path}.`);
-    }
-    shardLayoutByDescriptorPath.set(descriptor.path, resolved);
-    return resolved;
-  };
-
-  const writeChunk: ChunkWriteDispatcher['writeChunk'] = async ({
-    descriptor,
-    chunkCoords,
-    bytes,
-    signal
-  }) => {
-    throwIfAborted(signal);
-    throwIfWriteFailed();
-    if (!isShardedArrayDescriptor(descriptor)) {
-      const chunkKey = createZarrChunkKeyFromCoords(chunkCoords);
-      await queueWrite(() => storage.writeFile(`${descriptor.path}/${chunkKey}`, bytes), signal);
-      return;
-    }
-
-    const layout = getCachedShardLayout(descriptor);
-    const location = getShardChunkLocationForLayout(descriptor, layout, chunkCoords);
-    const shardKey = location.shardPath;
-    let pendingShard = pendingShardsByPath.get(shardKey) ?? null;
-    if (!pendingShard) {
-      pendingShard = {
-        descriptor,
-        layout,
-        shardCoords: location.shardCoords,
-        shardPath: location.shardPath,
-        expectedChunkCount: computeExpectedChunkCountForShard(layout, location.shardCoords),
-        entriesByLocalCoords: new Map()
-      };
-      pendingShardsByPath.set(shardKey, pendingShard);
-    }
-
-    const localKey = createShardCoordKey(location.localChunkCoords);
-    if (pendingShard.entriesByLocalCoords.has(localKey)) {
-      throw new Error(
-        `Duplicate chunk write while encoding shard ${location.shardPath} at local coord ${localKey}.`
-      );
-    }
-    pendingShard.entriesByLocalCoords.set(localKey, {
-      localChunkCoords: location.localChunkCoords,
-      bytes: bytes.slice()
-    });
-
-    if (pendingShard.entriesByLocalCoords.size >= pendingShard.expectedChunkCount) {
-      await flushShard(pendingShard, signal);
-    }
-  };
-
-  const flush: ChunkWriteDispatcher['flush'] = async (signal) => {
-    const pending = Array.from(pendingShardsByPath.values());
-    for (const pendingShard of pending) {
-      await flushShard(pendingShard, signal);
-    }
-    await flushQueuedWrites(signal);
-  };
-
-  return { writeChunk, flush };
-}
-
 function computeSliceMinMax(slice: VolumeTypedArray): { min: number; max: number } {
   let min = Number.POSITIVE_INFINITY;
   let max = Number.NEGATIVE_INFINITY;
@@ -1265,7 +997,10 @@ async function loadLayerVolumeByFileIndex({
   if (!file) {
     throw new Error(`Missing source file #${fileIndex + 1} for layer "${layer.key}".`);
   }
-  const volume = await loadVolumeFor3dTimepoint(file, loader, signal);
+  const volume = extractSelectedSourceChannelFromVolumePayload(
+    await loadVolumeFor3dTimepoint(file, loader, signal),
+    layer
+  );
   cacheLayerVolume(decodedVolumeCacheByLayerKey, layer.key, fileIndex, volume);
   return volume;
 }
@@ -1403,7 +1138,9 @@ type StreamingTimepointSliceSource =
 type StreamingPreparedLayerSource = {
   layer: PreprocessLayerSource;
   timepointCount: number;
+  rawSourceMetadata: LayerMetadata;
   sourceMetadata: LayerMetadata;
+  imagejPageChannelLayout: ImagejHyperstackLayout | null;
   getTimepointSource: (timepoint: number) => StreamingTimepointSliceSource;
 };
 
@@ -1413,6 +1150,7 @@ type ProbedTiffFileMetadata = {
   depth: number;
   channels: number;
   dataType: VolumePayload['dataType'];
+  imagejPageChannelLayout: ImagejHyperstackLayout | null;
 };
 
 type SupportedTypedArray = VolumeTypedArray;
@@ -1458,6 +1196,81 @@ function ensureTypedArrayMatchesExpectedDataType(
   return array;
 }
 
+function extractSelectedSourceChannelFromTypedArray({
+  source,
+  sourceChannels,
+  channelIndex,
+  dataType,
+  context
+}: {
+  source: SupportedTypedArray;
+  sourceChannels: number;
+  channelIndex: number;
+  dataType: VolumePayload['dataType'];
+  context: string;
+}): SupportedTypedArray {
+  if (sourceChannels <= 1) {
+    if (channelIndex > 0) {
+      throw new Error(`${context} cannot select channel ${channelIndex + 1} from a single-channel source.`);
+    }
+    return source;
+  }
+  if (channelIndex < 0 || channelIndex >= sourceChannels) {
+    throw new Error(`${context} requested source channel ${channelIndex + 1} of ${sourceChannels}.`);
+  }
+  if (source.length % sourceChannels !== 0) {
+    throw new Error(`${context} returned a sample count that is not divisible by its channel count.`);
+  }
+
+  const voxelCount = Math.floor(source.length / sourceChannels);
+  const extracted = createWritableVolumeArray(dataType, voxelCount) as SupportedTypedArray;
+  for (let voxelIndex = 0; voxelIndex < voxelCount; voxelIndex += 1) {
+    extracted[voxelIndex] = source[voxelIndex * sourceChannels + channelIndex] ?? 0;
+  }
+  return extracted;
+}
+
+function extractSelectedSourceChannelFromVolumePayload(
+  volume: VolumePayload,
+  layer: Pick<PreprocessLayerSource, 'channelLabel' | 'sourceChannelCount' | 'sourceChannelIndex' | 'isSegmentation'>
+): VolumePayload {
+  const channelIndex = getResolvedSourceChannelIndex(layer);
+  if (channelIndex === null) {
+    return volume;
+  }
+
+  const expectedSourceChannels =
+    typeof layer.sourceChannelCount === 'number' && Number.isFinite(layer.sourceChannelCount)
+      ? Math.max(1, Math.floor(layer.sourceChannelCount))
+      : volume.channels;
+  if (volume.channels !== expectedSourceChannels) {
+    throw new Error(
+      `Layer "${layer.channelLabel}" expected ${expectedSourceChannels} source channels but decoded ${volume.channels}.`
+    );
+  }
+
+  const source = createVolumeTypedArray(volume.dataType, volume.data);
+  const extracted = extractSelectedSourceChannelFromTypedArray({
+    source,
+    sourceChannels: volume.channels,
+    channelIndex,
+    dataType: volume.dataType,
+    context: `Layer "${layer.channelLabel}"`
+  });
+  const { min, max } = computeSliceMinMax(extracted);
+
+  return {
+    width: volume.width,
+    height: volume.height,
+    depth: volume.depth,
+    channels: 1,
+    dataType: volume.dataType,
+    min,
+    max,
+    data: extracted.buffer.slice(extracted.byteOffset, extracted.byteOffset + extracted.byteLength)
+  };
+}
+
 function resolveInputInterpretation(
   mode: PreprocessDatasetToStorageOptions['inputInterpretation']
 ): PreprocessInputInterpretation {
@@ -1477,6 +1290,11 @@ async function probeTiffFileMetadata(file: File, signal?: AbortSignal): Promise<
   const width = firstImage.getWidth();
   const height = firstImage.getHeight();
   const channels = firstImage.getSamplesPerPixel();
+  const imagejPageChannelLayout = resolveImagejPageChannelLayout({
+    samplesPerPixel: channels,
+    imageCount,
+    imageDescription: firstImage.fileDirectory.ImageDescription ?? null
+  });
   const firstRasterRaw = (await firstImage.readRasters({ interleave: true })) as unknown;
   if (!ArrayBuffer.isView(firstRasterRaw)) {
     throw new Error(`File "${file.name}" does not provide raster data as a typed array.`);
@@ -1494,14 +1312,16 @@ async function probeTiffFileMetadata(file: File, signal?: AbortSignal): Promise<
     height,
     depth: imageCount,
     channels,
-    dataType
+    dataType,
+    imagejPageChannelLayout
   };
 }
 
 function estimatePreparedLayerVolumeBytes(layer: StreamingPreparedLayerSource): number {
+  const rawMetadata = layer.rawSourceMetadata;
   const metadata = layer.sourceMetadata;
   const voxelCount = metadata.width * metadata.height * metadata.depth;
-  const sourceBytes = voxelCount * metadata.channels * getBytesPerValue(metadata.dataType);
+  const sourceBytes = voxelCount * rawMetadata.channels * getBytesPerValue(rawMetadata.dataType);
   const outputBytes = voxelCount * metadata.channels * getBytesPerValue(layer.layer.isSegmentation ? 'uint16' : 'uint8');
   return sourceBytes + outputBytes * 2;
 }
@@ -1547,19 +1367,36 @@ async function prepareStreamingLayerSources({
       throw new Error(`Layer "${layer.channelLabel}" does not contain TIFF files.`);
     }
     const firstMetadata = await probeTiffFileMetadata(firstFile, signal);
+    const rawSourceMetadata: LayerMetadata = {
+      width: firstMetadata.width,
+      height: firstMetadata.height,
+      depth: firstMetadata.depth,
+      channels: firstMetadata.channels,
+      dataType: firstMetadata.dataType
+    };
+    const sourceChannelCount = firstMetadata.imagejPageChannelLayout?.channels ?? firstMetadata.channels;
+    const logicalDepth = firstMetadata.imagejPageChannelLayout?.slices ?? firstMetadata.depth;
+    const resolvedSourceChannelIndex = getResolvedSourceChannelIndex(layer);
+    if (resolvedSourceChannelIndex !== null && resolvedSourceChannelIndex >= sourceChannelCount) {
+      throw new Error(
+        `Layer "${layer.channelLabel}" requested source channel ${resolvedSourceChannelIndex + 1} of ${sourceChannelCount}.`
+      );
+    }
+    const logicalSourceMetadata: LayerMetadata = {
+      width: firstMetadata.width,
+      height: firstMetadata.height,
+      depth: logicalDepth,
+      channels: getLogicalSourceChannelCount(layer, sourceChannelCount),
+      dataType: firstMetadata.dataType
+    };
 
     if (inputInterpretation === '3d-movie') {
-      const sourceMetadata: LayerMetadata = {
-        width: firstMetadata.width,
-        height: firstMetadata.height,
-        depth: firstMetadata.depth,
-        channels: firstMetadata.channels,
-        dataType: firstMetadata.dataType
-      };
       const prepared: StreamingPreparedLayerSource = {
         layer,
         timepointCount: layer.files.length,
-        sourceMetadata,
+        rawSourceMetadata,
+        sourceMetadata: logicalSourceMetadata,
+        imagejPageChannelLayout: firstMetadata.imagejPageChannelLayout,
         getTimepointSource: (timepoint) => {
           const file = layer.files[timepoint];
           if (!file) {
@@ -1569,8 +1406,8 @@ async function prepareStreamingLayerSources({
             kind: 'single-file',
             file,
             startSlice: 0,
-            depth: sourceMetadata.depth,
-            expectedFileDepth: sourceMetadata.depth,
+            depth: rawSourceMetadata.depth,
+            expectedFileDepth: rawSourceMetadata.depth,
             depthValidation: 'shape'
           };
         }
@@ -1586,17 +1423,19 @@ async function prepareStreamingLayerSources({
           width: firstMetadata.width,
           height: firstMetadata.height,
           depth: 1,
-          channels: firstMetadata.channels,
+          channels: getLogicalSourceChannelCount(layer, sourceChannelCount),
           dataType: firstMetadata.dataType
         };
-        const timepointCount = firstMetadata.depth;
+        const timepointCount = logicalDepth;
         if (timepointCount <= 0) {
           throw new Error(`Layer "${layer.channelLabel}" did not decode any image planes.`);
         }
         const prepared: StreamingPreparedLayerSource = {
           layer,
           timepointCount,
+          rawSourceMetadata,
           sourceMetadata,
+          imagejPageChannelLayout: firstMetadata.imagejPageChannelLayout,
           getTimepointSource: (timepoint) => ({
             kind: 'single-file',
             file: firstFile,
@@ -1614,9 +1453,9 @@ async function prepareStreamingLayerSources({
         continue;
       }
 
-      if (firstMetadata.depth !== 1) {
+      if (logicalDepth !== 1) {
         throw new Error(
-          `Layer "${layer.channelLabel}" in 2D movie mode accepts either a single 3D TIFF or a sequence of 2D TIFFs. File "${firstFile.name}" is 3D (depth ${firstMetadata.depth}).`
+          `Layer "${layer.channelLabel}" in 2D movie mode accepts either a single 3D TIFF or a sequence of 2D TIFFs. File "${firstFile.name}" is 3D (depth ${logicalDepth}).`
         );
       }
 
@@ -1624,13 +1463,15 @@ async function prepareStreamingLayerSources({
         width: firstMetadata.width,
         height: firstMetadata.height,
         depth: 1,
-        channels: firstMetadata.channels,
+        channels: getLogicalSourceChannelCount(layer, sourceChannelCount),
         dataType: firstMetadata.dataType
       };
       const prepared: StreamingPreparedLayerSource = {
         layer,
         timepointCount: layer.files.length,
+        rawSourceMetadata,
         sourceMetadata,
+        imagejPageChannelLayout: firstMetadata.imagejPageChannelLayout,
         getTimepointSource: (timepoint) => {
           const file = layer.files[timepoint];
           if (!file) {
@@ -1655,14 +1496,16 @@ async function prepareStreamingLayerSources({
       const sourceMetadata: LayerMetadata = {
         width: firstMetadata.width,
         height: firstMetadata.height,
-        depth: firstMetadata.depth,
-        channels: firstMetadata.channels,
+        depth: logicalDepth,
+        channels: getLogicalSourceChannelCount(layer, sourceChannelCount),
         dataType: firstMetadata.dataType
       };
       const prepared: StreamingPreparedLayerSource = {
         layer,
         timepointCount: 1,
+        rawSourceMetadata,
         sourceMetadata,
+        imagejPageChannelLayout: firstMetadata.imagejPageChannelLayout,
         getTimepointSource: () => ({
           kind: 'single-file',
           file: firstFile,
@@ -1677,9 +1520,9 @@ async function prepareStreamingLayerSources({
       continue;
     }
 
-    if (firstMetadata.depth !== 1) {
+    if (logicalDepth !== 1) {
       throw new Error(
-        `Layer "${layer.channelLabel}" in Single 3D volume mode accepts either a single 3D TIFF or a sequence of 2D TIFFs. File "${firstFile.name}" is 3D (depth ${firstMetadata.depth}).`
+        `Layer "${layer.channelLabel}" in Single 3D volume mode accepts either a single 3D TIFF or a sequence of 2D TIFFs. File "${firstFile.name}" is 3D (depth ${logicalDepth}).`
       );
     }
 
@@ -1687,13 +1530,15 @@ async function prepareStreamingLayerSources({
       width: firstMetadata.width,
       height: firstMetadata.height,
       depth: layer.files.length,
-      channels: firstMetadata.channels,
+      channels: getLogicalSourceChannelCount(layer, sourceChannelCount),
       dataType: firstMetadata.dataType
     };
     const prepared: StreamingPreparedLayerSource = {
       layer,
       timepointCount: 1,
+      rawSourceMetadata,
       sourceMetadata,
+      imagejPageChannelLayout: firstMetadata.imagejPageChannelLayout,
       getTimepointSource: () => ({
         kind: 'multi-file-depth1',
         files: layer.files,
@@ -1771,7 +1616,10 @@ async function forEachSliceInStreamingTimepointSource({
   layer,
   timepoint,
   source,
-  expectedMetadata,
+  rawExpectedMetadata,
+  outputMetadata,
+  selectedSourceChannelIndex,
+  imagejPageChannelLayout,
   tiffByFileCache,
   signal,
   onSlice
@@ -1779,12 +1627,17 @@ async function forEachSliceInStreamingTimepointSource({
   layer: PreprocessLayerSource;
   timepoint: number;
   source: StreamingTimepointSliceSource;
-  expectedMetadata: LayerMetadata;
+  rawExpectedMetadata: LayerMetadata;
+  outputMetadata: LayerMetadata;
+  selectedSourceChannelIndex: number | null;
+  imagejPageChannelLayout: ImagejHyperstackLayout | null;
   tiffByFileCache: TiffByFileCache;
   signal?: AbortSignal;
   onSlice: (slice: SupportedTypedArray, z: number) => Promise<void> | void;
 }): Promise<void> {
-  const expectedSliceLength = expectedMetadata.width * expectedMetadata.height * expectedMetadata.channels;
+  const rawExpectedSliceLength =
+    rawExpectedMetadata.width * rawExpectedMetadata.height * rawExpectedMetadata.channels;
+  const outputSliceLength = outputMetadata.width * outputMetadata.height * outputMetadata.channels;
 
   if (source.kind === 'single-file') {
     const tiff = await getCachedTiffForFile(source.file, tiffByFileCache, signal);
@@ -1806,28 +1659,31 @@ async function forEachSliceInStreamingTimepointSource({
         createShapeMismatchErrorMessage({
           layer,
           timepoint,
-          width: expectedMetadata.width,
-          height: expectedMetadata.height,
+          width: rawExpectedMetadata.width,
+          height: rawExpectedMetadata.height,
           depth: imageCount,
-          channels: expectedMetadata.channels,
-          dataType: expectedMetadata.dataType,
-          expected: expectedMetadata
+          channels: rawExpectedMetadata.channels,
+          dataType: rawExpectedMetadata.dataType,
+          expected: rawExpectedMetadata
         })
       );
     }
 
-    if (source.startSlice < 0 || source.startSlice + source.depth > imageCount) {
+    const availableDepth = imagejPageChannelLayout ? imagejPageChannelLayout.slices : imageCount;
+    if (source.startSlice < 0 || source.startSlice + source.depth > availableDepth) {
       throw new Error(`Layer "${layer.channelLabel}" timepoint ${timepoint + 1} is out of range.`);
     }
 
-    for (let localZ = 0; localZ < source.depth; localZ += 1) {
-      throwIfAborted(signal);
-      const imageIndex = source.startSlice + localZ;
-      const image = await tiff.getImage(imageIndex);
+    const readRawPage = async (pageIndex: number): Promise<SupportedTypedArray> => {
+      const image = await tiff.getImage(pageIndex);
       const width = image.getWidth();
       const height = image.getHeight();
       const channels = image.getSamplesPerPixel();
-      if (width !== expectedMetadata.width || height !== expectedMetadata.height || channels !== expectedMetadata.channels) {
+      if (
+        width !== rawExpectedMetadata.width ||
+        height !== rawExpectedMetadata.height ||
+        channels !== rawExpectedMetadata.channels
+      ) {
         throw new Error(
           createShapeMismatchErrorMessage({
             layer,
@@ -1836,8 +1692,8 @@ async function forEachSliceInStreamingTimepointSource({
             height,
             depth: source.depth,
             channels,
-            dataType: expectedMetadata.dataType,
-            expected: expectedMetadata
+            dataType: rawExpectedMetadata.dataType,
+            expected: rawExpectedMetadata
           })
         );
       }
@@ -1848,14 +1704,73 @@ async function forEachSliceInStreamingTimepointSource({
       }
       const typed = ensureTypedArrayMatchesExpectedDataType(
         rasterRaw as SupportedTypedArray,
-        expectedMetadata.dataType,
+        rawExpectedMetadata.dataType,
         source.file.name,
-        imageIndex
+        pageIndex
       );
-      if (typed.length !== expectedSliceLength) {
+      if (typed.length !== rawExpectedSliceLength) {
+        throw new Error(`Slice ${pageIndex + 1} in file "${source.file.name}" returned an unexpected slice length.`);
+      }
+      return typed;
+    };
+
+    if (imagejPageChannelLayout) {
+      const logicalChannelCount = imagejPageChannelLayout.channels;
+      for (let localZ = 0; localZ < source.depth; localZ += 1) {
+        const logicalSliceIndex = source.startSlice + localZ;
+        if (selectedSourceChannelIndex !== null) {
+          const pageIndex = logicalSliceIndex * logicalChannelCount + selectedSourceChannelIndex;
+          const preparedSlice = await readRawPage(pageIndex);
+          if (preparedSlice.length !== outputSliceLength) {
+            throw new Error(`Slice ${pageIndex + 1} in file "${source.file.name}" returned an unexpected extracted slice length.`);
+          }
+          await onSlice(preparedSlice, localZ);
+          continue;
+        }
+
+        if (outputMetadata.channels !== logicalChannelCount) {
+          throw new Error(
+            `Layer "${layer.channelLabel}" requires ${logicalChannelCount} logical channels but has no selected source channel.`
+          );
+        }
+
+        const combined = createWritableVolumeArray(
+          rawExpectedMetadata.dataType,
+          outputSliceLength
+        ) as SupportedTypedArray;
+        const voxelCount = rawExpectedSliceLength;
+        for (let channelIndex = 0; channelIndex < logicalChannelCount; channelIndex += 1) {
+          const pageIndex = logicalSliceIndex * logicalChannelCount + channelIndex;
+          const channelSlice = await readRawPage(pageIndex);
+          for (let voxelIndex = 0; voxelIndex < voxelCount; voxelIndex += 1) {
+            combined[voxelIndex * logicalChannelCount + channelIndex] = channelSlice[voxelIndex] ?? 0;
+          }
+        }
+        await onSlice(combined, localZ);
+      }
+      return;
+    }
+
+    for (let localZ = 0; localZ < source.depth; localZ += 1) {
+      throwIfAborted(signal);
+      const imageIndex = source.startSlice + localZ;
+      const typed = await readRawPage(imageIndex);
+      if (typed.length !== rawExpectedSliceLength) {
         throw new Error(`Slice ${imageIndex + 1} in file "${source.file.name}" returned an unexpected slice length.`);
       }
-      await onSlice(typed, localZ);
+      const preparedSlice = selectedSourceChannelIndex === null
+        ? typed
+        : extractSelectedSourceChannelFromTypedArray({
+            source: typed,
+            sourceChannels: rawExpectedMetadata.channels,
+            channelIndex: selectedSourceChannelIndex,
+            dataType: rawExpectedMetadata.dataType,
+            context: `Slice ${imageIndex + 1} in file "${source.file.name}"`
+          });
+      if (preparedSlice.length !== outputSliceLength) {
+        throw new Error(`Slice ${imageIndex + 1} in file "${source.file.name}" returned an unexpected extracted slice length.`);
+      }
+      await onSlice(preparedSlice, localZ);
     }
     return;
   }
@@ -1878,7 +1793,11 @@ async function forEachSliceInStreamingTimepointSource({
     const width = image.getWidth();
     const height = image.getHeight();
     const channels = image.getSamplesPerPixel();
-    if (width !== expectedMetadata.width || height !== expectedMetadata.height || channels !== expectedMetadata.channels) {
+    if (
+      width !== rawExpectedMetadata.width ||
+      height !== rawExpectedMetadata.height ||
+      channels !== rawExpectedMetadata.channels
+    ) {
       throw new Error(
         createShapeMismatchErrorMessage({
           layer,
@@ -1887,8 +1806,8 @@ async function forEachSliceInStreamingTimepointSource({
           height,
           depth: source.files.length,
           channels,
-          dataType: expectedMetadata.dataType,
-          expected: expectedMetadata
+          dataType: rawExpectedMetadata.dataType,
+          expected: rawExpectedMetadata
         })
       );
     }
@@ -1899,14 +1818,26 @@ async function forEachSliceInStreamingTimepointSource({
     }
     const typed = ensureTypedArrayMatchesExpectedDataType(
       rasterRaw as SupportedTypedArray,
-      expectedMetadata.dataType,
+      rawExpectedMetadata.dataType,
       file.name,
       0
     );
-    if (typed.length !== expectedSliceLength) {
+    if (typed.length !== rawExpectedSliceLength) {
       throw new Error(`Slice 1 in file "${file.name}" returned an unexpected slice length.`);
     }
-    await onSlice(typed, z);
+    const preparedSlice = selectedSourceChannelIndex === null
+      ? typed
+      : extractSelectedSourceChannelFromTypedArray({
+          source: typed,
+          sourceChannels: rawExpectedMetadata.channels,
+          channelIndex: selectedSourceChannelIndex,
+          dataType: rawExpectedMetadata.dataType,
+          context: `Slice 1 in file "${file.name}"`
+        });
+    if (preparedSlice.length !== outputSliceLength) {
+      throw new Error(`Slice 1 in file "${file.name}" returned an unexpected extracted slice length.`);
+    }
+    await onSlice(preparedSlice, z);
   }
 }
 
@@ -2417,7 +2348,10 @@ async function buildBackgroundMaskForStreamingPreparedLayers({
     layer: preparedLayer.layer,
     timepoint: 0,
     source: timepointSource,
-    expectedMetadata: sourceMetadata,
+    rawExpectedMetadata: preparedLayer.rawSourceMetadata,
+    outputMetadata: sourceMetadata,
+    selectedSourceChannelIndex: getResolvedSourceChannelIndex(preparedLayer.layer),
+    imagejPageChannelLayout: preparedLayer.imagejPageChannelLayout,
     tiffByFileCache,
     signal,
     onSlice: (slice, z) => {
@@ -2513,7 +2447,10 @@ async function computeLayerRepresentativeNormalizationForStreaming({
       layer,
       timepoint: representativeTimepoint,
       source,
-      expectedMetadata: preparedLayer.sourceMetadata,
+      rawExpectedMetadata: preparedLayer.rawSourceMetadata,
+      outputMetadata: preparedLayer.sourceMetadata,
+      selectedSourceChannelIndex: getResolvedSourceChannelIndex(preparedLayer.layer),
+      imagejPageChannelLayout: preparedLayer.imagejPageChannelLayout,
       tiffByFileCache,
       signal,
       onSlice: (slice, z) => {
@@ -2961,924 +2898,6 @@ async function createManifestZarrArrays({
       codecs: resolveArrayCodecsForDescriptor(data),
       fill_value: 0
     });
-  }
-}
-
-function chunkStart(chunkIndex: number, chunkSize: number): number {
-  return chunkIndex * chunkSize;
-}
-
-function chunkLength(totalSize: number, start: number, chunkSize: number): number {
-  return Math.max(0, Math.min(chunkSize, totalSize - start));
-}
-
-function extractDataChunkBytesAndComputeStatistics({
-  source,
-  dataType,
-  width,
-  height,
-  channels,
-  zStart,
-  zLength,
-  yStart,
-  yLength,
-  xStart,
-  xLength,
-  histogram,
-  backgroundMask
-}: {
-  source: Uint8Array | Uint16Array;
-  dataType: 'uint8' | 'uint16';
-  width: number;
-  height: number;
-  channels: number;
-  zStart: number;
-  zLength: number;
-  yStart: number;
-  yLength: number;
-  xStart: number;
-  xLength: number;
-  histogram?: Uint32Array;
-  backgroundMask?: BackgroundMaskVolume | null;
-}): {
-  chunk: Uint8Array;
-  stats: {
-    min: number;
-    max: number;
-    occupancy: number;
-  };
-} {
-  if (channels <= 0) {
-    throw new Error(`Invalid channel count while computing chunk statistics: ${channels}.`);
-  }
-  if (histogram && histogram.length !== HISTOGRAM_BINS) {
-    throw new Error(
-      `Histogram length mismatch while computing chunk statistics: expected ${HISTOGRAM_BINS}, got ${histogram.length}.`
-    );
-  }
-
-  const rowStride = width * channels;
-  const planeStride = height * rowStride;
-  const maskRowStride = width;
-  const maskPlaneStride = height * maskRowStride;
-  const lineLength = xLength * channels;
-  const chunkValueCount = zLength * yLength * lineLength;
-  const chunkValues = dataType === 'uint16'
-    ? new Uint16Array(chunkValueCount)
-    : new Uint8Array(chunkValueCount);
-  if (chunkValues.length === 0) {
-    return {
-      chunk: new Uint8Array(0),
-      stats: { min: 0, max: 0, occupancy: 0 }
-    };
-  }
-  if (
-    backgroundMask &&
-    (
-      backgroundMask.width !== width ||
-      backgroundMask.height !== height ||
-      backgroundMask.depth < zStart + zLength
-    )
-  ) {
-    throw new Error('Background mask dimensions do not match the chunk source dimensions.');
-  }
-
-  let min = 255;
-  let max = 0;
-  let occupiedVoxelCount = 0;
-  const voxelCount = zLength * yLength * xLength;
-  let consideredVoxelCount = 0;
-
-  let destinationOffset = 0;
-  for (let localZ = 0; localZ < zLength; localZ += 1) {
-    const sourceZBase = (zStart + localZ) * planeStride;
-    const maskZBase = backgroundMask ? (zStart + localZ) * maskPlaneStride : 0;
-    for (let localY = 0; localY < yLength; localY += 1) {
-      const sourceOffset = sourceZBase + (yStart + localY) * rowStride + xStart * channels;
-      const sourceLine = source.subarray(sourceOffset, sourceOffset + lineLength);
-      chunkValues.set(sourceLine, destinationOffset);
-      const maskOffset = maskZBase + (yStart + localY) * maskRowStride + xStart;
-      const maskLine = backgroundMask
-        ? backgroundMask.data.subarray(maskOffset, maskOffset + xLength)
-        : null;
-
-      if (!histogram) {
-        for (let voxelIndex = 0; voxelIndex < xLength; voxelIndex += 1) {
-          if (maskLine && (maskLine[voxelIndex] ?? 0) > 0) {
-            continue;
-          }
-          const value = sourceLine[voxelIndex] ?? 0;
-          if (value > 0) {
-            occupiedVoxelCount += 1;
-            min = 255;
-            max = 255;
-          }
-          consideredVoxelCount += 1;
-        }
-      } else if (channels === 1) {
-        for (let voxelIndex = 0; voxelIndex < xLength; voxelIndex += 1) {
-          if (maskLine && (maskLine[voxelIndex] ?? 0) > 0) {
-            continue;
-          }
-          const value = sourceLine[voxelIndex] ?? 0;
-          if (value < min) {
-            min = value;
-          }
-          if (value > max) {
-            max = value;
-          }
-          if (value > 0) {
-            occupiedVoxelCount += 1;
-          }
-          histogram[value] += 1;
-          consideredVoxelCount += 1;
-        }
-      } else if (channels === 2) {
-        for (let voxelIndex = 0; voxelIndex < xLength; voxelIndex += 1) {
-          if (maskLine && (maskLine[voxelIndex] ?? 0) > 0) {
-            continue;
-          }
-          const voxelBase = voxelIndex * 2;
-          const red = sourceLine[voxelBase] ?? 0;
-          const green = sourceLine[voxelBase + 1] ?? 0;
-          if (red < min) {
-            min = red;
-          }
-          if (green < min) {
-            min = green;
-          }
-          if (red > max) {
-            max = red;
-          }
-          if (green > max) {
-            max = green;
-          }
-          if (red > 0 || green > 0) {
-            occupiedVoxelCount += 1;
-          }
-          histogram[Math.round((red + green) * 0.5)] += 1;
-          consideredVoxelCount += 1;
-        }
-      } else {
-        for (let voxelIndex = 0; voxelIndex < xLength; voxelIndex += 1) {
-          if (maskLine && (maskLine[voxelIndex] ?? 0) > 0) {
-            continue;
-          }
-          const voxelBase = voxelIndex * channels;
-          const red = sourceLine[voxelBase] ?? 0;
-          const green = sourceLine[voxelBase + 1] ?? 0;
-          const blue = sourceLine[voxelBase + 2] ?? 0;
-          let voxelMin = red;
-          let voxelMax = red;
-          let voxelOccupied = red > 0 || green > 0 || blue > 0;
-
-          if (green < voxelMin) {
-            voxelMin = green;
-          }
-          if (green > voxelMax) {
-            voxelMax = green;
-          }
-          if (blue < voxelMin) {
-            voxelMin = blue;
-          }
-          if (blue > voxelMax) {
-            voxelMax = blue;
-          }
-
-          for (let channel = 3; channel < channels; channel += 1) {
-            const value = sourceLine[voxelBase + channel] ?? 0;
-            if (value < voxelMin) {
-              voxelMin = value;
-            }
-            if (value > voxelMax) {
-              voxelMax = value;
-            }
-            if (!voxelOccupied && value > 0) {
-              voxelOccupied = true;
-            }
-          }
-
-          if (voxelMin < min) {
-            min = voxelMin;
-          }
-          if (voxelMax > max) {
-            max = voxelMax;
-          }
-
-          const intensity = Math.round(red * 0.2126 + green * 0.7152 + blue * 0.0722);
-          const clampedIntensity = intensity < 0 ? 0 : intensity > 255 ? 255 : intensity;
-          histogram[clampedIntensity] += 1;
-
-          if (voxelOccupied) {
-            occupiedVoxelCount += 1;
-          }
-          consideredVoxelCount += 1;
-        }
-      }
-
-      destinationOffset += lineLength;
-    }
-  }
-
-  if (!histogram && occupiedVoxelCount === 0) {
-    min = 0;
-    max = 0;
-  }
-
-  const chunk = new Uint8Array(chunkValues.buffer, chunkValues.byteOffset, chunkValues.byteLength);
-  return {
-    chunk,
-    stats: {
-      min: consideredVoxelCount > 0 ? min : 0,
-      max: consideredVoxelCount > 0 ? max : 0,
-      occupancy: voxelCount > 0 ? occupiedVoxelCount / voxelCount : 0
-    }
-  };
-}
-
-function extractBackgroundMaskChunkBytes({
-  source,
-  width,
-  height,
-  zStart,
-  zLength,
-  yStart,
-  yLength,
-  xStart,
-  xLength
-}: {
-  source: Uint8Array;
-  width: number;
-  height: number;
-  zStart: number;
-  zLength: number;
-  yStart: number;
-  yLength: number;
-  xStart: number;
-  xLength: number;
-}): Uint8Array {
-  const rowStride = width;
-  const planeStride = height * rowStride;
-  const chunk = new Uint8Array(zLength * yLength * xLength);
-
-  let destinationOffset = 0;
-  for (let localZ = 0; localZ < zLength; localZ += 1) {
-    const sourceZBase = (zStart + localZ) * planeStride;
-    for (let localY = 0; localY < yLength; localY += 1) {
-      const sourceOffset = sourceZBase + (yStart + localY) * rowStride + xStart;
-      const sourceLine = source.subarray(sourceOffset, sourceOffset + xLength);
-      chunk.set(sourceLine, destinationOffset);
-      destinationOffset += xLength;
-    }
-  }
-
-  return chunk;
-}
-
-function assertSkipHierarchyDescriptorMatchesGrid({
-  descriptor,
-  expectedTimepoints,
-  expectedGridShape,
-  expectedDataType,
-  label
-}: {
-  descriptor: ZarrArrayDescriptor;
-  expectedTimepoints: number;
-  expectedGridShape: [number, number, number];
-  expectedDataType: ZarrArrayDescriptor['dataType'];
-  label: string;
-}): void {
-  if (descriptor.dataType !== expectedDataType) {
-    throw new Error(
-      `Skip hierarchy descriptor dtype mismatch for ${label} (${descriptor.path}): expected ${expectedDataType}, got ${descriptor.dataType}.`
-    );
-  }
-  if (descriptor.shape.length !== 4) {
-    throw new Error(`Skip hierarchy descriptor for ${label} (${descriptor.path}) must have rank 4.`);
-  }
-  const [shapeTimepoints, shapeZ, shapeY, shapeX] = descriptor.shape;
-  if (
-    shapeTimepoints !== expectedTimepoints ||
-    shapeZ !== expectedGridShape[0] ||
-    shapeY !== expectedGridShape[1] ||
-    shapeX !== expectedGridShape[2]
-  ) {
-    throw new Error(
-      `Skip hierarchy descriptor shape mismatch for ${label} (${descriptor.path}): expected ${expectedTimepoints}x${expectedGridShape[0]}x${expectedGridShape[1]}x${expectedGridShape[2]}, got ${shapeTimepoints}x${shapeZ}x${shapeY}x${shapeX}.`
-    );
-  }
-  if (descriptor.chunkShape.length !== 4) {
-    throw new Error(`Skip hierarchy descriptor chunk shape for ${label} (${descriptor.path}) must have rank 4.`);
-  }
-  const [chunkTimepoints, chunkZ, chunkY, chunkX] = descriptor.chunkShape;
-  if (
-    chunkTimepoints !== 1 ||
-    chunkZ !== expectedGridShape[0] ||
-    chunkY !== expectedGridShape[1] ||
-    chunkX !== expectedGridShape[2]
-  ) {
-    throw new Error(
-      `Skip hierarchy descriptor chunk shape mismatch for ${label} (${descriptor.path}): expected 1x${expectedGridShape[0]}x${expectedGridShape[1]}x${expectedGridShape[2]}, got ${chunkTimepoints}x${chunkZ}x${chunkY}x${chunkX}.`
-    );
-  }
-}
-
-type SkipHierarchyLevelBuffers = {
-  gridShape: [number, number, number];
-  min: Uint8Array;
-  max: Uint8Array;
-  occupancy: Uint8Array;
-};
-
-function reduceSkipHierarchyLevelBuffers(child: SkipHierarchyLevelBuffers): SkipHierarchyLevelBuffers {
-  const [childZ, childY, childX] = child.gridShape;
-  const parentGridShape: [number, number, number] = [
-    Math.max(1, Math.ceil(childZ / 2)),
-    Math.max(1, Math.ceil(childY / 2)),
-    Math.max(1, Math.ceil(childX / 2))
-  ];
-  const [parentZ, parentY, parentX] = parentGridShape;
-  const parentVoxelCount = parentZ * parentY * parentX;
-  const parentMin = new Uint8Array(parentVoxelCount);
-  const parentMax = new Uint8Array(parentVoxelCount);
-  const parentOccupancy = new Uint8Array(parentVoxelCount);
-  const childPlaneSize = childY * childX;
-  const parentPlaneSize = parentY * parentX;
-
-  for (let z = 0; z < parentZ; z += 1) {
-    const childZStart = z * 2;
-    for (let y = 0; y < parentY; y += 1) {
-      const childYStart = y * 2;
-      for (let x = 0; x < parentX; x += 1) {
-        const childXStart = x * 2;
-        const parentIndex = (z * parentPlaneSize) + (y * parentX) + x;
-        let occupied = false;
-        let localMin = 255;
-        let localMax = 0;
-
-        for (let localZ = 0; localZ < 2; localZ += 1) {
-          const sourceZ = childZStart + localZ;
-          if (sourceZ >= childZ) {
-            continue;
-          }
-          for (let localY = 0; localY < 2; localY += 1) {
-            const sourceY = childYStart + localY;
-            if (sourceY >= childY) {
-              continue;
-            }
-            for (let localX = 0; localX < 2; localX += 1) {
-              const sourceX = childXStart + localX;
-              if (sourceX >= childX) {
-                continue;
-              }
-              const childIndex = (sourceZ * childPlaneSize) + (sourceY * childX) + sourceX;
-              if ((child.occupancy[childIndex] ?? 0) === 0) {
-                continue;
-              }
-              occupied = true;
-              const childMin = child.min[childIndex] ?? 0;
-              const childMax = child.max[childIndex] ?? 0;
-              if (childMin < localMin) {
-                localMin = childMin;
-              }
-              if (childMax > localMax) {
-                localMax = childMax;
-              }
-            }
-          }
-        }
-
-        if (!occupied) {
-          parentOccupancy[parentIndex] = 0;
-          parentMin[parentIndex] = 0;
-          parentMax[parentIndex] = 0;
-          continue;
-        }
-        parentOccupancy[parentIndex] = 255;
-        parentMin[parentIndex] = localMin;
-        parentMax[parentIndex] = localMax;
-      }
-    }
-  }
-
-  return {
-    gridShape: parentGridShape,
-    min: parentMin,
-    max: parentMax,
-    occupancy: parentOccupancy
-  };
-}
-
-function buildSkipHierarchyLevelBuffersFromLeaf({
-  leafGridShape,
-  leafMin,
-  leafMax,
-  leafOccupancy,
-  levelCount
-}: {
-  leafGridShape: [number, number, number];
-  leafMin: Uint8Array;
-  leafMax: Uint8Array;
-  leafOccupancy: Uint8Array;
-  levelCount: number;
-}): SkipHierarchyLevelBuffers[] {
-  if (levelCount <= 0) {
-    return [];
-  }
-  const levels: SkipHierarchyLevelBuffers[] = [
-    {
-      gridShape: leafGridShape,
-      min: leafMin,
-      max: leafMax,
-      occupancy: leafOccupancy
-    }
-  ];
-  while (levels.length < levelCount) {
-    const previous = levels[levels.length - 1];
-    if (!previous) {
-      break;
-    }
-    levels.push(reduceSkipHierarchyLevelBuffers(previous));
-  }
-  return levels;
-}
-
-type PlaybackAtlasWriteState = {
-  descriptor: PreprocessedScalePlaybackAtlasZarrDescriptor;
-  dataEntryDescriptor: ZarrArrayDescriptor;
-  brickAtlasIndices: Int32Array;
-  occupiedBrickCount: number;
-  blockByteLength: number;
-  blocks: Uint8Array[];
-};
-
-function createPlaybackAtlasWriteState({
-  descriptor,
-  chunkDepth,
-  chunkHeight,
-  chunkWidth,
-  expectedBrickCount
-}: {
-  descriptor: PreprocessedScalePlaybackAtlasZarrDescriptor;
-  chunkDepth: number;
-  chunkHeight: number;
-  chunkWidth: number;
-  expectedBrickCount: number;
-}): PlaybackAtlasWriteState {
-  return {
-    descriptor,
-    dataEntryDescriptor: createSyntheticDescriptorForBlob(descriptor.data),
-    brickAtlasIndices: new Int32Array(expectedBrickCount).fill(-1),
-    occupiedBrickCount: 0,
-    blockByteLength:
-      chunkDepth *
-      chunkHeight *
-      chunkWidth *
-      descriptor.textureChannels *
-      getBytesPerValue(descriptor.dataType),
-    blocks: []
-  };
-}
-
-function buildPlaybackAtlasBlock({
-  chunkBytes,
-  dataType,
-  zExtent,
-  yExtent,
-  xExtent,
-  sourceChannels,
-  chunkDepth,
-  chunkHeight,
-  chunkWidth,
-  textureFormat,
-  textureChannels
-}: {
-  chunkBytes: Uint8Array;
-  dataType: 'uint8' | 'uint16';
-  zExtent: number;
-  yExtent: number;
-  xExtent: number;
-  sourceChannels: number;
-  chunkDepth: number;
-  chunkHeight: number;
-  chunkWidth: number;
-  textureFormat: PreprocessedBrickAtlasTextureFormat;
-  textureChannels: number;
-}): Uint8Array {
-  const bytesPerValue = getBytesPerValue(dataType);
-  const expectedChunkBytes = zExtent * yExtent * xExtent * sourceChannels * bytesPerValue;
-  if (chunkBytes.byteLength !== expectedChunkBytes) {
-    throw new Error(`Playback atlas block byte length mismatch: expected ${expectedChunkBytes}, got ${chunkBytes.byteLength}.`);
-  }
-  const blockValueCount = chunkDepth * chunkHeight * chunkWidth * textureChannels;
-  const blockValues = dataType === 'uint16'
-    ? new Uint16Array(blockValueCount)
-    : new Uint8Array(blockValueCount);
-  const chunkValues = dataType === 'uint16'
-    ? new Uint16Array(chunkBytes.buffer, chunkBytes.byteOffset, chunkBytes.byteLength / 2)
-    : chunkBytes;
-  for (let localZ = 0; localZ < zExtent; localZ += 1) {
-    for (let localY = 0; localY < yExtent; localY += 1) {
-      for (let localX = 0; localX < xExtent; localX += 1) {
-        const sourceVoxelOffset = (((localZ * yExtent + localY) * xExtent + localX) * sourceChannels);
-        const atlasVoxelOffset = (((localZ * chunkHeight + localY) * chunkWidth + localX) * textureChannels);
-        if (textureFormat === 'rgba' && sourceChannels === 3) {
-          blockValues[atlasVoxelOffset + 3] = 255;
-        }
-        for (let sourceChannel = 0; sourceChannel < sourceChannels; sourceChannel += 1) {
-          const textureChannel = mapPlaybackSourceChannelToTextureChannel(
-            sourceChannel,
-            sourceChannels,
-            textureFormat
-          );
-          if (textureChannel === null) {
-            continue;
-          }
-          blockValues[atlasVoxelOffset + textureChannel] = chunkValues[sourceVoxelOffset + sourceChannel] ?? 0;
-        }
-      }
-    }
-  }
-  return new Uint8Array(blockValues.buffer, blockValues.byteOffset, blockValues.byteLength);
-}
-
-async function writeDataChunksForScale({
-  chunkWriter,
-  descriptor,
-  skipHierarchyDescriptor,
-  subcellDescriptor,
-  playbackAtlasDescriptor,
-  timepoint,
-  volume,
-  backgroundMask,
-  signal
-}: {
-  chunkWriter: ChunkWriteDispatcher;
-  descriptor: ZarrArrayDescriptor;
-  skipHierarchyDescriptor?: PreprocessedScaleSkipHierarchyZarrDescriptor;
-  subcellDescriptor?: PreprocessedScaleSubcellZarrDescriptor;
-  playbackAtlasDescriptor?: PreprocessedScalePlaybackAtlasZarrDescriptor;
-  timepoint: number;
-  volume: {
-    width: number;
-    height: number;
-    depth: number;
-    channels: number;
-    data: Uint8Array | Uint16Array;
-  };
-  backgroundMask?: BackgroundMaskVolume | null;
-  signal?: AbortSignal;
-}): Promise<Uint32Array | null> {
-  const expectedDataLength = volume.depth * volume.height * volume.width * volume.channels;
-  if (volume.data.length !== expectedDataLength) {
-    throw new Error(
-      `Scale payload size mismatch for ${descriptor.path}: expected ${expectedDataLength} values, got ${volume.data.length}.`
-    );
-  }
-
-  const [, descriptorDepth, descriptorHeight, descriptorWidth, descriptorChannels] = descriptor.shape;
-  if (
-    descriptorDepth !== volume.depth ||
-    descriptorHeight !== volume.height ||
-    descriptorWidth !== volume.width ||
-    descriptorChannels !== volume.channels
-  ) {
-    throw new Error(
-      `Scale descriptor shape mismatch for ${descriptor.path}: expected ${descriptorDepth}x${descriptorHeight}x${descriptorWidth}x${descriptorChannels}, got ${volume.depth}x${volume.height}x${volume.width}x${volume.channels}.`
-    );
-  }
-  if (descriptor.chunkShape.length !== 5) {
-    throw new Error(`Data chunk shape for ${descriptor.path} must have rank 5.`);
-  }
-
-  const [, chunkDepth, chunkHeight, chunkWidth, chunkChannels] = descriptor.chunkShape;
-  if (chunkChannels !== volume.channels) {
-    throw new Error(
-      `Data chunk channel dimension mismatch for ${descriptor.path}: expected ${volume.channels}, got ${chunkChannels}.`
-    );
-  }
-
-  const zChunks = Math.ceil(volume.depth / chunkDepth);
-  const yChunks = Math.ceil(volume.height / chunkHeight);
-  const xChunks = Math.ceil(volume.width / chunkWidth);
-  const chunkCount = zChunks * yChunks * xChunks;
-  const leafGridShape: [number, number, number] = [zChunks, yChunks, xChunks];
-  const expectedTimepoints = descriptor.shape[0] ?? 0;
-  const histogram = descriptor.dataType === 'uint8' ? new Uint32Array(HISTOGRAM_BINS) : null;
-
-  let leafMinValues: Uint8Array | null = null;
-  let leafMaxValues: Uint8Array | null = null;
-  let leafOccupancyValues: Uint8Array | null = null;
-  if (skipHierarchyDescriptor) {
-    const leafLevel = skipHierarchyDescriptor.levels[0];
-    if (!leafLevel) {
-      throw new Error(`Skip hierarchy is missing level 0 for ${descriptor.path}.`);
-    }
-    assertSkipHierarchyDescriptorMatchesGrid({
-      descriptor: leafLevel.min,
-      expectedTimepoints,
-      expectedGridShape: leafGridShape,
-      expectedDataType: 'uint8',
-      label: 'min'
-    });
-    assertSkipHierarchyDescriptorMatchesGrid({
-      descriptor: leafLevel.max,
-      expectedTimepoints,
-      expectedGridShape: leafGridShape,
-      expectedDataType: 'uint8',
-      label: 'max'
-    });
-    assertSkipHierarchyDescriptorMatchesGrid({
-      descriptor: leafLevel.occupancy,
-      expectedTimepoints,
-      expectedGridShape: leafGridShape,
-      expectedDataType: 'uint8',
-      label: 'occupancy'
-    });
-
-    leafMinValues = new Uint8Array(chunkCount);
-    leafMaxValues = new Uint8Array(chunkCount);
-    leafOccupancyValues = new Uint8Array(chunkCount);
-  }
-
-  let subcellTextureBytes: Uint8Array | null = null;
-  let subcellTextureSize: { width: number; height: number; depth: number } | null = null;
-  let subcellGridShape: [number, number, number] | null = null;
-  if (subcellDescriptor) {
-    const subcellGrid = {
-      x: subcellDescriptor.gridShape[2],
-      y: subcellDescriptor.gridShape[1],
-      z: subcellDescriptor.gridShape[0],
-    };
-    subcellTextureSize = buildBrickSubcellTextureSize({
-      gridShape: leafGridShape,
-      subcellGrid
-    });
-    const expectedTextureLength = subcellTextureSize.width * subcellTextureSize.height * subcellTextureSize.depth * 4;
-    const expectedTimepointShape = [
-      subcellTextureSize.depth,
-      subcellTextureSize.height,
-      subcellTextureSize.width,
-      4
-    ];
-    const actualTimepointShape = subcellDescriptor.data.shape.slice(1);
-    if (
-      actualTimepointShape.length !== expectedTimepointShape.length ||
-      actualTimepointShape.some((value, index) => value !== expectedTimepointShape[index])
-    ) {
-      throw new Error(`Subcell descriptor shape mismatch for ${descriptor.path}.`);
-    }
-    subcellTextureBytes = new Uint8Array(expectedTextureLength);
-    subcellGridShape = subcellDescriptor.gridShape;
-  }
-
-  const playbackAtlasState = playbackAtlasDescriptor
-    ? createPlaybackAtlasWriteState({
-        descriptor: playbackAtlasDescriptor,
-        chunkDepth,
-        chunkHeight,
-        chunkWidth,
-        expectedBrickCount: chunkCount
-      })
-    : null;
-
-  for (let zChunk = 0; zChunk < zChunks; zChunk += 1) {
-    const zStart = chunkStart(zChunk, chunkDepth);
-    const zLength = chunkLength(volume.depth, zStart, chunkDepth);
-    for (let yChunk = 0; yChunk < yChunks; yChunk += 1) {
-      const yStart = chunkStart(yChunk, chunkHeight);
-      const yLength = chunkLength(volume.height, yStart, chunkHeight);
-      for (let xChunk = 0; xChunk < xChunks; xChunk += 1) {
-        const xStart = chunkStart(xChunk, chunkWidth);
-        const xLength = chunkLength(volume.width, xStart, chunkWidth);
-        const { chunk, stats } = extractDataChunkBytesAndComputeStatistics({
-          source: volume.data,
-          dataType: descriptor.dataType as 'uint8' | 'uint16',
-          width: volume.width,
-          height: volume.height,
-          channels: volume.channels,
-          zStart,
-          zLength,
-          yStart,
-          yLength,
-          xStart,
-          xLength,
-          histogram: histogram ?? undefined,
-          backgroundMask
-        });
-        await chunkWriter.writeChunk({
-          descriptor,
-          chunkCoords: [timepoint, zChunk, yChunk, xChunk, 0],
-          bytes: chunk,
-          signal
-        });
-        const chunkIndex = (zChunk * yChunks + yChunk) * xChunks + xChunk;
-        if (leafMinValues && leafMaxValues && leafOccupancyValues) {
-          leafMinValues[chunkIndex] = stats.min;
-          leafMaxValues[chunkIndex] = stats.max;
-          leafOccupancyValues[chunkIndex] = stats.occupancy > 0 ? 255 : 0;
-        }
-        if (playbackAtlasState && stats.occupancy > 0) {
-          playbackAtlasState.brickAtlasIndices[chunkIndex] = playbackAtlasState.occupiedBrickCount;
-          playbackAtlasState.occupiedBrickCount += 1;
-          playbackAtlasState.blocks.push(
-            buildPlaybackAtlasBlock({
-              chunkBytes: chunk,
-              dataType: playbackAtlasState.descriptor.dataType,
-              zExtent: zLength,
-              yExtent: yLength,
-              xExtent: xLength,
-              sourceChannels: volume.channels,
-              chunkDepth,
-              chunkHeight,
-              chunkWidth,
-              textureFormat: playbackAtlasState.descriptor.textureFormat,
-              textureChannels: playbackAtlasState.descriptor.textureChannels
-            })
-          );
-        }
-        if (subcellTextureBytes && subcellTextureSize && subcellGridShape) {
-          const subcellChunk = buildBrickSubcellChunkData({
-            chunkShape: [chunkDepth, chunkHeight, chunkWidth],
-            components: volume.channels,
-            readVoxelComponent: (localZ, localY, localX, component) => {
-              if (localZ < 0 || localZ >= zLength || localY < 0 || localY >= yLength || localX < 0 || localX >= xLength) {
-                return 0;
-              }
-              const sourceIndex = (((localZ * yLength + localY) * xLength + localX) * volume.channels) + component;
-              return chunk[sourceIndex] ?? 0;
-            }
-          });
-          if (!subcellChunk) {
-            throw new Error(`Failed to build subcell texture data for ${descriptor.path}.`);
-          }
-          if (
-            subcellChunk.subcellGrid.z !== subcellGridShape[0] ||
-            subcellChunk.subcellGrid.y !== subcellGridShape[1] ||
-            subcellChunk.subcellGrid.x !== subcellGridShape[2]
-          ) {
-            throw new Error(`Subcell grid mismatch for ${descriptor.path}.`);
-          }
-          writeBrickSubcellChunkData({
-            targetData: subcellTextureBytes,
-            targetSize: subcellTextureSize,
-            brickCoords: { x: xChunk, y: yChunk, z: zChunk },
-            chunkData: subcellChunk.data,
-            subcellGrid: subcellChunk.subcellGrid
-          });
-        }
-      }
-    }
-  }
-
-  if (skipHierarchyDescriptor && leafMinValues && leafMaxValues && leafOccupancyValues) {
-    const hierarchyBuffers = buildSkipHierarchyLevelBuffersFromLeaf({
-      leafGridShape,
-      leafMin: leafMinValues,
-      leafMax: leafMaxValues,
-      leafOccupancy: leafOccupancyValues,
-      levelCount: skipHierarchyDescriptor.levels.length
-    });
-    if (hierarchyBuffers.length !== skipHierarchyDescriptor.levels.length) {
-      throw new Error(`Skip hierarchy build mismatch for ${descriptor.path}.`);
-    }
-    for (let hierarchyLevel = 0; hierarchyLevel < skipHierarchyDescriptor.levels.length; hierarchyLevel += 1) {
-      const hierarchyDescriptor = skipHierarchyDescriptor.levels[hierarchyLevel];
-      const hierarchyData = hierarchyBuffers[hierarchyLevel];
-      if (!hierarchyDescriptor || !hierarchyData) {
-        throw new Error(`Skip hierarchy level mismatch for ${descriptor.path} at level ${hierarchyLevel}.`);
-      }
-      const expectedGridShape = hierarchyDescriptor.gridShape;
-      const actualGridShape = hierarchyData.gridShape;
-      if (
-        expectedGridShape[0] !== actualGridShape[0] ||
-        expectedGridShape[1] !== actualGridShape[1] ||
-        expectedGridShape[2] !== actualGridShape[2]
-      ) {
-        throw new Error(
-          `Skip hierarchy grid mismatch for ${descriptor.path} at level ${hierarchyLevel}: expected ${expectedGridShape.join('x')}, got ${actualGridShape.join('x')}.`
-        );
-      }
-      await chunkWriter.writeChunk({
-        descriptor: hierarchyDescriptor.min,
-        chunkCoords: [timepoint, 0, 0, 0],
-        bytes: hierarchyData.min,
-        signal
-      });
-      await chunkWriter.writeChunk({
-        descriptor: hierarchyDescriptor.max,
-        chunkCoords: [timepoint, 0, 0, 0],
-        bytes: hierarchyData.max,
-        signal
-      });
-      await chunkWriter.writeChunk({
-        descriptor: hierarchyDescriptor.occupancy,
-        chunkCoords: [timepoint, 0, 0, 0],
-        bytes: hierarchyData.occupancy,
-        signal
-      });
-    }
-  }
-
-  if (subcellDescriptor && subcellTextureBytes) {
-    await chunkWriter.writeChunk({
-      descriptor: subcellDescriptor.data,
-      chunkCoords: [timepoint, 0, 0, 0, 0],
-      bytes: subcellTextureBytes,
-      signal
-    });
-  }
-
-  if (playbackAtlasState) {
-    const atlasBytes = new Uint8Array(playbackAtlasState.occupiedBrickCount * playbackAtlasState.blockByteLength);
-    for (let blockIndex = 0; blockIndex < playbackAtlasState.blocks.length; blockIndex += 1) {
-      const block = playbackAtlasState.blocks[blockIndex];
-      if (!block) {
-        continue;
-      }
-      atlasBytes.set(block, blockIndex * playbackAtlasState.blockByteLength);
-    }
-    await chunkWriter.writeChunk({
-      descriptor: playbackAtlasState.descriptor.brickAtlasIndices,
-      chunkCoords: [timepoint, 0, 0, 0],
-      bytes: encodeInt32ArrayLE(playbackAtlasState.brickAtlasIndices),
-      signal
-    });
-    await chunkWriter.writeChunk({
-      descriptor: playbackAtlasState.dataEntryDescriptor,
-      chunkCoords: [timepoint],
-      bytes: atlasBytes,
-      signal
-    });
-  }
-
-  return histogram;
-}
-
-async function writeBackgroundMaskChunksForScale({
-  chunkWriter,
-  descriptor,
-  mask,
-  signal
-}: {
-  chunkWriter: ChunkWriteDispatcher;
-  descriptor: ZarrArrayDescriptor;
-  mask: BackgroundMaskVolume;
-  signal?: AbortSignal;
-}): Promise<void> {
-  const expectedMaskCount = mask.depth * mask.height * mask.width;
-  if (mask.data.length !== expectedMaskCount) {
-    throw new Error(
-      `Background mask payload size mismatch for ${descriptor.path}: expected ${expectedMaskCount}, got ${mask.data.length}.`
-    );
-  }
-  const [descriptorDepth, descriptorHeight, descriptorWidth] = descriptor.shape;
-  if (
-    descriptorDepth !== mask.depth ||
-    descriptorHeight !== mask.height ||
-    descriptorWidth !== mask.width
-  ) {
-    throw new Error(
-      `Background mask descriptor shape mismatch for ${descriptor.path}: expected ${descriptorDepth}x${descriptorHeight}x${descriptorWidth}, got ${mask.depth}x${mask.height}x${mask.width}.`
-    );
-  }
-  if (descriptor.chunkShape.length !== 3) {
-    throw new Error(`Background mask chunk shape for ${descriptor.path} must have rank 3.`);
-  }
-
-  const [chunkDepth, chunkHeight, chunkWidth] = descriptor.chunkShape;
-  const zChunks = Math.ceil(mask.depth / chunkDepth);
-  const yChunks = Math.ceil(mask.height / chunkHeight);
-  const xChunks = Math.ceil(mask.width / chunkWidth);
-
-  for (let zChunk = 0; zChunk < zChunks; zChunk += 1) {
-    const zStart = chunkStart(zChunk, chunkDepth);
-    const zLength = chunkLength(mask.depth, zStart, chunkDepth);
-    for (let yChunk = 0; yChunk < yChunks; yChunk += 1) {
-      const yStart = chunkStart(yChunk, chunkHeight);
-      const yLength = chunkLength(mask.height, yStart, chunkHeight);
-      for (let xChunk = 0; xChunk < xChunks; xChunk += 1) {
-        const xStart = chunkStart(xChunk, chunkWidth);
-        const xLength = chunkLength(mask.width, xStart, chunkWidth);
-        const chunkBytes = extractBackgroundMaskChunkBytes({
-          source: mask.data,
-          width: mask.width,
-          height: mask.height,
-          zStart,
-          zLength,
-          yStart,
-          yLength,
-          xStart,
-          xLength
-        });
-        await chunkWriter.writeChunk({
-          descriptor,
-          chunkCoords: [zChunk, yChunk, xChunk],
-          bytes: chunkBytes,
-          signal
-        });
-      }
-    }
   }
 }
 
@@ -4473,7 +3492,10 @@ async function writeStreamingLayerTimepoint({
       layer: preparedLayer.layer,
       timepoint,
       source: timepointSource,
-      expectedMetadata: sourceMetadata,
+      rawExpectedMetadata: preparedLayer.rawSourceMetadata,
+      outputMetadata: sourceMetadata,
+      selectedSourceChannelIndex: null,
+      imagejPageChannelLayout: preparedLayer.imagejPageChannelLayout,
       tiffByFileCache,
       signal,
       onSlice: async (slice) => {
@@ -4490,7 +3512,10 @@ async function writeStreamingLayerTimepoint({
       layer: preparedLayer.layer,
       timepoint,
       source: timepointSource,
-      expectedMetadata: sourceMetadata,
+      rawExpectedMetadata: preparedLayer.rawSourceMetadata,
+      outputMetadata: sourceMetadata,
+      selectedSourceChannelIndex: getResolvedSourceChannelIndex(preparedLayer.layer),
+      imagejPageChannelLayout: preparedLayer.imagejPageChannelLayout,
       tiffByFileCache,
       signal,
       onSlice: async (slice, z) => {

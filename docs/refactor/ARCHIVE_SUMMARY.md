@@ -15,7 +15,7 @@ All planned backlog items were completed:
 - `RF-004` done: split `VolumeViewer` runtime boundaries (pointer lifecycle + render loop modules).
 - `RF-005` done: split VR responsibilities by domain (`useVrHudInteractions`, `controllerRayVolumeDomain`, related orchestration cleanups).
 - `RF-006` done: decomposed planar interactions into hover/input/hit-test/keyboard modules.
-- `RF-007` done: clarified dataset setup/load surfaces (`useChannelDatasetLoader`, `useChannelSources`, `useChannelLayerState` wiring).
+- `RF-007` done: clarified dataset setup/load surfaces around `useChannelSources` and `useChannelLayerState` wiring. A temporary loader boundary used during that refactor was removed in later cleanup.
 - `RF-008` done: modularized large viewer CSS ownership boundaries.
 - `RF-009` done: added targeted tests for VR and orchestration refactor hotspots.
 - `RF-010` done: added maintained optional strict-unused gate (`npm run typecheck:strict-unused`) with scoped config in `tsconfig.strict-unused.json`.

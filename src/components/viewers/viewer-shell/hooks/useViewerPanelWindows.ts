@@ -19,6 +19,9 @@ type UseViewerPanelWindowsResult = {
   isViewerSettingsOpen: boolean;
   openViewerSettings: () => void;
   closeViewerSettings: () => void;
+  isHoverSettingsWindowOpen: boolean;
+  openHoverSettingsWindow: () => void;
+  closeHoverSettingsWindow: () => void;
   isRecordWindowOpen: boolean;
   openRecordWindow: () => void;
   closeRecordWindow: () => void;
@@ -34,6 +37,12 @@ type UseViewerPanelWindowsResult = {
   isPaintbrushOpen: boolean;
   openPaintbrush: () => void;
   closePaintbrush: () => void;
+  isDrawRoiWindowOpen: boolean;
+  openDrawRoiWindow: () => void;
+  closeDrawRoiWindow: () => void;
+  isRoiManagerWindowOpen: boolean;
+  openRoiManagerWindow: () => void;
+  closeRoiManagerWindow: () => void;
   isDiagnosticsWindowOpen: boolean;
   openDiagnosticsWindow: () => void;
   closeDiagnosticsWindow: () => void;
@@ -49,11 +58,14 @@ export function useViewerPanelWindows({
   const [isPropsWindowOpen, setIsPropsWindowOpen] = useState(false);
   const [isTracksWindowOpen, setIsTracksWindowOpen] = useState(hasTrackData);
   const [isViewerSettingsOpen, setIsViewerSettingsOpen] = useState(false);
+  const [isHoverSettingsWindowOpen, setIsHoverSettingsWindowOpen] = useState(false);
   const [isRecordWindowOpen, setIsRecordWindowOpen] = useState(false);
   const [isAmplitudePlotOpen, setIsAmplitudePlotOpen] = useState(false);
   const [isPlotSettingsOpen, setIsPlotSettingsOpen] = useState(false);
   const [isTrackSettingsOpen, setIsTrackSettingsOpen] = useState(false);
   const [isPaintbrushOpen, setIsPaintbrushOpen] = useState(false);
+  const [isDrawRoiWindowOpen, setIsDrawRoiWindowOpen] = useState(false);
+  const [isRoiManagerWindowOpen, setIsRoiManagerWindowOpen] = useState(false);
   const [isDiagnosticsWindowOpen, setIsDiagnosticsWindowOpen] = useState(false);
 
   const openChannelsWindow = useCallback(() => {
@@ -92,6 +104,14 @@ export function useViewerPanelWindows({
     setIsViewerSettingsOpen(false);
   }, []);
 
+  const openHoverSettingsWindow = useCallback(() => {
+    setIsHoverSettingsWindowOpen(true);
+  }, []);
+
+  const closeHoverSettingsWindow = useCallback(() => {
+    setIsHoverSettingsWindowOpen(false);
+  }, []);
+
   const openRecordWindow = useCallback(() => {
     setIsRecordWindowOpen(true);
   }, []);
@@ -106,6 +126,22 @@ export function useViewerPanelWindows({
 
   const closePaintbrush = useCallback(() => {
     setIsPaintbrushOpen(false);
+  }, []);
+
+  const openDrawRoiWindow = useCallback(() => {
+    setIsDrawRoiWindowOpen(true);
+  }, []);
+
+  const closeDrawRoiWindow = useCallback(() => {
+    setIsDrawRoiWindowOpen(false);
+  }, []);
+
+  const openRoiManagerWindow = useCallback(() => {
+    setIsRoiManagerWindowOpen(true);
+  }, []);
+
+  const closeRoiManagerWindow = useCallback(() => {
+    setIsRoiManagerWindowOpen(false);
   }, []);
 
   const openAmplitudePlot = useCallback(() => {
@@ -187,6 +223,9 @@ export function useViewerPanelWindows({
     isViewerSettingsOpen,
     openViewerSettings,
     closeViewerSettings,
+    isHoverSettingsWindowOpen,
+    openHoverSettingsWindow,
+    closeHoverSettingsWindow,
     isRecordWindowOpen,
     openRecordWindow,
     closeRecordWindow,
@@ -202,6 +241,12 @@ export function useViewerPanelWindows({
     isPaintbrushOpen,
     openPaintbrush,
     closePaintbrush,
+    isDrawRoiWindowOpen,
+    openDrawRoiWindow,
+    closeDrawRoiWindow,
+    isRoiManagerWindowOpen,
+    openRoiManagerWindow,
+    closeRoiManagerWindow,
     isDiagnosticsWindowOpen,
     openDiagnosticsWindow,
     closeDiagnosticsWindow

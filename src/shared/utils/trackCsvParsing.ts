@@ -14,11 +14,7 @@ type TrackAccumulator = {
 };
 
 function isBreakSentinel(value: string): boolean {
-  const trimmed = value.trim();
-  if (trimmed === '') {
-    return true;
-  }
-  return Number.isNaN(Number(trimmed));
+  return value.trim() === '';
 }
 
 function makeTrackId(trackSetId: string, sourceTrackId: number, segmentIndex: number): string {
@@ -123,6 +119,19 @@ function normalizeTrackTimepoint(
   return value;
 }
 
+function parseFiniteCsvNumber(value: string | undefined, rowIndex: number, label: string): number {
+  const rawValue = value ?? '';
+  const normalized = rawValue.trim();
+  if (!normalized) {
+    throw new Error(`Track CSV row ${rowIndex + 1} is missing ${label}.`);
+  }
+  const parsed = Number(normalized);
+  if (!Number.isFinite(parsed)) {
+    throw new Error(`Track CSV row ${rowIndex + 1} has invalid ${label} value "${normalized}".`);
+  }
+  return parsed;
+}
+
 export function buildTracksFromCsvEntries({
   trackSetId,
   trackSetName,
@@ -143,10 +152,7 @@ export function buildTracksFromCsvEntries({
       continue;
     }
 
-    const rawId = Number(row[columnMapping.trackIdIndex]);
-    if (!Number.isFinite(rawId)) {
-      continue;
-    }
+    const rawId = parseFiniteCsvNumber(row[columnMapping.trackIdIndex], rowIndex, 'track_id');
     const sourceTrackId = Math.trunc(rawId);
 
     let state = trackStates.get(sourceTrackId);
@@ -166,26 +172,15 @@ export function buildTracksFromCsvEntries({
       continue;
     }
 
-    const frame = Number(rawFrame);
-    const x = Number(rawX);
-    const y = Number(rawY);
-    const zRaw = Number(row[columnMapping.zIndex]);
-    const amplitudeRaw = Number(row[columnMapping.amplitudeIndex]);
-    const startRaw = columnMapping.startIndex === null ? Number.NaN : Number(row[columnMapping.startIndex]);
-
-    const hasValidZ = Number.isFinite(zRaw);
-    const z = zRaw;
-
-    if (
-      !Number.isFinite(frame) ||
-      (columnMapping.startIndex !== null && !Number.isFinite(startRaw)) ||
-      !Number.isFinite(x) ||
-      !Number.isFinite(y) ||
-      !Number.isFinite(amplitudeRaw) ||
-      !hasValidZ
-    ) {
-      continue;
-    }
+    const frame = parseFiniteCsvNumber(rawFrame, rowIndex, 't');
+    const x = parseFiniteCsvNumber(rawX, rowIndex, 'x');
+    const y = parseFiniteCsvNumber(rawY, rowIndex, 'y');
+    const z = parseFiniteCsvNumber(row[columnMapping.zIndex], rowIndex, 'z');
+    const amplitudeRaw = parseFiniteCsvNumber(row[columnMapping.amplitudeIndex], rowIndex, 'a');
+    const startRaw =
+      columnMapping.startIndex === null
+        ? Number.NaN
+        : parseFiniteCsvNumber(row[columnMapping.startIndex], rowIndex, 'start');
 
     const normalizedTime =
       columnMapping.startIndex === null

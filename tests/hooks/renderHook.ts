@@ -25,7 +25,9 @@ export function renderHook<T>(hook: () => T) {
       });
     },
     unmount() {
-      renderer.unmount();
+      act(() => {
+        renderer.unmount();
+      });
     },
     act
   };

@@ -1,5 +1,6 @@
-import { Vector2, Vector3, Vector4 } from 'three';
+import { Matrix4, Vector2, Vector3, Vector4 } from 'three';
 import type { Data3DTexture, DataTexture } from 'three';
+import type { ViewerProjectionMode } from '../hooks/useVolumeRenderSetup';
 import {
   RENDER_STYLE_BL,
   RENDER_STYLE_ISO,
@@ -516,9 +517,16 @@ type VolumeUniforms = {
   u_hoverScale: { value: Vector3 };
   u_hoverRadius: { value: number };
   u_hoverActive: { value: number };
+  u_hoverVisualMode: { value: number };
+  u_hoverStrength: { value: number };
   u_hoverPulse: { value: number };
   u_hoverLabel: { value: number };
   u_hoverSegmentationMode: { value: number };
+  u_modelViewProjectionMatrix: { value: Matrix4 };
+  u_modelViewMatrixVolume: { value: Matrix4 };
+  u_cameraNearFar: { value: Vector2 };
+  u_roiOcclusionDepthTexture: { value: DataTexture | null };
+  u_roiOcclusionViewport: { value: Vector2 };
   u_segmentationLabels: { value: Data3DTexture | null };
   u_segmentationVolumeSize: { value: Vector3 };
   u_segmentationBrickAtlasData: { value: Data3DTexture | null };
@@ -580,9 +588,16 @@ const uniforms = {
   u_hoverScale: { value: new Vector3() },
   u_hoverRadius: { value: 0 },
   u_hoverActive: { value: 0 },
+  u_hoverVisualMode: { value: 0 },
+  u_hoverStrength: { value: 1 },
   u_hoverPulse: { value: 0 },
   u_hoverLabel: { value: 0 },
   u_hoverSegmentationMode: { value: 0 },
+  u_modelViewProjectionMatrix: { value: new Matrix4() },
+  u_modelViewMatrixVolume: { value: new Matrix4() },
+  u_cameraNearFar: { value: new Vector2(0.0001, 1000) },
+  u_roiOcclusionDepthTexture: { value: null as DataTexture | null },
+  u_roiOcclusionViewport: { value: new Vector2(1, 1) },
   u_segmentationLabels: { value: null as Data3DTexture | null },
   u_segmentationVolumeSize: { value: new Vector3(1, 1, 1) },
   u_segmentationBrickAtlasData: { value: null as Data3DTexture | null },
@@ -622,20 +637,20 @@ const volumeRenderVertexShader = /* glsl */ `
     varying vec3 v_position;
 
     void main() {
-      mat4 viewtransformf = modelViewMatrix;
-      mat4 viewtransformi = inverse(modelViewMatrix);
+      mat4 clipFromLocal = projectionMatrix * modelViewMatrix;
+      mat4 localFromClip = inverse(clipFromLocal);
 
       vec4 position4 = vec4(position, 1.0);
-      vec4 pos_in_cam = viewtransformf * position4;
+      vec4 clipPos = clipFromLocal * position4;
 
-      pos_in_cam.z = -pos_in_cam.w;
-      v_nearpos = viewtransformi * pos_in_cam;
+      vec4 nearClip = vec4(clipPos.xy, -clipPos.w, clipPos.w);
+      v_nearpos = localFromClip * nearClip;
 
-      pos_in_cam.z = pos_in_cam.w;
-      v_farpos = viewtransformi * pos_in_cam;
+      vec4 farClip = vec4(clipPos.xy, clipPos.w, clipPos.w);
+      v_farpos = localFromClip * farClip;
 
       v_position = position;
-      gl_Position = projectionMatrix * viewMatrix * modelMatrix * position4;
+      gl_Position = clipPos;
     }
   `;
 
@@ -667,9 +682,16 @@ const volumeRenderFragmentShader = /* glsl */ `
     uniform vec3 u_hoverScale;
     uniform float u_hoverRadius;
     uniform float u_hoverActive;
+    uniform float u_hoverVisualMode;
+    uniform float u_hoverStrength;
     uniform float u_hoverPulse;
     uniform float u_hoverLabel;
     uniform float u_hoverSegmentationMode;
+    uniform mat4 u_modelViewProjectionMatrix;
+    uniform mat4 u_modelViewMatrixVolume;
+    uniform vec2 u_cameraNearFar;
+    uniform sampler2D u_roiOcclusionDepthTexture;
+    uniform vec2 u_roiOcclusionViewport;
     uniform sampler3D u_segmentationLabels;
     uniform vec3 u_segmentationVolumeSize;
     uniform sampler3D u_segmentationBrickAtlasData;
@@ -1991,12 +2013,41 @@ const volumeRenderFragmentShader = /* glsl */ `
       return vec2(eventT, clamp(alpha, 0.0, 1.0));
     }
 
+    float compute_hover_volume_weight(vec3 sampleLoc, float radiusVoxels) {
+      if (radiusVoxels <= 0.0 || length(u_hoverScale) <= 0.0) {
+        return 0.0;
+      }
+      vec3 delta = (sampleLoc - u_hoverPos) * u_hoverScale;
+      float distanceVoxels = length(delta);
+      return 1.0 - smoothstep(0.0, radiusVoxels, distanceVoxels);
+    }
+
+    float volume_texcoords_to_clip_depth(vec3 texcoords) {
+      vec3 localPos = texcoords * u_size - vec3(0.5);
+      vec4 clipPos = u_modelViewProjectionMatrix * vec4(localPos, 1.0);
+      float safeW = max(abs(clipPos.w), 1e-6);
+      float ndcDepth = clipPos.z / safeW;
+      return clamp(ndcDepth * 0.5 + 0.5, 0.0, 1.0);
+    }
+
+    float linearize_depth(float depthValue) {
+      float nearPlane = max(u_cameraNearFar.x, 1e-6);
+      float farPlane = max(u_cameraNearFar.y, nearPlane + 1e-6);
+      float z = depthValue * 2.0 - 1.0;
+      return (2.0 * nearPlane * farPlane) / max(farPlane + nearPlane - z * (farPlane - nearPlane), 1e-6);
+    }
+
     void main() {
       vec3 farpos = v_farpos.xyz / v_farpos.w;
       vec3 nearpos = v_nearpos.xyz / v_nearpos.w;
 
-      vec3 rayOrigin = u_cameraPos;
-      vec3 rawDir = v_position - rayOrigin;
+      #if defined(VOLUME_CAMERA_ORTHOGRAPHIC)
+        vec3 rayOrigin = nearpos;
+        vec3 rawDir = farpos - nearpos;
+      #else
+        vec3 rayOrigin = u_cameraPos;
+        vec3 rawDir = v_position - rayOrigin;
+      #endif
       float rawDirLength = length(rawDir);
       if (rawDirLength < EPSILON) {
         discard;
@@ -2407,17 +2458,18 @@ const volumeRenderFragmentShader = /* glsl */ `
 
       if (u_hoverActive > 0.5 && length(u_hoverScale) > 0.0) {
         float pulse = clamp(u_hoverPulse, 0.0, 1.0);
+        float hoverStrength = max(u_hoverStrength, 0.0);
         bool segmentationHover = u_hoverSegmentationMode > 0.5;
         if (segmentationHover) {
           float sampleLabel = sample_segmentation_label(max_loc);
           if (abs(sampleLabel - u_hoverLabel) <= 0.5) {
-            color.rgb = mix(color.rgb, vec3(1.0), pulse * 0.6);
+            color.rgb = mix(color.rgb, vec3(1.0), clamp(pulse * 0.6 * hoverStrength, 0.0, 1.0));
           }
         } else if (u_hoverRadius > 0.0) {
           vec3 delta = (max_loc - u_hoverPos) * u_hoverScale;
           float falloff = smoothstep(0.0, u_hoverRadius, length(delta));
           float highlight = (1.0 - falloff) * pulse;
-          color.rgb = mix(color.rgb, vec3(1.0), highlight * 0.6);
+          color.rgb = mix(color.rgb, vec3(1.0), clamp(highlight * 0.6 * hoverStrength, 0.0, 1.0));
         }
       }
 
@@ -2502,16 +2554,17 @@ const volumeRenderFragmentShader = /* glsl */ `
       }
       if (u_hoverActive > 0.5 && length(u_hoverScale) > 0.0) {
         float pulse = clamp(u_hoverPulse, 0.0, 1.0);
+        float hoverStrength = max(u_hoverStrength, 0.0);
         bool segmentationHover = u_hoverSegmentationMode > 0.5;
         if (segmentationHover) {
           if (abs(hitLabel - u_hoverLabel) <= 0.5) {
-            color.rgb = mix(color.rgb, vec3(1.0), pulse * 0.6);
+            color.rgb = mix(color.rgb, vec3(1.0), clamp(pulse * 0.6 * hoverStrength, 0.0, 1.0));
           }
         } else if (u_hoverRadius > 0.0) {
           vec3 delta = (hitLoc - u_hoverPos) * u_hoverScale;
           float falloff = smoothstep(0.0, u_hoverRadius, length(delta));
           float highlight = (1.0 - falloff) * pulse;
-          color.rgb = mix(color.rgb, vec3(1.0), highlight * 0.6);
+          color.rgb = mix(color.rgb, vec3(1.0), clamp(highlight * 0.6 * hoverStrength, 0.0, 1.0));
         }
       }
 
@@ -2521,6 +2574,7 @@ const volumeRenderFragmentShader = /* glsl */ `
     #if defined(VOLUME_STYLE_ISO)
     void cast_iso(vec3 start_loc, vec3 step, int nsteps, vec3 view_ray) {
       vec4 hitColor = vec4(0.0);
+      vec3 hitLoc = start_loc;
       vec3 dstep = 1.5 / u_size;
       vec3 loc = start_loc;
       float baseAdaptiveLod = compute_adaptive_lod_base(step, start_loc);
@@ -2577,6 +2631,7 @@ const volumeRenderFragmentShader = /* glsl */ `
             float refined = normalize_intensity(refinedRaw);
             float adjustedRefined = apply_inversion(refined);
             if (adjustedRefined > u_renderthreshold) {
+              hitLoc = iloc;
               hitColor = add_lighting(refined, iloc, dstep, view_ray, colorSample);
               hasHit = true;
               break;
@@ -2596,6 +2651,15 @@ const volumeRenderFragmentShader = /* glsl */ `
         traversedSteps += stepDelta;
       }
 
+      if (hasHit && u_hoverActive > 0.5 && length(u_hoverScale) > 0.0 && u_hoverRadius > 0.0) {
+        float pulse = clamp(u_hoverPulse, 0.0, 1.0);
+        float hoverStrength = max(u_hoverStrength, 0.0);
+        vec3 delta = (hitLoc - u_hoverPos) * u_hoverScale;
+        float falloff = smoothstep(0.0, u_hoverRadius, length(delta));
+        float highlight = (1.0 - falloff) * pulse;
+        hitColor.rgb = mix(hitColor.rgb, vec3(1.0), clamp(highlight * 0.6 * hoverStrength, 0.0, 1.0));
+      }
+
       gl_FragColor = apply_blending_mode(hitColor);
     }
     #endif
@@ -2612,10 +2676,34 @@ const volumeRenderFragmentShader = /* glsl */ `
       float safeOpacity = max(u_blOpacityScale, 0.0);
       float stepDistance = max(length(step * u_size), 1e-5);
       float baseAdaptiveLod = compute_adaptive_lod_base(step, start_loc);
-      bool hoverActive = u_hoverActive > 0.5 && length(u_hoverScale) > 0.0;
-      float hoverPulse = clamp(u_hoverPulse, 0.0, 1.0);
-      float hoverLineRadius = max(u_hoverRadius * 0.45, 0.55);
-      float hoverAxisDensity = mix(2.6, 3.4, hoverPulse);
+      bool roiOcclusionPass = false;
+      float roiOcclusionDepth = 1.0;
+#if defined(VOLUME_ROI_OCCLUSION_ALPHA_PASS)
+      roiOcclusionPass = true;
+      vec2 safeOcclusionViewport = max(u_roiOcclusionViewport, vec2(1.0));
+      vec2 roiOcclusionUv = clamp(gl_FragCoord.xy / safeOcclusionViewport, vec2(0.0), vec2(1.0));
+      roiOcclusionDepth = texture2D(u_roiOcclusionDepthTexture, roiOcclusionUv).r;
+      if (roiOcclusionDepth <= 1e-6 || roiOcclusionDepth >= 0.999999) {
+        discard;
+      }
+      roiOcclusionDepth = linearize_depth(roiOcclusionDepth);
+#endif
+      bool hoverActive = false;
+      bool hoverDefaultActive = false;
+      bool hoverCrosshairActive = false;
+      float hoverPulse = 0.0;
+      float hoverStrength = 1.0;
+      float hoverLineRadius = 0.0;
+      float hoverAxisDensity = 0.0;
+#if !defined(VOLUME_ROI_OCCLUSION_ALPHA_PASS)
+      hoverActive = u_hoverActive > 0.5 && length(u_hoverScale) > 0.0;
+      hoverCrosshairActive = hoverActive && u_hoverVisualMode > 0.5;
+      hoverDefaultActive = hoverActive && !hoverCrosshairActive;
+      hoverPulse = clamp(u_hoverPulse, 0.0, 1.0);
+      hoverStrength = max(u_hoverStrength, 0.0);
+      hoverLineRadius = max(u_hoverRadius * 0.45, 0.55);
+      hoverAxisDensity = mix(2.6, 3.4, hoverPulse);
+#endif
       vec3 rayDelta = step * float(nsteps);
       float raySpeed = length(rayDelta * u_hoverScale);
 
@@ -2634,7 +2722,7 @@ const volumeRenderFragmentShader = /* glsl */ `
       float hierarchyTraversalNodeIsoLowThreshold = -2.0;
       int hierarchyLevelCount = int(clamp(floor(u_skipHierarchyLevelCount + 0.5), 0.0, float(MAX_SKIP_HIERARCHY_LEVELS)));
       bool skipTraversalEnabled = u_brickSkipEnabled > 0.5 && hierarchyLevelCount > 0;
-      if (hoverActive && u_hoverRadius > 0.0 && raySpeed > 0.0) {
+      if (hoverCrosshairActive && u_hoverRadius > 0.0 && raySpeed > 0.0) {
         axisXEvent = compute_crosshair_axis_event(
           vec2(start_loc.y - u_hoverPos.y, start_loc.z - u_hoverPos.z),
           vec2(rayDelta.y, rayDelta.z),
@@ -2710,6 +2798,7 @@ const volumeRenderFragmentShader = /* glsl */ `
           vec4 colorSample = sample_color_lod(loc, adaptiveLod);
           float rawIntensity = luminance(colorSample);
           float normalizedIntensity = normalize_intensity(rawIntensity);
+          vec3 sampleLoc = loc;
 
           if (u_blRefinementEnabled > 0.5 && adaptiveLod > 0.25 && normalizedIntensity > safeBackgroundCutoff + 0.05) {
             vec3 refineLoc = loc - 0.5 * step;
@@ -2722,12 +2811,20 @@ const volumeRenderFragmentShader = /* glsl */ `
               if (localRefineRaw > refinedRawIntensity) {
                 refinedRawIntensity = localRefineRaw;
                 refinedColorSample = localRefineSample;
+                sampleLoc = refineLoc;
               }
               refineLoc += refineStep;
             }
             rawIntensity = refinedRawIntensity;
             colorSample = refinedColorSample;
             normalizedIntensity = normalize_intensity(rawIntensity);
+          }
+
+          if (roiOcclusionPass) {
+            float sampleDepth = linearize_depth(volume_texcoords_to_clip_depth(sampleLoc));
+            if (sampleDepth >= roiOcclusionDepth - 1e-5) {
+              break;
+            }
           }
 
           if (normalizedIntensity > safeBackgroundCutoff) {
@@ -2739,8 +2836,20 @@ const volumeRenderFragmentShader = /* glsl */ `
                 1.0
               );
             float sigmaT = cutoffAdjustedIntensity * safeDensity * safeOpacity;
-            float alphaStep = 1.0 - exp(-sigmaT * stepDistance);
             vec4 sampleColor = compose_color(normalizedIntensity, colorSample);
+            if (hoverDefaultActive && u_hoverRadius > 0.0) {
+              float hoverWeight = compute_hover_volume_weight(sampleLoc, u_hoverRadius);
+              if (hoverWeight > 0.0) {
+                float hoverGlow = hoverWeight * (0.35 + 0.65 * hoverPulse);
+                sampleColor.rgb = mix(
+                  sampleColor.rgb,
+                  vec3(1.0),
+                  clamp(hoverGlow * 0.7 * hoverStrength, 0.0, 1.0)
+                );
+                sigmaT *= mix(1.0, 1.0 + 0.9 * hoverStrength, clamp(hoverGlow, 0.0, 1.0));
+              }
+            }
+            float alphaStep = 1.0 - exp(-sigmaT * stepDistance);
             float remainingStepAlpha = 1.0 - stepAlpha;
             stepPremultipliedColor += remainingStepAlpha * alphaStep * sampleColor.rgb;
             stepAlpha = 1.0 - (1.0 - stepAlpha) * (1.0 - alphaStep);
@@ -2777,7 +2886,11 @@ const volumeRenderFragmentShader = /* glsl */ `
         accumulatedAlpha = 1.0 - transmittance;
       }
 
+#if defined(VOLUME_ROI_OCCLUSION_ALPHA_PASS)
+      gl_FragColor = vec4(vec3(transmittance), 1.0);
+#else
       gl_FragColor = apply_blending_mode(vec4(accumulatedColor, accumulatedAlpha));
+#endif
     }
     #endif
 
@@ -2822,19 +2935,28 @@ const volumeRenderFragmentShader = /* glsl */ `
     #endif
   `;
 
-export type VolumeRenderShaderVariantKey = 'mip' | 'mip-nearest' | 'iso' | 'bl';
+export type VolumeRenderShaderVariantKey =
+  | 'mip'
+  | 'mip-nearest'
+  | 'iso'
+  | 'bl'
+  | 'mip-orthographic'
+  | 'mip-nearest-orthographic'
+  | 'iso-orthographic'
+  | 'bl-orthographic';
 
 const createVariantFragmentShader = (variant: VolumeRenderShaderVariantKey): string => {
-  if (variant === 'iso') {
-    return `#define VOLUME_STYLE_ISO\n${volumeRenderFragmentShader}`;
+  const orthographicDefine = variant.includes('orthographic') ? '#define VOLUME_CAMERA_ORTHOGRAPHIC\n' : '';
+  if (variant === 'iso' || variant === 'iso-orthographic') {
+    return `${orthographicDefine}#define VOLUME_STYLE_ISO\n${volumeRenderFragmentShader}`;
   }
-  if (variant === 'bl') {
-    return `#define VOLUME_STYLE_BL\n${volumeRenderFragmentShader}`;
+  if (variant === 'bl' || variant === 'bl-orthographic') {
+    return `${orthographicDefine}#define VOLUME_STYLE_BL\n${volumeRenderFragmentShader}`;
   }
-  if (variant === 'mip-nearest') {
-    return `#define VOLUME_STYLE_MIP\n#define VOLUME_NEAREST_VARIANT\n${volumeRenderFragmentShader}`;
+  if (variant === 'mip-nearest' || variant === 'mip-nearest-orthographic') {
+    return `${orthographicDefine}#define VOLUME_STYLE_MIP\n#define VOLUME_NEAREST_VARIANT\n${volumeRenderFragmentShader}`;
   }
-  return `#define VOLUME_STYLE_MIP\n${volumeRenderFragmentShader}`;
+  return `${orthographicDefine}#define VOLUME_STYLE_MIP\n${volumeRenderFragmentShader}`;
 };
 
 const createVolumeRenderShaderVariant = (variant: VolumeRenderShaderVariantKey) => ({
@@ -2845,31 +2967,38 @@ const createVolumeRenderShaderVariant = (variant: VolumeRenderShaderVariantKey) 
 
 export const VolumeRenderShaderVariants = {
   mip: createVolumeRenderShaderVariant('mip'),
+  'mip-orthographic': createVolumeRenderShaderVariant('mip-orthographic'),
   'mip-nearest': createVolumeRenderShaderVariant('mip-nearest'),
+  'mip-nearest-orthographic': createVolumeRenderShaderVariant('mip-nearest-orthographic'),
   iso: createVolumeRenderShaderVariant('iso'),
-  bl: createVolumeRenderShaderVariant('bl')
+  'iso-orthographic': createVolumeRenderShaderVariant('iso-orthographic'),
+  bl: createVolumeRenderShaderVariant('bl'),
+  'bl-orthographic': createVolumeRenderShaderVariant('bl-orthographic'),
 } as const;
 
 export const getVolumeRenderShaderVariantKey = (
   renderStyle: RenderStyle,
   samplingMode: 'linear' | 'nearest' = 'linear',
+  projectionMode: ViewerProjectionMode = 'perspective',
 ): VolumeRenderShaderVariantKey => {
+  const orthographicSuffix = projectionMode === 'orthographic' ? '-orthographic' : '';
   if (renderStyle === RENDER_STYLE_ISO) {
-    return 'iso';
+    return `iso${orthographicSuffix}` as VolumeRenderShaderVariantKey;
   }
   if (renderStyle === RENDER_STYLE_BL) {
-    return 'bl';
+    return `bl${orthographicSuffix}` as VolumeRenderShaderVariantKey;
   }
   if (samplingMode === 'nearest') {
-    return 'mip-nearest';
+    return `mip-nearest${orthographicSuffix}` as VolumeRenderShaderVariantKey;
   }
-  return 'mip';
+  return `mip${orthographicSuffix}` as VolumeRenderShaderVariantKey;
 };
 
 export const getVolumeRenderShaderVariant = (
   renderStyle: RenderStyle,
   samplingMode: 'linear' | 'nearest' = 'linear',
-) => VolumeRenderShaderVariants[getVolumeRenderShaderVariantKey(renderStyle, samplingMode)];
+  projectionMode: ViewerProjectionMode = 'perspective',
+) => VolumeRenderShaderVariants[getVolumeRenderShaderVariantKey(renderStyle, samplingMode, projectionMode)];
 
 // Backward-compatible default variant for existing imports.
 export const VolumeRenderShader = VolumeRenderShaderVariants.mip;

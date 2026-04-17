@@ -251,7 +251,7 @@
   - test coverage expanded in `tests/preprocessedDataset.test.ts` for policy/cancellation/diagnostics behavior
   - refreshed benchmark report in `docs/refactor-nextgen-volume/BASELINE_REPORT.json`
 - Implemented the first functional next-gen volume pipeline slice:
-  - strict preprocessed dataset format id: `llsm-viewer-preprocessed-vnext`
+  - strict preprocessed dataset format id: `llsm-viewer-preprocessed-vnext-hes1`
   - layer schema moved to `zarr.scales[]` + histogram
   - preprocessing now writes spatial chunks and multiscale mip levels
   - runtime provider now reconstructs full timepoints from spatial chunks (base scale)

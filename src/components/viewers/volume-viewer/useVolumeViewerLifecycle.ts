@@ -3,6 +3,14 @@ import type { Dispatch, MutableRefObject, SetStateAction } from 'react';
 import * as THREE from 'three';
 import type { OrbitControls } from 'three/examples/jsm/controls/OrbitControls';
 
+import {
+  applyDesktopViewState,
+  captureDesktopViewState,
+  type DesktopViewStateMap,
+  type DesktopViewerCamera,
+  type ViewerProjectionMode,
+  type VolumeRenderContext,
+} from '../../../hooks/useVolumeRenderSetup';
 import type {
   ControllerEntry,
   RaycasterLike,
@@ -16,17 +24,11 @@ import type { VolumeResources, VolumeViewerProps } from '../VolumeViewer.types';
 import { destroyVolumeRenderContext } from '../../../hooks/useVolumeRenderSetup';
 import { attachVolumeViewerPointerLifecycle } from './volumeViewerPointerLifecycle';
 import { createVolumeViewerRenderLoop } from './volumeViewerRenderLoop';
+import { disposeVolumeResources } from './useVolumeResources';
 import { disposeMaterial } from './rendering';
 
 type RenderLoopOptions = Parameters<typeof createVolumeViewerRenderLoop>[0];
 type PointerLifecycleOptions = Parameters<typeof attachVolumeViewerPointerLifecycle>[0];
-
-type VolumeRenderContext = {
-  renderer: THREE.WebGLRenderer;
-  scene: THREE.Scene;
-  camera: THREE.PerspectiveCamera;
-  controls: OrbitControls;
-};
 
 type PointerLookHandlers = Pick<
   PointerLifecycleOptions,
@@ -42,6 +44,7 @@ type UseVolumeViewerLifecycleParams = {
   applyKeyboardRotation: RenderLoopOptions['applyKeyboardRotation'];
   applyKeyboardMovement: RenderLoopOptions['applyKeyboardMovement'];
   updateTrackAppearance: RenderLoopOptions['updateTrackAppearance'];
+  renderRoiBlOcclusionPass: RenderLoopOptions['renderRoiBlOcclusionPass'];
   refreshViewerProps: RenderLoopOptions['refreshViewerProps'];
   advancePlaybackFrame: RenderLoopOptions['advancePlaybackFrame'];
   updateControllerRays: RenderLoopOptions['updateControllerRays'];
@@ -56,17 +59,16 @@ type UseVolumeViewerLifecycleParams = {
   currentDimensionsRef: MutableRefObject<{ width: number; height: number; depth: number } | null>;
   rendererRef: MutableRefObject<THREE.WebGLRenderer | null>;
   sceneRef: MutableRefObject<THREE.Scene | null>;
-  cameraRef: MutableRefObject<THREE.PerspectiveCamera | null>;
+  cameraRef: MutableRefObject<DesktopViewerCamera | null>;
   controlsRef: MutableRefObject<OrbitControls | null>;
   raycasterRef: MutableRefObject<RaycasterLike | null>;
   volumeRootGroupRef: MutableRefObject<THREE.Group | null>;
   trackGroupRef: MutableRefObject<THREE.Group | null>;
+  roiGroupRef: MutableRefObject<THREE.Group | null>;
   applyVolumeRootTransformRef: MutableRefObject<((dimensions: { width: number; height: number; depth: number } | null) => void) | undefined>;
   applyTrackGroupTransformRef: MutableRefObject<((dimensions: { width: number; height: number; depth: number } | null) => void) | undefined>;
-  preservedViewStateRef: MutableRefObject<{
-    position: THREE.Vector3;
-    target: THREE.Vector3;
-  } | null>;
+  preservedViewStateRef: MutableRefObject<DesktopViewStateMap>;
+  currentProjectionModeRef: MutableRefObject<ViewerProjectionMode>;
   setRenderContextRevision: Dispatch<SetStateAction<number>>;
   refreshTrackOverlay: () => void;
   layersRef: PointerLifecycleOptions['layersRef'];
@@ -75,6 +77,15 @@ type UseVolumeViewerLifecycleParams = {
   hoverIntensityRef: PointerLifecycleOptions['hoverIntensityRef'];
   followedTrackIdRef: PointerLifecycleOptions['followedTrackIdRef'];
   updateVoxelHover: PointerLifecycleOptions['updateVoxelHover'];
+  isRoiDrawToolActiveRef: PointerLifecycleOptions['isRoiDrawToolActiveRef'];
+  isRoiDrawPreviewActiveRef: PointerLifecycleOptions['isRoiDrawPreviewActiveRef'];
+  isRoiMoveInteractionActiveRef: PointerLifecycleOptions['isRoiMoveInteractionActiveRef'];
+  isRoiMoveActiveRef: PointerLifecycleOptions['isRoiMoveActiveRef'];
+  handleRoiPointerDown: PointerLifecycleOptions['handleRoiPointerDown'];
+  handleRoiPointerMove: PointerLifecycleOptions['handleRoiPointerMove'];
+  handleRoiPointerUp: PointerLifecycleOptions['handleRoiPointerUp'];
+  handleRoiPointerLeave: PointerLifecycleOptions['handleRoiPointerLeave'];
+  performRoiHitTest: PointerLifecycleOptions['performRoiHitTest'];
   performPropHitTest: PointerLifecycleOptions['performPropHitTest'];
   resolveWorldPropDragPosition: PointerLifecycleOptions['resolveWorldPropDragPosition'];
   performHoverHitTest: PointerLifecycleOptions['performHoverHitTest'];
@@ -128,6 +139,7 @@ type UseVolumeViewerLifecycleParams = {
   vrVolumeYawHandlesRef: MutableRefObject<THREE.Mesh[]>;
   vrVolumePitchHandleRef: MutableRefObject<THREE.Mesh | null>;
   disposeTrackResources: () => void;
+  disposeRoiResources: () => void;
 };
 
 export function useVolumeViewerLifecycle({
@@ -139,6 +151,7 @@ export function useVolumeViewerLifecycle({
   applyKeyboardRotation,
   applyKeyboardMovement,
   updateTrackAppearance,
+  renderRoiBlOcclusionPass,
   refreshViewerProps,
   advancePlaybackFrame,
   updateControllerRays,
@@ -158,9 +171,11 @@ export function useVolumeViewerLifecycle({
   raycasterRef,
   volumeRootGroupRef,
   trackGroupRef,
+  roiGroupRef,
   applyVolumeRootTransformRef,
   applyTrackGroupTransformRef,
   preservedViewStateRef,
+  currentProjectionModeRef,
   setRenderContextRevision,
   refreshTrackOverlay,
   layersRef,
@@ -169,6 +184,15 @@ export function useVolumeViewerLifecycle({
   hoverIntensityRef,
   followedTrackIdRef,
   updateVoxelHover,
+  isRoiDrawToolActiveRef,
+  isRoiDrawPreviewActiveRef,
+  isRoiMoveInteractionActiveRef,
+  isRoiMoveActiveRef,
+  handleRoiPointerDown,
+  handleRoiPointerMove,
+  handleRoiPointerUp,
+  handleRoiPointerLeave,
+  performRoiHitTest,
   performPropHitTest,
   resolveWorldPropDragPosition,
   performHoverHitTest,
@@ -212,6 +236,7 @@ export function useVolumeViewerLifecycle({
   vrVolumeYawHandlesRef,
   vrVolumePitchHandleRef,
   disposeTrackResources,
+  disposeRoiResources,
 }: UseVolumeViewerLifecycleParams) {
   const initializeRenderContextRef = useRef(initializeRenderContext);
   initializeRenderContextRef.current = initializeRenderContext;
@@ -225,6 +250,8 @@ export function useVolumeViewerLifecycle({
   applyKeyboardMovementRef.current = applyKeyboardMovement;
   const updateTrackAppearanceRef = useRef(updateTrackAppearance);
   updateTrackAppearanceRef.current = updateTrackAppearance;
+  const renderRoiBlOcclusionPassRef = useRef(renderRoiBlOcclusionPass);
+  renderRoiBlOcclusionPassRef.current = renderRoiBlOcclusionPass;
   const refreshViewerPropsRef = useRef(refreshViewerProps);
   refreshViewerPropsRef.current = refreshViewerProps;
   const advancePlaybackFrameRef = useRef(advancePlaybackFrame);
@@ -237,6 +264,24 @@ export function useVolumeViewerLifecycle({
   onCameraNavigationSampleRef.current = onCameraNavigationSample;
   const updateVoxelHoverRef = useRef(updateVoxelHover);
   updateVoxelHoverRef.current = updateVoxelHover;
+  const isRoiDrawToolActiveRefRef = useRef(isRoiDrawToolActiveRef);
+  isRoiDrawToolActiveRefRef.current = isRoiDrawToolActiveRef;
+  const isRoiDrawPreviewActiveRefRef = useRef(isRoiDrawPreviewActiveRef);
+  isRoiDrawPreviewActiveRefRef.current = isRoiDrawPreviewActiveRef;
+  const isRoiMoveInteractionActiveRefRef = useRef(isRoiMoveInteractionActiveRef);
+  isRoiMoveInteractionActiveRefRef.current = isRoiMoveInteractionActiveRef;
+  const isRoiMoveActiveRefRef = useRef(isRoiMoveActiveRef);
+  isRoiMoveActiveRefRef.current = isRoiMoveActiveRef;
+  const handleRoiPointerDownRef = useRef(handleRoiPointerDown);
+  handleRoiPointerDownRef.current = handleRoiPointerDown;
+  const handleRoiPointerMoveRef = useRef(handleRoiPointerMove);
+  handleRoiPointerMoveRef.current = handleRoiPointerMove;
+  const handleRoiPointerUpRef = useRef(handleRoiPointerUp);
+  handleRoiPointerUpRef.current = handleRoiPointerUp;
+  const handleRoiPointerLeaveRef = useRef(handleRoiPointerLeave);
+  handleRoiPointerLeaveRef.current = handleRoiPointerLeave;
+  const performRoiHitTestRef = useRef(performRoiHitTest);
+  performRoiHitTestRef.current = performRoiHitTest;
   const performPropHitTestRef = useRef(performPropHitTest);
   performPropHitTestRef.current = performPropHitTest;
   const resolveWorldPropDragPositionRef = useRef(resolveWorldPropDragPosition);
@@ -291,6 +336,8 @@ export function useVolumeViewerLifecycle({
   onRendererInitializedRef.current = onRendererInitialized;
   const disposeTrackResourcesRef = useRef(disposeTrackResources);
   disposeTrackResourcesRef.current = disposeTrackResources;
+  const disposeRoiResourcesRef = useRef(disposeRoiResources);
+  disposeRoiResourcesRef.current = disposeRoiResources;
 
   useEffect(() => {
     resetHoverStateRef.current();
@@ -315,12 +362,16 @@ export function useVolumeViewerLifecycle({
 
     const { renderer, scene, camera, controls } = renderContext;
 
-    const preservedViewState = preservedViewStateRef.current;
+    const preservedViewState = preservedViewStateRef.current[currentProjectionModeRef.current];
     if (preservedViewState) {
-      camera.position.copy(preservedViewState.position);
-      controls.target.copy(preservedViewState.target);
+      applyDesktopViewState(
+        camera,
+        controls,
+        preservedViewState,
+        container.clientWidth,
+        container.clientHeight,
+      );
       rotationTargetRef.current.copy(preservedViewState.target);
-      controls.update();
     }
 
     const volumeRootGroup = new THREE.Group();
@@ -391,6 +442,12 @@ export function useVolumeViewerLifecycle({
     volumeRootGroup.add(trackGroup);
     trackGroupRef.current = trackGroup;
 
+    const roiGroup = new THREE.Group();
+    roiGroup.name = 'RoiOverlay';
+    roiGroup.visible = false;
+    volumeRootGroup.add(roiGroup);
+    roiGroupRef.current = roiGroup;
+
     applyTrackGroupTransformRef.current?.(currentDimensionsRef.current);
     refreshTrackOverlayRef.current();
     setRenderContextRevision((revision) => revision + 1);
@@ -449,7 +506,7 @@ export function useVolumeViewerLifecycle({
     const detachPointerLifecycle = attachVolumeViewerPointerLifecycle({
       domElement,
       camera,
-      controls,
+      controlsRef,
       layersRef,
       resourcesRef,
       volumeRootGroupRef,
@@ -460,6 +517,15 @@ export function useVolumeViewerLifecycle({
       followedTrackIdRef,
       rotationTargetRef,
       updateVoxelHover: (event) => updateVoxelHoverRef.current(event),
+      isRoiDrawToolActiveRef: isRoiDrawToolActiveRefRef.current,
+      isRoiDrawPreviewActiveRef: isRoiDrawPreviewActiveRefRef.current,
+      isRoiMoveInteractionActiveRef: isRoiMoveInteractionActiveRefRef.current,
+      isRoiMoveActiveRef: isRoiMoveActiveRefRef.current,
+      handleRoiPointerDown: (event, canvas) => handleRoiPointerDownRef.current(event, canvas),
+      handleRoiPointerMove: (event) => handleRoiPointerMoveRef.current(event),
+      handleRoiPointerUp: (event, canvas) => handleRoiPointerUpRef.current(event, canvas),
+      handleRoiPointerLeave: (event, canvas) => handleRoiPointerLeaveRef.current(event, canvas),
+      performRoiHitTest: (event) => performRoiHitTestRef.current(event),
       performPropHitTest: (event) => performPropHitTestRef.current(event),
       resolveWorldPropDragPosition: (propId, event) =>
         resolveWorldPropDragPositionRef.current(propId, event),
@@ -489,18 +555,22 @@ export function useVolumeViewerLifecycle({
     const renderLoop = createVolumeViewerRenderLoop({
       renderer,
       scene,
-      camera,
-      controls,
+      cameraRef,
+      controlsRef,
       applyKeyboardRotation: (rendererInstance, cameraInstance, controlsInstance) =>
         applyKeyboardRotationRef.current(rendererInstance, cameraInstance, controlsInstance),
       applyKeyboardMovement: (rendererInstance, cameraInstance, controlsInstance) =>
         applyKeyboardMovementRef.current(rendererInstance, cameraInstance, controlsInstance),
       rotationTargetRef,
       updateTrackAppearance: (timestamp) => updateTrackAppearanceRef.current(timestamp),
+      renderRoiBlOcclusionPass: (rendererInstance, cameraInstance) =>
+        renderRoiBlOcclusionPassRef.current?.(rendererInstance, cameraInstance),
       refreshViewerProps: () => refreshViewerPropsRef.current(),
       followTargetActiveRef,
       followTargetOffsetRef,
+      roiGroupRef,
       resourcesRef,
+      currentDimensionsRef,
       onCameraNavigationSample: (sample) => onCameraNavigationSampleRef.current?.(sample),
       advancePlaybackFrame: (timestamp) => advancePlaybackFrameRef.current(timestamp),
       refreshVrHudPlacements: () => refreshVrHudPlacementsRef.current?.(),
@@ -516,10 +586,11 @@ export function useVolumeViewerLifecycle({
       restoreVrFoveationRef.current();
       applyVolumeStepScaleToResourcesRef.current(DESKTOP_VOLUME_STEP_SCALE);
 
-      preservedViewStateRef.current = {
-        position: camera.position.clone(),
-        target: controls.target.clone(),
-      };
+      preservedViewStateRef.current[currentProjectionModeRef.current] = captureDesktopViewState(
+        camera,
+        controls.target,
+        currentProjectionModeRef.current,
+      );
       renderer.setAnimationLoop(null);
       detachPointerLifecycle();
       resizeObserver.disconnect();
@@ -590,25 +661,26 @@ export function useVolumeViewerLifecycle({
         vrTracksHudPlacementRef.current = null;
       }
 
-      const resources = resourcesRef.current;
-      for (const resource of resources.values()) {
-        scene.remove(resource.mesh);
-        resource.mesh.geometry.dispose();
-        disposeMaterial(resource.mesh.material);
-        resource.texture.dispose();
-      }
-      resources.clear();
+      disposeVolumeResources(resourcesRef.current, { scene, renderer });
 
       const mountedTrackGroup = trackGroupRef.current;
       if (mountedTrackGroup) {
         disposeTrackResourcesRef.current();
       }
       trackGroupRef.current = null;
+      const mountedRoiGroup = roiGroupRef.current;
+      if (mountedRoiGroup) {
+        disposeRoiResourcesRef.current();
+      }
+      roiGroupRef.current = null;
 
       const mountedVolumeRootGroup = volumeRootGroupRef.current;
       if (mountedVolumeRootGroup) {
         if (mountedTrackGroup && mountedTrackGroup.parent === mountedVolumeRootGroup) {
           mountedVolumeRootGroup.remove(mountedTrackGroup);
+        }
+        if (mountedRoiGroup && mountedRoiGroup.parent === mountedVolumeRootGroup) {
+          mountedVolumeRootGroup.remove(mountedRoiGroup);
         }
         mountedVolumeRootGroup.clear();
         if (mountedVolumeRootGroup.parent) {

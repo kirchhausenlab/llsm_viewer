@@ -16,10 +16,12 @@ Status legend: `LOCKED`, `PROVISIONAL`, `SUPERSEDED`
 
 - Status: `LOCKED`
 - Decision:
-  - Replace fixed play/pause (`0/1`) scale choice with camera/view-dependent policy.
-  - Add hysteresis and cooldown windows to prevent scale thrash.
+  - Paused/interactive view uses camera/view-dependent scale selection with hysteresis and cooldown windows.
+  - Active atlas playback remains pinned to a coarser playback scale when one is available.
+  - Playback warmup/prefetch must use the same playback scale as the visible playback frame.
 - Rationale:
-  - Binary policy underuses LOD0 and overuses coarse levels.
+  - Paused view benefits from adaptive LOD0-biased selection.
+  - Playback needs a more conservative scale policy to preserve stable throughput and avoid current-frame scale churn.
 
 ## D-LOD0-003: Coarse-to-fine promotion is explicit and gated
 

@@ -32,8 +32,9 @@ If UI/overlay diagnostics changed, also run:
 
 ### A. Scale policy behavior
 
-- LOD selection is no longer fixed to `isPlaying ? 1 : 0`.
 - Paused view biases to LOD0 when memory/perf budget allows.
+- Active atlas playback stays on the route-selected playback scale and does not promote the visible playback frame back to `L0` from camera proximity alone.
+- Playback prefetch and warmup requests stay aligned with the visible playback scale.
 - Scale oscillation remains below configured threshold under camera jitter.
 
 ### B. Coarse-to-fine transition behavior

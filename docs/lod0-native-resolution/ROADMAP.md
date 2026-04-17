@@ -24,12 +24,14 @@ Status: `COMPLETE`
 
 Goals:
 
-- Replace binary play/pause scale policy with projected-footprint selection.
+- Apply projected-footprint selection to paused/interactive viewing.
+- Keep active atlas playback on a stable coarser playback scale when available.
 - Add hysteresis/cooldowns to prevent scale thrash.
 
 Exit criteria:
 
 - Paused scenes prefer LOD0 when feasible.
+- Playback frames and playback warmup requests stay pinned to the playback scale policy.
 - Camera jitter does not cause rapid promote/demote cycling.
 
 ## Phase 2 - Coarse-to-fine transitions

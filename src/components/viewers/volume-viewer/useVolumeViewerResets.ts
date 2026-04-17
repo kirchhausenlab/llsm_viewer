@@ -4,16 +4,22 @@ import * as THREE from 'three';
 import type { OrbitControls } from 'three/examples/jsm/controls/OrbitControls';
 
 import type { VolumeViewerProps } from '../VolumeViewer.types';
+import {
+  applyDesktopViewState,
+  captureDesktopViewState,
+  type DesktopViewStateMap,
+  type DesktopViewerCamera,
+  type ViewerProjectionMode,
+} from '../../../hooks/useVolumeRenderSetup';
 import { VR_VOLUME_BASE_OFFSET } from './vr';
 
 type UseVolumeViewerResetsParams = {
+  projectionMode: ViewerProjectionMode;
   rendererRef: MutableRefObject<THREE.WebGLRenderer | null>;
-  cameraRef: MutableRefObject<THREE.PerspectiveCamera | null>;
+  cameraRef: MutableRefObject<DesktopViewerCamera | null>;
   controlsRef: MutableRefObject<OrbitControls | null>;
-  defaultViewStateRef: MutableRefObject<{
-    position: THREE.Vector3;
-    target: THREE.Vector3;
-  } | null>;
+  defaultViewStateRef: MutableRefObject<DesktopViewStateMap>;
+  projectionViewStateRef: MutableRefObject<DesktopViewStateMap>;
   rotationTargetRef: MutableRefObject<THREE.Vector3>;
   currentDimensionsRef: MutableRefObject<{ width: number; height: number; depth: number } | null>;
   volumeRootBaseOffsetRef: MutableRefObject<THREE.Vector3>;
@@ -36,10 +42,12 @@ type UseVolumeViewerResetsParams = {
 };
 
 export function useVolumeViewerResets({
+  projectionMode,
   rendererRef,
   cameraRef,
   controlsRef,
   defaultViewStateRef,
+  projectionViewStateRef,
   rotationTargetRef,
   currentDimensionsRef,
   volumeRootBaseOffsetRef,
@@ -97,14 +105,17 @@ export function useVolumeViewerResets({
       return;
     }
 
-    const defaultViewState = defaultViewStateRef.current;
+    const defaultViewState = defaultViewStateRef.current[projectionMode];
     if (defaultViewState && camera) {
-      camera.up.set(0, 1, 0);
-      camera.position.copy(defaultViewState.position);
-      controls.target.copy(defaultViewState.target);
+      const width = renderer?.domElement.clientWidth ?? 1;
+      const height = renderer?.domElement.clientHeight ?? 1;
+      applyDesktopViewState(camera, controls, defaultViewState, width, height);
       rotationTargetRef.current.copy(defaultViewState.target);
-      camera.lookAt(defaultViewState.target);
-      controls.update();
+      projectionViewStateRef.current[projectionMode] = captureDesktopViewState(
+        camera,
+        controls.target,
+        projectionMode,
+      );
       return;
     }
 
@@ -119,6 +130,8 @@ export function useVolumeViewerResets({
     applyVolumeRootTransform,
     cameraRef,
     controlsRef,
+    projectionMode,
+    projectionViewStateRef,
     currentDimensionsRef,
     defaultViewStateRef,
     rendererRef,

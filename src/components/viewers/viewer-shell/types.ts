@@ -11,7 +11,7 @@ import type { VolumeBrickAtlas } from '../../../core/volumeProvider';
 import type { LayerSettings, RenderStyle, SamplingMode } from '../../../state/layerSettings';
 import type { TrackSetState } from '../../../types/channelTracks';
 import type { FollowedVoxelTarget } from '../../../types/follow';
-import type { HoveredVoxelInfo } from '../../../types/hover';
+import type { HoveredVoxelInfo, HoverSettings, HoverType } from '../../../types/hover';
 import type { NumericRange, TrackColorMode, TrackPoint, TrackSummary } from '../../../types/tracks';
 
 export type TopMenuChromeProps = {
@@ -67,8 +67,11 @@ export type TopMenuProps = TopMenuChromeProps &
     onOpenChannelsWindow: () => void;
     onOpenPropsWindow: () => void;
     onOpenPaintbrush: () => void;
+    onOpenDrawRoiWindow: () => void;
+    onOpenRoiManagerWindow: () => void;
     onOpenRecordWindow: () => void;
     onOpenRenderSettingsWindow: () => void;
+    onOpenHoverSettingsWindow: () => void;
     onOpenTracksWindow: () => void;
     onOpenAmplitudePlotWindow: () => void;
     onOpenPlotSettingsWindow: () => void;
@@ -100,6 +103,8 @@ export type ModeControlsProps = {
   vrButtonDisabled: boolean;
   vrButtonTitle?: string;
   vrButtonLabel: string;
+  projectionMode: 'perspective' | 'orthographic';
+  onProjectionModeChange: (projectionMode: 'perspective' | 'orthographic') => void;
   samplingMode: 'linear' | 'nearest';
   onSamplingModeToggle: () => void;
   blendingMode: 'alpha' | 'additive';
@@ -264,11 +269,15 @@ export type LayoutProps = {
   recordWindowInitialPosition: Position;
   layersWindowInitialPosition: Position;
   paintbrushWindowInitialPosition: Position;
+  drawRoiWindowInitialPosition: Position;
   propsWindowInitialPosition: Position;
+  roiManagerWindowInitialPosition: Position;
   trackWindowInitialPosition: Position;
   selectedTracksWindowInitialPosition: Position;
   plotSettingsWindowInitialPosition: Position;
   trackSettingsWindowInitialPosition: Position;
+  measurementsWindowInitialPosition: Position;
+  setMeasurementsWindowInitialPosition: Position;
 };
 
 export type TrackDefaults = {
@@ -276,9 +285,18 @@ export type TrackDefaults = {
   lineWidth: number;
 };
 
+export type HoverSettingsProps = {
+  settings: HoverSettings;
+  onEnabledChange: (enabled: boolean) => void;
+  onTypeChange: (type: HoverType) => void;
+  onStrengthChange: (value: number) => void;
+  onRadiusChange: (value: number) => void;
+};
+
 export type ViewerShellProps = {
   viewerMode: '3d';
   volumeViewerProps: VolumeViewerProps;
+  loadMeasurementVolume: ((layerKey: string, timepoint: number) => Promise<NormalizedVolume>) | null;
   topMenu: TopMenuChromeProps;
   layout: LayoutProps;
   modeControls: ModeControlsProps;

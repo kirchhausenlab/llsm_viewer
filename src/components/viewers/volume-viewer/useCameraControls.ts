@@ -2,8 +2,25 @@ import { type MutableRefObject, useCallback, useEffect, useMemo, useRef } from '
 import * as THREE from 'three';
 import type { OrbitControls } from 'three/examples/jsm/controls/OrbitControls';
 
-import { createVolumeRenderContext, type VolumeRenderContext } from '../../../hooks/useVolumeRenderSetup';
-import type { MovementState, TrackRenderResource } from '../VolumeViewer.types';
+import {
+  applyDesktopViewState,
+  captureDesktopViewState,
+  computeOrthographicVisibleHeight,
+  createDesktopCamera,
+  createDesktopControls,
+  createEmptyDesktopViewStateMap,
+  createOrthographicViewStateFromPerspective,
+  createPerspectiveViewStateFromOrthographic,
+  createVolumeRenderContext,
+  isOrthographicDesktopCamera,
+  isPerspectiveDesktopCamera,
+  resizeDesktopCamera,
+  type DesktopViewStateMap,
+  type DesktopViewerCamera,
+  type ViewerProjectionMode,
+  type VolumeRenderContext,
+} from '../../../hooks/useVolumeRenderSetup';
+import type { MovementState, RoiRenderResource, TrackRenderResource } from '../VolumeViewer.types';
 
 const MOVEMENT_KEY_MAP: Record<string, keyof MovementState> = {
   KeyW: 'moveForward',
@@ -21,8 +38,6 @@ const ROLL_KEY_MAP: Record<string, keyof MovementState> = {
 
 const LOOK_KEY_CODES = new Set(['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown']);
 
-const SHIFT_KEY_CODES = new Set(['ShiftLeft', 'ShiftRight']);
-
 type PointerLookHandlers = {
   beginPointerLook: (event: PointerEvent) => void;
   updatePointerLook: (event: PointerEvent) => void;
@@ -31,24 +46,30 @@ type PointerLookHandlers = {
 
 type UseCameraControlsParams = {
   trackLinesRef: MutableRefObject<Map<string, TrackRenderResource>>;
+  roiLinesRef: MutableRefObject<Map<string, RoiRenderResource>>;
   followTargetActiveRef: MutableRefObject<boolean>;
   setHasMeasured: (hasMeasured: boolean) => void;
+  projectionMode: ViewerProjectionMode;
   enableKeyboardNavigation?: boolean;
 };
 
 export function useCameraControls({
   trackLinesRef,
+  roiLinesRef,
   followTargetActiveRef,
   setHasMeasured,
+  projectionMode,
   enableKeyboardNavigation = true,
 }: UseCameraControlsParams) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
   const sceneRef = useRef<THREE.Scene | null>(null);
-  const cameraRef = useRef<THREE.PerspectiveCamera | null>(null);
+  const cameraRef = useRef<DesktopViewerCamera | null>(null);
   const controlsRef = useRef<OrbitControls | null>(null);
   const rotationTargetRef = useRef(new THREE.Vector3());
-  const defaultViewStateRef = useRef<{ position: THREE.Vector3; target: THREE.Vector3 } | null>(null);
+  const defaultViewStateRef = useRef<DesktopViewStateMap>(createEmptyDesktopViewStateMap());
+  const projectionViewStateRef = useRef<DesktopViewStateMap>(createEmptyDesktopViewStateMap());
+  const currentProjectionModeRef = useRef<ViewerProjectionMode>(projectionMode);
   const movementStateRef = useRef<MovementState>({
     moveForward: false,
     moveBackward: false,
@@ -88,10 +109,13 @@ export function useCameraControls({
           resource.outlineMaterial.needsUpdate = true;
         }
       }
+      for (const resource of roiLinesRef.current.values()) {
+        resource.material.resolution.set(width, height);
+        resource.material.needsUpdate = true;
+      }
     }
-    cameraInstance.aspect = width / height;
-    cameraInstance.updateProjectionMatrix();
-  }, [setHasMeasured, trackLinesRef]);
+    resizeDesktopCamera(cameraInstance, width, height);
+  }, [roiLinesRef, setHasMeasured, trackLinesRef]);
 
   const worldUp = useMemo(() => new THREE.Vector3(0, 1, 0), []);
   const lookDirectionRef = useRef(new THREE.Vector3());
@@ -108,15 +132,24 @@ export function useCameraControls({
     rotateUp: false,
     rotateDown: false,
   });
-  const isShiftPressedRef = useRef(false);
 
   const ROLL_SPEED = 0.02;
   const LOOK_SENSITIVITY = 0.0025;
   const MAX_LOOK_PITCH = Math.PI / 2 - 0.001;
   const KEYBOARD_LOOK_SENSITIVITY = 0.02;
 
+  const resolveMovementScale = useCallback(
+    (camera: DesktopViewerCamera, target: THREE.Vector3) => {
+      if (isPerspectiveDesktopCamera(camera)) {
+        return Math.max(camera.position.distanceTo(target) * 0.005, 0.0006);
+      }
+      return Math.max(computeOrthographicVisibleHeight(camera) * 0.005, 0.0006);
+    },
+    [],
+  );
+
   const applyKeyboardMovement = useCallback(
-    (renderer: THREE.WebGLRenderer, camera: THREE.PerspectiveCamera, controls: OrbitControls) => {
+    (renderer: THREE.WebGLRenderer, camera: DesktopViewerCamera, controls: OrbitControls) => {
       if (renderer.xr.isPresenting) {
         return;
       }
@@ -152,9 +185,7 @@ export function useCameraControls({
       }
 
       const rotationTarget = rotationTargetRef.current;
-      const distance = rotationTarget.distanceTo(camera.position);
-      const baseMovementScale = Math.max(distance * 0.0025, 0.0006);
-      const movementScale = baseMovementScale * (isShiftPressedRef.current ? 2 : 1);
+      const movementScale = resolveMovementScale(camera, rotationTarget);
 
       const horizontalForward = horizontalForwardRef.current;
       horizontalForward.copy(forwardVector).projectOnPlane(worldUp);
@@ -202,11 +233,11 @@ export function useCameraControls({
       rotationTarget.add(movementVector);
       controls.target.copy(rotationTarget);
     },
-    [followTargetActiveRef, worldUp],
+    [followTargetActiveRef, resolveMovementScale, worldUp],
   );
 
   const applyKeyboardRotation = useCallback(
-    (renderer: THREE.WebGLRenderer, camera: THREE.PerspectiveCamera, controls: OrbitControls) => {
+    (renderer: THREE.WebGLRenderer, camera: DesktopViewerCamera, controls: OrbitControls) => {
       if (renderer.xr.isPresenting) {
         return;
       }
@@ -243,7 +274,7 @@ export function useCameraControls({
   );
 
   const createPointerLookHandlers = useCallback(
-    ({ renderer, camera, controls }: VolumeRenderContext): PointerLookHandlers => {
+    ({ renderer }: VolumeRenderContext): PointerLookHandlers => {
       const domElement = renderer.domElement;
       const pointerLookState = {
         activePointerId: null as number | null,
@@ -256,10 +287,25 @@ export function useCameraControls({
       const cameraEuler = cameraEulerRef.current;
       const lookDirection = lookDirectionRef.current;
 
+      const resolvePointerLookContext = () => {
+        const camera = cameraRef.current;
+        const controls = controlsRef.current;
+        if (!camera || !controls) {
+          return null;
+        }
+        return { camera, controls };
+      };
+
       const beginPointerLook = (event: PointerEvent) => {
         if (renderer.xr.isPresenting) {
           return;
         }
+
+        const context = resolvePointerLookContext();
+        if (!context) {
+          return;
+        }
+        const { camera } = context;
 
         pointerLookState.activePointerId = event.pointerId;
         pointerLookState.lastClientX = event.clientX;
@@ -277,6 +323,12 @@ export function useCameraControls({
         if (pointerLookState.activePointerId !== event.pointerId) {
           return;
         }
+
+        const context = resolvePointerLookContext();
+        if (!context) {
+          return;
+        }
+        const { camera, controls } = context;
 
         const deltaX = event.clientX - pointerLookState.lastClientX;
         const deltaY = event.clientY - pointerLookState.lastClientY;
@@ -330,13 +382,72 @@ export function useCameraControls({
   );
 
   const initializeRenderContext = useCallback((container: HTMLElement) => {
-    const renderContext = createVolumeRenderContext(container);
+    const renderContext = createVolumeRenderContext(container, currentProjectionModeRef.current);
     rendererRef.current = renderContext.renderer;
     sceneRef.current = renderContext.scene;
     cameraRef.current = renderContext.camera;
     controlsRef.current = renderContext.controls;
     return renderContext;
   }, []);
+
+  useEffect(() => {
+    const renderer = rendererRef.current;
+    const scene = sceneRef.current;
+    const camera = cameraRef.current;
+    const controls = controlsRef.current;
+    if (!renderer || !scene || !camera || !controls) {
+      currentProjectionModeRef.current = projectionMode;
+      return;
+    }
+    if (renderer.xr?.isPresenting) {
+      return;
+    }
+    const previousProjectionMode = currentProjectionModeRef.current;
+    if (previousProjectionMode === projectionMode) {
+      return;
+    }
+
+    const container = containerRef.current;
+    const width = container?.clientWidth ?? renderer.domElement.clientWidth;
+    const height = container?.clientHeight ?? renderer.domElement.clientHeight;
+
+    projectionViewStateRef.current[previousProjectionMode] = captureDesktopViewState(
+      camera,
+      controls.target,
+      previousProjectionMode,
+    );
+
+    let nextViewState = projectionViewStateRef.current[projectionMode];
+    if (!nextViewState) {
+      nextViewState =
+        projectionMode === 'orthographic' && isPerspectiveDesktopCamera(camera)
+          ? createOrthographicViewStateFromPerspective(camera, controls.target)
+          : projectionMode === 'perspective' && isOrthographicDesktopCamera(camera)
+            ? createPerspectiveViewStateFromOrthographic(camera, controls.target)
+            : captureDesktopViewState(camera, controls.target, projectionMode);
+      projectionViewStateRef.current[projectionMode] = nextViewState;
+    }
+
+    const nextCamera = createDesktopCamera(
+      projectionMode,
+      width,
+      height,
+      camera.near,
+      camera.far,
+    );
+    const nextControls = createDesktopControls(nextCamera, renderer.domElement);
+    nextControls.enableRotate = controls.enableRotate;
+
+    scene.remove(camera);
+    scene.add(nextCamera);
+    controls.dispose();
+
+    cameraRef.current = nextCamera;
+    controlsRef.current = nextControls;
+    currentProjectionModeRef.current = projectionMode;
+    applyDesktopViewState(nextCamera, nextControls, nextViewState, width, height);
+    rotationTargetRef.current.copy(nextControls.target);
+  }, [projectionMode]);
 
   useEffect(() => {
     if (!enableKeyboardNavigation) {
@@ -356,7 +467,6 @@ export function useCameraControls({
       lookState.rotateRight = false;
       lookState.rotateUp = false;
       lookState.rotateDown = false;
-      isShiftPressedRef.current = false;
       return;
     }
 
@@ -364,8 +474,7 @@ export function useCameraControls({
       const movementKey = MOVEMENT_KEY_MAP[event.code];
       const rollKey = ROLL_KEY_MAP[event.code];
       const lookKey = LOOK_KEY_CODES.has(event.code);
-      const isShiftKey = SHIFT_KEY_CODES.has(event.code);
-      if (!movementKey && !rollKey && !isShiftKey && !lookKey) {
+      if (!movementKey && !rollKey && !lookKey) {
         return;
       }
 
@@ -397,7 +506,7 @@ export function useCameraControls({
         }
       }
 
-      if (followTargetActiveRef.current && (movementKey || isShiftKey)) {
+      if (followTargetActiveRef.current && movementKey) {
         return;
       }
 
@@ -406,9 +515,6 @@ export function useCameraControls({
       }
       if (rollKey) {
         movementState[rollKey] = isPressed;
-      }
-      if (isShiftKey) {
-        isShiftPressedRef.current = isPressed;
       }
     };
 
@@ -442,7 +548,6 @@ export function useCameraControls({
       lookState.rotateRight = false;
       lookState.rotateUp = false;
       lookState.rotateDown = false;
-      isShiftPressedRef.current = false;
     };
   }, [enableKeyboardNavigation, followTargetActiveRef]);
 
@@ -454,6 +559,8 @@ export function useCameraControls({
     controlsRef,
     rotationTargetRef,
     defaultViewStateRef,
+    projectionViewStateRef,
+    currentProjectionModeRef,
     movementStateRef,
     endPointerLookRef,
     handleResize,

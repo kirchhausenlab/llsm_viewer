@@ -96,6 +96,7 @@ export type VolumeViewerLifecycleOptionGroups = {
     | 'applyKeyboardRotation'
     | 'applyKeyboardMovement'
     | 'updateTrackAppearance'
+    | 'renderRoiBlOcclusionPass'
     | 'refreshViewerProps'
     | 'advancePlaybackFrame'
     | 'updateControllerRays'
@@ -115,9 +116,11 @@ export type VolumeViewerLifecycleOptionGroups = {
     | 'raycasterRef'
     | 'volumeRootGroupRef'
     | 'trackGroupRef'
+    | 'roiGroupRef'
     | 'applyVolumeRootTransformRef'
     | 'applyTrackGroupTransformRef'
     | 'preservedViewStateRef'
+    | 'currentProjectionModeRef'
     | 'setRenderContextRevision'
     | 'refreshTrackOverlay'
   >;
@@ -129,6 +132,15 @@ export type VolumeViewerLifecycleOptionGroups = {
     | 'hoverIntensityRef'
     | 'followedTrackIdRef'
     | 'updateVoxelHover'
+    | 'isRoiDrawToolActiveRef'
+    | 'isRoiDrawPreviewActiveRef'
+    | 'isRoiMoveInteractionActiveRef'
+    | 'isRoiMoveActiveRef'
+    | 'handleRoiPointerDown'
+    | 'handleRoiPointerMove'
+    | 'handleRoiPointerUp'
+    | 'handleRoiPointerLeave'
+    | 'performRoiHitTest'
     | 'performPropHitTest'
     | 'resolveWorldPropDragPosition'
     | 'performHoverHitTest'
@@ -178,6 +190,7 @@ export type VolumeViewerLifecycleOptionGroups = {
     | 'vrVolumeYawHandlesRef'
     | 'vrVolumePitchHandleRef'
     | 'disposeTrackResources'
+    | 'disposeRoiResources'
   >;
 };
 

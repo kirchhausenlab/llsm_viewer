@@ -1,9 +1,9 @@
 # Hierarchical Empty-Space Skipping Program
 
-Status: **Active (planning complete, implementation pending)**
+Status: **Complete**
 Start date: **2026-03-03**
 
-This folder is the source of truth for a hard-cutover reimplementation of brick skipping using hierarchical empty-space skipping in the 3D viewer.
+This folder is the source of truth for the hard-cutover hierarchical empty-space skipping implementation used by the 3D viewer.
 
 ## Program objective
 

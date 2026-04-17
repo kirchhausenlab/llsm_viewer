@@ -3,34 +3,41 @@ import * as THREE from 'three';
 import type { OrbitControls } from 'three/examples/jsm/controls/OrbitControls';
 
 import type { VolumeResources } from '../VolumeViewer.types';
+import {
+  computeProjectedPixelsPerUnit,
+  getProjectionModeForCamera,
+  type DesktopViewerCamera,
+  type ViewerCameraNavigationSample,
+} from '../../../hooks/useVolumeRenderSetup';
 import { HOVER_PULSE_SPEED } from './rendering';
 
 type CreateVolumeViewerRenderLoopOptions = {
   renderer: THREE.WebGLRenderer;
   scene: THREE.Scene;
-  camera: THREE.PerspectiveCamera;
-  controls: OrbitControls;
+  cameraRef?: MutableRefObject<DesktopViewerCamera | null>;
+  controlsRef?: MutableRefObject<OrbitControls | null>;
+  camera?: DesktopViewerCamera;
+  controls?: OrbitControls;
   applyKeyboardRotation: (
     renderer: THREE.WebGLRenderer,
-    camera: THREE.PerspectiveCamera,
+    camera: DesktopViewerCamera,
     controls: OrbitControls
   ) => void;
   applyKeyboardMovement: (
     renderer: THREE.WebGLRenderer,
-    camera: THREE.PerspectiveCamera,
+    camera: DesktopViewerCamera,
     controls: OrbitControls
   ) => void;
   rotationTargetRef: MutableRefObject<THREE.Vector3>;
   updateTrackAppearance: (timestamp: number) => void;
+  renderRoiBlOcclusionPass?: (renderer: THREE.WebGLRenderer, camera: THREE.Camera) => void;
   refreshViewerProps: () => void;
   followTargetActiveRef: MutableRefObject<boolean>;
   followTargetOffsetRef: MutableRefObject<THREE.Vector3 | null>;
+  roiGroupRef?: MutableRefObject<THREE.Group | null>;
   resourcesRef: MutableRefObject<Map<string, VolumeResources>>;
-  onCameraNavigationSample?: (sample: {
-    distanceToTarget: number;
-    isMoving: boolean;
-    capturedAtMs: number;
-  }) => void;
+  currentDimensionsRef?: MutableRefObject<{ width: number; height: number; depth: number } | null>;
+  onCameraNavigationSample?: (sample: ViewerCameraNavigationSample) => void;
   advancePlaybackFrame: (timestamp: number) => void;
   refreshVrHudPlacements: () => void;
   updateControllerRays: () => void;
@@ -41,16 +48,21 @@ type CreateVolumeViewerRenderLoopOptions = {
 export function createVolumeViewerRenderLoop({
   renderer,
   scene,
-  camera,
-  controls,
+  cameraRef,
+  controlsRef,
+  camera: staticCamera,
+  controls: staticControls,
   applyKeyboardRotation,
   applyKeyboardMovement,
   rotationTargetRef,
   updateTrackAppearance,
+  renderRoiBlOcclusionPass,
   refreshViewerProps,
   followTargetActiveRef,
   followTargetOffsetRef,
+  roiGroupRef,
   resourcesRef,
+  currentDimensionsRef,
   onCameraNavigationSample,
   advancePlaybackFrame,
   refreshVrHudPlacements,
@@ -70,6 +82,12 @@ export function createVolumeViewerRenderLoop({
   const CAMERA_SAMPLE_INTERVAL_MS = 100;
 
   return (timestamp: number) => {
+    const camera = cameraRef?.current ?? staticCamera ?? null;
+    const controls = controlsRef?.current ?? staticControls ?? null;
+    if (!camera || !controls) {
+      return;
+    }
+
     applyKeyboardRotation(renderer, camera, controls);
     applyKeyboardMovement(renderer, camera, controls);
     controls.update();
@@ -135,8 +153,19 @@ export function createVolumeViewerRenderLoop({
         const sampledCameraDistance = Number.isFinite(nearestVisibleVolumeDistance)
           ? nearestVisibleVolumeDistance
           : camera.position.distanceTo(controls.target);
+        const projectedPixelsPerUnit = computeProjectedPixelsPerUnit(
+          camera,
+          renderer,
+          controls.target,
+        );
+        const currentDimensions = currentDimensionsRef?.current ?? null;
+        const referenceDimension = currentDimensions
+          ? Math.max(currentDimensions.width, currentDimensions.height, currentDimensions.depth, 1)
+          : 1;
         onCameraNavigationSample({
+          projectionMode: getProjectionModeForCamera(camera),
           distanceToTarget: sampledCameraDistance,
+          projectedPixelsPerVoxel: projectedPixelsPerUnit / referenceDimension,
           isMoving: cameraMoved,
           capturedAtMs: Date.now()
         });
@@ -171,6 +200,15 @@ export function createVolumeViewerRenderLoop({
       vrLog('[VR] render tick', renderSummary);
     }
     lastRenderTickSummary = renderSummary;
+    const roiGroup = roiGroupRef?.current ?? null;
+    const previousRoiVisibility = roiGroup?.visible ?? false;
+    if (roiGroup) {
+      roiGroup.visible = false;
+    }
     renderer.render(scene, camera);
+    if (roiGroup) {
+      roiGroup.visible = previousRoiVisibility;
+    }
+    renderRoiBlOcclusionPass?.(renderer, camera);
   };
 }

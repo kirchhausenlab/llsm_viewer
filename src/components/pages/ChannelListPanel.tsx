@@ -1,23 +1,17 @@
 import { useEffect, useMemo, useRef, useState, type Dispatch, type FC, type MutableRefObject, type SetStateAction } from 'react';
 import ChannelCard from './ChannelCard';
 import TrackCard from './TrackCard';
-import type { ChannelSource, ChannelValidation, TrackSetSource, TrackValidation } from '../../hooks/dataset';
+import {
+  isMultichannelDerivedChannelSource,
+  isSegmentationChannelSource,
+  type ChannelSource,
+  type ChannelValidation,
+  type TrackSetSource,
+  type TrackValidation
+} from '../../hooks/dataset';
 import { CHANNEL_NAME_MAX_LENGTH, TRACK_NAME_MAX_LENGTH } from '../../constants/naming';
 
 type SetupExperimentType = '3d-movie' | '2d-movie' | 'single-3d-volume';
-
-function isSegmentationChannel(channel: Pick<ChannelSource, 'channelType' | 'volume'>): boolean {
-  if (channel.channelType === 'segmentation') {
-    return true;
-  }
-  if (channel.channelType === 'channel') {
-    return false;
-  }
-  if (!channel.volume) {
-    return false;
-  }
-  return channel.volume.isSegmentation;
-}
 
 const getChannelLayerSummary = (channel: ChannelSource): string => {
   if (!channel.volume) {
@@ -31,6 +25,9 @@ const getChannelLayerSummary = (channel: ChannelSource): string => {
 
 const buildChannelTabMeta = (channel: ChannelSource, validation: ChannelValidation): string => {
   const parts: string[] = [getChannelLayerSummary(channel)];
+  if (isMultichannelDerivedChannelSource(channel)) {
+    parts.push('Linked component');
+  }
   if (validation.errors.length > 0) {
     const hasNameError = validation.errors.includes('Name this channel.');
     const hasDuplicateNameError = validation.errors.includes('Channel name must be unique.');
@@ -175,12 +172,12 @@ const ChannelListPanel: FC<ChannelListPanelProps> = ({
   }, [channels]);
 
   const standardChannels = useMemo(
-    () => channels.filter((channel) => !isSegmentationChannel(channel)),
+    () => channels.filter((channel) => !isSegmentationChannelSource(channel)),
     [channels]
   );
 
   const segmentationChannels = useMemo(
-    () => channels.filter((channel) => isSegmentationChannel(channel)),
+    () => channels.filter((channel) => isSegmentationChannelSource(channel)),
     [channels]
   );
 
@@ -248,6 +245,7 @@ const ChannelListPanel: FC<ChannelListPanelProps> = ({
       const isEditing = editingChannelId === channel.id;
       const trimmedChannelName = channel.name.trim();
       const removeLabel = trimmedChannelName ? `Remove ${trimmedChannelName}` : 'Remove channel';
+      const canRemoveChannel = !isMultichannelDerivedChannelSource(channel);
       const tabClassName = [
         'channel-tab',
         isActive ? 'is-active' : '',
@@ -308,22 +306,24 @@ const ChannelListPanel: FC<ChannelListPanelProps> = ({
                 }}
               />
               <p className="channel-tab-meta">{tabMeta}</p>
-              <button
-                type="button"
-                className="channel-tab-remove"
-                onPointerDown={(event) => {
-                  event.preventDefault();
-                  event.stopPropagation();
-                }}
-                onClick={(event) => {
-                  event.stopPropagation();
-                  onRemoveChannel(channel.id);
-                }}
-                aria-label={removeLabel}
-                disabled={isFrontPageLocked}
-              >
-                x
-              </button>
+              {canRemoveChannel ? (
+                <button
+                  type="button"
+                  className="channel-tab-remove"
+                  onPointerDown={(event) => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                  }}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    onRemoveChannel(channel.id);
+                  }}
+                  aria-label={removeLabel}
+                  disabled={isFrontPageLocked}
+                >
+                  x
+                </button>
+              ) : null}
             </div>
           ) : (
             <div
@@ -363,18 +363,20 @@ const ChannelListPanel: FC<ChannelListPanelProps> = ({
               <div className="channel-tab-content">
                 <div className="channel-tab-title-row">
                   <h3 onDoubleClick={startEditingChannelName}>{channel.name.trim() || 'Name required'}</h3>
-                  <button
-                    className="channel-tab-remove"
-                    type="button"
-                    aria-label={removeLabel}
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      onRemoveChannel(channel.id);
-                    }}
-                    disabled={isFrontPageLocked}
-                  >
-                    x
-                  </button>
+                  {canRemoveChannel ? (
+                    <button
+                      className="channel-tab-remove"
+                      type="button"
+                      aria-label={removeLabel}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        onRemoveChannel(channel.id);
+                      }}
+                      disabled={isFrontPageLocked}
+                    >
+                      x
+                    </button>
+                  ) : null}
                 </div>
                 <p className="channel-tab-meta">{tabMeta}</p>
               </div>
@@ -384,6 +386,7 @@ const ChannelListPanel: FC<ChannelListPanelProps> = ({
             <ChannelCard
               key={channel.id}
               channel={channel}
+              validation={validation}
               isDisabled={isFrontPageLocked}
               onLayerFilesAdded={onChannelLayerFilesAdded}
               onLayerDrop={onChannelLayerDrop}

@@ -17,7 +17,6 @@ import {
   type ShardEntryIndex
 } from '../shared/utils/preprocessedDataset/sharding';
 import { getBytesPerValue, type VolumeDataType } from '../types/volume';
-import { ensureArrayBuffer } from '../shared/utils/buffer';
 import {
   computeBackgroundMaskVisibleRegion,
   type BackgroundMaskVisibleRegion
@@ -1030,16 +1029,34 @@ export function createVolumeProvider({
   const activePrefetchRequests = new Map<number, PrefetchRequestState>();
   let nextPrefetchRequestId = 1;
   let runtimeShardDecodeWorker: Worker | null = null;
-  let runtimeShardDecodeWorkerInitAttempted = false;
+  let runtimeShardDecodeWorkerFatalError: Error | null = null;
   let nextRuntimeShardDecodeRequestId = 1;
   const runtimeShardDecodePendingRequests = new Map<number, RuntimeShardDecodePendingRequest>();
 
-  const closeRuntimeShardDecodeWorker = () => {
+  const normalizeRuntimeShardDecodeWorkerError = (error: unknown): Error => {
+    const detail =
+      error instanceof Error
+        ? error.message
+        : typeof error === 'string'
+          ? error
+          : error === undefined || error === null
+            ? ''
+            : String(error);
+    const suffix = detail ? `: ${detail}` : '';
+    return new Error(`Runtime shard decode worker failed while workerized runtime decode is enabled${suffix}`);
+  };
+
+  const closeRuntimeShardDecodeWorker = (options?: { fatal?: boolean; cause?: unknown }) => {
     runtimeShardDecodeWorker?.terminate();
     runtimeShardDecodeWorker = null;
-    runtimeShardDecodeWorkerInitAttempted = true;
+    if (options?.fatal) {
+      runtimeShardDecodeWorkerFatalError = normalizeRuntimeShardDecodeWorkerError(options.cause);
+    } else {
+      runtimeShardDecodeWorkerFatalError = null;
+    }
+    const stopError = runtimeShardDecodeWorkerFatalError ?? new Error('Runtime shard decode worker stopped.');
     for (const pending of runtimeShardDecodePendingRequests.values()) {
-      pending.reject(new Error('Runtime shard decode worker stopped.'));
+      pending.reject(stopError);
     }
     runtimeShardDecodePendingRequests.clear();
   };
@@ -1051,10 +1068,9 @@ export function createVolumeProvider({
     if (runtimeShardDecodeWorker) {
       return runtimeShardDecodeWorker;
     }
-    if (runtimeShardDecodeWorkerInitAttempted) {
-      return null;
+    if (runtimeShardDecodeWorkerFatalError) {
+      throw runtimeShardDecodeWorkerFatalError;
     }
-    runtimeShardDecodeWorkerInitAttempted = true;
     if (typeof Worker === 'undefined') {
       return null;
     }
@@ -1075,14 +1091,18 @@ export function createVolumeProvider({
         }
         pending.reject(new Error(message.message));
       };
-      worker.onerror = () => {
-        closeRuntimeShardDecodeWorker();
+      worker.onerror = (event) => {
+        closeRuntimeShardDecodeWorker({
+          fatal: true,
+          cause: event.error instanceof Error ? event.error : new Error(event.message || 'Worker error')
+        });
       };
       runtimeShardDecodeWorker = worker;
       return worker;
-    } catch {
+    } catch (error) {
       runtimeShardDecodeWorker = null;
-      return null;
+      runtimeShardDecodeWorkerFatalError = normalizeRuntimeShardDecodeWorkerError(error);
+      throw runtimeShardDecodeWorkerFatalError;
     }
   };
 

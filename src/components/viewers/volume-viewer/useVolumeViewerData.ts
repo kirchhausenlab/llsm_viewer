@@ -2,6 +2,11 @@ import { useMemo } from 'react';
 import type * as THREE from 'three';
 import type { MutableRefObject } from 'react';
 import { useLoadingOverlay } from '../../../shared/hooks/useLoadingOverlay';
+import type {
+  DesktopViewStateMap,
+  DesktopViewerCamera,
+  ViewerProjectionMode,
+} from '../../../hooks/useVolumeRenderSetup';
 import { useVolumeResources } from './useVolumeResources';
 import type { VolumeResources, VolumeViewerProps } from '../VolumeViewer.types';
 import { RENDER_STYLE_SLICE } from '../../../state/layerSettings';
@@ -84,6 +89,7 @@ export function useVolumeViewerResources({
   primaryVolume,
   isAdditiveBlending,
   zClipFrontFraction,
+  projectionMode,
   renderContextRevision,
   rendererRef,
   sceneRef,
@@ -91,7 +97,9 @@ export function useVolumeViewerResources({
   controlsRef,
   rotationTargetRef,
   defaultViewStateRef,
+  projectionViewStateRef,
   trackGroupRef,
+  roiBlOcclusionAlphaSceneRef,
   resourcesRef,
   currentDimensionsRef,
   colormapCacheRef,
@@ -116,14 +124,18 @@ export function useVolumeViewerResources({
   primaryVolume: ReturnType<typeof useVolumeViewerDataState>['primaryVolume'];
   isAdditiveBlending: boolean;
   zClipFrontFraction: number;
+  projectionMode: ViewerProjectionMode;
   renderContextRevision: number;
   rendererRef: MutableRefObject<THREE.WebGLRenderer | null>;
   sceneRef: MutableRefObject<THREE.Scene | null>;
-  cameraRef: MutableRefObject<THREE.PerspectiveCamera | null>;
+  cameraRef: MutableRefObject<DesktopViewerCamera | null>;
   controlsRef: MutableRefObject<any>;
   rotationTargetRef: MutableRefObject<THREE.Vector3>;
-  defaultViewStateRef: MutableRefObject<any>;
+  defaultViewStateRef: MutableRefObject<DesktopViewStateMap>;
+  projectionViewStateRef: MutableRefObject<DesktopViewStateMap>;
   trackGroupRef: MutableRefObject<THREE.Group | null>;
+  roiBlOcclusionAlphaSceneRef: MutableRefObject<THREE.Scene | null>;
+  roiBlOcclusionDepthSceneRef: MutableRefObject<THREE.Scene | null>;
   resourcesRef: MutableRefObject<Map<string, VolumeResources>>;
   currentDimensionsRef: MutableRefObject<{ width: number; height: number; depth: number } | null>;
   colormapCacheRef: MutableRefObject<Map<string, THREE.DataTexture>>;
@@ -149,6 +161,7 @@ export function useVolumeViewerResources({
     primaryVolume,
     isAdditiveBlending,
     zClipFrontFraction,
+    projectionMode,
     renderContextRevision,
     rendererRef,
     sceneRef,
@@ -156,7 +169,9 @@ export function useVolumeViewerResources({
     controlsRef,
     rotationTargetRef,
     defaultViewStateRef,
+    projectionViewStateRef,
     trackGroupRef,
+    roiBlOcclusionAlphaSceneRef,
     resourcesRef,
     currentDimensionsRef,
     colormapCacheRef,

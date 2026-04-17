@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef } from 'react';
 import type { MutableRefObject } from 'react';
 import * as THREE from 'three';
 
+import type { DesktopViewerCamera } from '../../../hooks/useVolumeRenderSetup';
 import { formatChannelValuesDetailed } from '../../../shared/utils/intensityFormatting';
 import { clampValue, sampleRawValuesAtPosition, sampleSegmentationLabel } from '../../../shared/utils/hoverSampling';
 import type { NormalizedVolume } from '../../../core/volumeProcessing';
@@ -40,6 +41,7 @@ import {
   sampleVolumeAtNormalizedPosition,
   sampleVolumeLabelAtNormalizedPosition,
 } from './volumeHoverSampling';
+import type { HoverSettings } from '../../../types/hover';
 
 export type UseVolumeHoverParams = {
   layersRef: MutableRefObject<ViewerLayer[]>;
@@ -53,7 +55,7 @@ export type UseVolumeHoverParams = {
     segmentationLabel: number | null;
   }>;
   rendererRef: MutableRefObject<THREE.WebGLRenderer | null>;
-  cameraRef: MutableRefObject<THREE.PerspectiveCamera | null>;
+  cameraRef: MutableRefObject<DesktopViewerCamera | null>;
   applyHoverHighlightToResources: () => void;
   emitHoverVoxel: (hovered: HoveredVoxelInfo | null) => void;
   clearVoxelHover: () => void;
@@ -62,6 +64,7 @@ export type UseVolumeHoverParams = {
   setHoverNotReady: (message: string) => void;
   isAdditiveBlending: boolean;
   zClipFrontFraction: number;
+  hoverSettings: HoverSettings;
 };
 
 const firstPositiveDimension = (...values: number[]): number => {
@@ -130,6 +133,7 @@ export function useVolumeHover({
   setHoverNotReady,
   isAdditiveBlending,
   zClipFrontFraction,
+  hoverSettings,
 }: UseVolumeHoverParams) {
   const hoverTeardownRef = useRef(false);
   const hoverInitializationFailedRef = useRef(false);
@@ -223,6 +227,10 @@ export function useVolumeHover({
         reportVoxelHoverAbort('Hover sampling disabled while XR session is active.');
         return;
       }
+      if (!hoverSettings.enabled) {
+        reportVoxelHoverAbort('Hover disabled in Hover Settings.');
+        return;
+      }
 
       const domElement = renderer.domElement;
       const rect = domElement.getBoundingClientRect();
@@ -244,6 +252,7 @@ export function useVolumeHover({
       const { hoverableLayers, targetLayer, resource } = resolveVolumeHoverLayerSelection(
         layersRef.current,
         resourcesRef.current,
+        hoverSettings,
       );
 
       const targetVolume = targetLayer?.volume ?? null;
@@ -283,7 +292,7 @@ export function useVolumeHover({
           : null;
 
       if (!targetLayer || (!targetVolume && !targetAtlasSource)) {
-        reportVoxelHoverAbort('No visible 3D-capable volume layer is available.');
+        reportVoxelHoverAbort('No visible hover-capable layer is available for the current mode and hover type.');
         return;
       }
 
@@ -732,9 +741,16 @@ export function useVolumeHover({
       volumeStepScaleRef,
       zClipFrontFraction,
       isAdditiveBlending,
+      hoverSettings,
     ],
   );
   updateVoxelHoverRef.current = updateVoxelHover;
+
+  useEffect(() => {
+    pendingHoverEventRef.current = null;
+    clearVoxelHoverDebug();
+    clearVoxelHover();
+  }, [clearVoxelHover, clearVoxelHoverDebug, hoverSettings.enabled, hoverSettings.type]);
 
   const resetHoverState = useCallback(() => {
     hoverTeardownRef.current = false;

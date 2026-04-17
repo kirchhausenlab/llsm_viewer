@@ -1,5 +1,6 @@
 import ViewerShell from './ViewerShell';
-import { useViewerShellProps, type ViewerShellContainerProps } from './useViewerShellProps';
+import { useViewerShellProps } from './useViewerShellProps';
+import type { ViewerShellContainerProps } from '../../ui/contracts/viewerShell';
 
 export { useViewerShellProps };
 export type { ViewerShellContainerProps };

@@ -94,7 +94,9 @@ function createViewerShellContainerProps(): ViewerShellContainerProps {
       recordWindowInitialPosition: { x: 0, y: 0 },
       layersWindowInitialPosition: { x: 0, y: 0 },
       paintbrushWindowInitialPosition: { x: 0, y: 0 },
+      drawRoiWindowInitialPosition: { x: 0, y: 0 },
       propsWindowInitialPosition: { x: 0, y: 0 },
+      roiManagerWindowInitialPosition: { x: 0, y: 0 },
       trackWindowInitialPosition: { x: 0, y: 0 },
       selectedTracksWindowInitialPosition: { x: 0, y: 0 },
       plotSettingsWindowInitialPosition: { x: 0, y: 0 },
@@ -109,6 +111,8 @@ function createViewerShellContainerProps(): ViewerShellContainerProps {
       vrButtonDisabled: false,
       vrButtonTitle: 'title',
       vrButtonLabel: 'label',
+      projectionMode: 'perspective',
+      onProjectionModeChange: noopWithArgs,
       samplingMode: 'linear',
       onSamplingModeToggle: noop,
       blendingMode: 'additive',
@@ -234,6 +238,7 @@ function createViewerShellContainerProps(): ViewerShellContainerProps {
   assert.strictEqual(viewerShellProps.topMenu.currentScaleLabel, '—');
   assert.strictEqual(viewerShellProps.topMenu.initialScaleWarningMessage, 'temporary scale');
   assert.strictEqual(viewerShellProps.topMenu.isPerformanceMode, true);
+  assert.strictEqual(viewerShellProps.modeControls.projectionMode, 'perspective');
   assert.deepStrictEqual(viewerShellProps.trackDefaults, {
     opacity: DEFAULT_TRACK_OPACITY,
     lineWidth: DEFAULT_TRACK_LINE_WIDTH
@@ -245,12 +250,14 @@ function createViewerShellContainerProps(): ViewerShellContainerProps {
   const props = createViewerShellContainerProps();
   props.modeControls.is3dModeAvailable = false;
   props.modeControls.isVrActive = true;
+  props.modeControls.projectionMode = 'orthographic';
   props.tracksPanel.hasParsedTrackData = true;
 
   const viewerShellProps = useViewerShellProps(props);
 
   assert.strictEqual(viewerShellProps.volumeViewerProps.vr, undefined);
   assert.strictEqual(viewerShellProps.selectedTracksPanel.shouldRender, false);
+  assert.strictEqual(viewerShellProps.modeControls.projectionMode, 'orthographic');
 })();
 
 (() => {

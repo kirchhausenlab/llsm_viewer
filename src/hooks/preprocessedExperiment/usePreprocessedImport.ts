@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Dispatch, SetStateAction } from 'react';
 import type { FollowedTrackState, TrackSetState } from '../../types/channelTracks';
 import { unzip } from 'fflate';
-import { PUBLIC_EXPERIMENTS_CATALOG_URL } from '../../config/publicExperiments';
+import { resolvePublicExperimentsCatalogUrl } from '../../config/publicExperiments';
 import {
   loadCompiledTrackSetCatalogFromStorage,
   loadCompiledTrackSetPayloadFromStorage,
@@ -19,6 +19,10 @@ import {
   loadPublicExperimentCatalog,
   type PublicExperimentCatalogEntry
 } from '../../shared/utils/publicExperimentCatalog';
+import {
+  getDirectoryPickerUnavailableMessage,
+  inspectDirectoryPickerSupport
+} from '../../shared/utils/directoryPickerSupport';
 import type { ChannelSource, StagedPreprocessedExperiment, TrackSetSource } from '../dataset';
 
 export type UsePreprocessedImportOptions = {
@@ -45,7 +49,7 @@ export type UsePreprocessedImportResult = {
   publicExperimentCatalog: PublicExperimentCatalogEntry[];
   publicExperimentCatalogError: string | null;
   activePublicExperimentId: string | null;
-  publicExperimentCatalogUrl: string;
+  publicExperimentCatalogUrl: string | null;
   isPreprocessedImporting: boolean;
   preprocessedImportError: string | null;
   handlePreprocessedLoaderOpen: () => void;
@@ -65,10 +69,6 @@ type ArchiveEntries = Record<string, Uint8Array>;
 type ArchiveExtractionResult = {
   files: Array<{ path: string; data: Uint8Array }>;
 };
-
-function canUseDirectoryPicker(): boolean {
-  return typeof window !== 'undefined' && typeof window.showDirectoryPicker === 'function';
-}
 
 function isAbortLikeError(error: unknown): boolean {
   if (error instanceof DOMException) {
@@ -206,6 +206,19 @@ export function usePreprocessedImport({
   const [preprocessedImportError, setPreprocessedImportError] = useState<string | null>(null);
   const publicCatalogAbortRef = useRef<AbortController | null>(null);
   const publicCatalogRequestIdRef = useRef(0);
+  const publicExperimentCatalogConfig = (() => {
+    try {
+      return {
+        url: resolvePublicExperimentsCatalogUrl(),
+        error: null
+      };
+    } catch (error) {
+      return {
+        url: null,
+        error: error instanceof Error ? error.message : 'Failed to resolve the public experiment catalog URL.'
+      };
+    }
+  })();
 
   useEffect(() => {
     return () => {
@@ -323,6 +336,12 @@ export function usePreprocessedImport({
         setPublicExperimentCatalogError('Fetching public experiments is not supported in this browser.');
         return;
       }
+      if (!publicExperimentCatalogConfig.url) {
+        setPublicExperimentCatalogError(
+          publicExperimentCatalogConfig.error ?? 'Failed to resolve the public experiment catalog URL.'
+        );
+        return;
+      }
 
       publicCatalogAbortRef.current?.abort();
       const abortController = new AbortController();
@@ -334,7 +353,7 @@ export function usePreprocessedImport({
 
       try {
         const catalog = await loadPublicExperimentCatalog({
-          catalogUrl: PUBLIC_EXPERIMENTS_CATALOG_URL,
+          catalogUrl: publicExperimentCatalogConfig.url,
           signal: abortController.signal
         });
 
@@ -359,7 +378,7 @@ export function usePreprocessedImport({
         }
       }
     },
-    [publicExperimentCatalog.length]
+    [publicExperimentCatalog.length, publicExperimentCatalogConfig.error, publicExperimentCatalogConfig.url]
   );
 
   const handlePreprocessedLoaderOpen = useCallback(() => {
@@ -458,20 +477,23 @@ export function usePreprocessedImport({
       return;
     }
 
-    if (!canUseDirectoryPicker()) {
-      setPreprocessedImportError('Folder selection is not supported in this browser.');
+    const directoryPickerSupport = inspectDirectoryPickerSupport();
+    if (!directoryPickerSupport.supported) {
+      setPreprocessedImportError(getDirectoryPickerUnavailableMessage(directoryPickerSupport));
       return;
     }
 
     setIsPreprocessedImporting(true);
     setPreprocessedImportError(null);
     try {
-      const directoryHandle = await window.showDirectoryPicker?.({
+      const showDirectoryPicker = window.showDirectoryPicker;
+      if (typeof showDirectoryPicker !== 'function') {
+        throw new Error(getDirectoryPickerUnavailableMessage(inspectDirectoryPickerSupport()));
+      }
+
+      const directoryHandle = await showDirectoryPicker({
         mode: 'read'
       });
-      if (!directoryHandle) {
-        throw new Error('Folder selection is not supported in this browser.');
-      }
 
       const storageHandle = await createDirectoryHandlePreprocessedStorage(directoryHandle, {
         id: directoryHandle.name
@@ -579,7 +601,7 @@ export function usePreprocessedImport({
     publicExperimentCatalog,
     publicExperimentCatalogError,
     activePublicExperimentId,
-    publicExperimentCatalogUrl: PUBLIC_EXPERIMENTS_CATALOG_URL,
+    publicExperimentCatalogUrl: publicExperimentCatalogConfig.url,
     isPreprocessedImporting,
     preprocessedImportError,
     handlePreprocessedLoaderOpen,

@@ -18,9 +18,12 @@ test('viewer panel window controls open and close the requested windows', () => 
   assert.equal(hook.result.isTracksWindowOpen, true);
   assert.equal(hook.result.isAmplitudePlotOpen, false);
   assert.equal(hook.result.isViewerSettingsOpen, false);
+  assert.equal(hook.result.isHoverSettingsWindowOpen, false);
   assert.equal(hook.result.isTrackSettingsOpen, false);
   assert.equal(hook.result.isPlotSettingsOpen, false);
   assert.equal(hook.result.isDiagnosticsWindowOpen, false);
+  assert.equal(hook.result.isDrawRoiWindowOpen, false);
+  assert.equal(hook.result.isRoiManagerWindowOpen, false);
 
   hook.act(() => {
     hook.result.closeChannelsWindow();
@@ -34,21 +37,27 @@ test('viewer panel window controls open and close the requested windows', () => 
 
   hook.act(() => {
     hook.result.openViewerSettings();
+    hook.result.openHoverSettingsWindow();
     hook.result.openTrackSettings();
     hook.result.openAmplitudePlot();
     hook.result.openPlotSettings();
     hook.result.openPropsWindow();
     hook.result.openPaintbrush();
+    hook.result.openDrawRoiWindow();
+    hook.result.openRoiManagerWindow();
     hook.result.openDiagnosticsWindow();
   });
 
   assert.equal(hook.result.isViewerSettingsOpen, true);
+  assert.equal(hook.result.isHoverSettingsWindowOpen, true);
   assert.equal(hook.result.isPropsWindowOpen, true);
   assert.equal(hook.result.isTracksWindowOpen, true);
   assert.equal(hook.result.isTrackSettingsOpen, true);
   assert.equal(hook.result.isAmplitudePlotOpen, true);
   assert.equal(hook.result.isPlotSettingsOpen, true);
   assert.equal(hook.result.isPaintbrushOpen, true);
+  assert.equal(hook.result.isDrawRoiWindowOpen, true);
+  assert.equal(hook.result.isRoiManagerWindowOpen, true);
   assert.equal(hook.result.isDiagnosticsWindowOpen, true);
 
   hook.act(() => {
@@ -59,6 +68,8 @@ test('viewer panel window controls open and close the requested windows', () => 
   assert.equal(hook.result.isTracksWindowOpen, false);
   assert.equal(hook.result.isTrackSettingsOpen, false);
   assert.equal(hook.result.isAmplitudePlotOpen, false);
+  assert.equal(hook.result.isDrawRoiWindowOpen, true);
+  assert.equal(hook.result.isRoiManagerWindowOpen, true);
   assert.equal(hook.result.isPlotSettingsOpen, false);
 
   hook.unmount();
@@ -92,6 +103,9 @@ test('viewer panel windows react to availability changes and reset layout events
     hook.result.closeTracksWindow();
     hook.result.closeAmplitudePlot();
     hook.result.openViewerSettings();
+    hook.result.openHoverSettingsWindow();
+    hook.result.openDrawRoiWindow();
+    hook.result.openRoiManagerWindow();
     hook.result.openDiagnosticsWindow();
   });
 
@@ -106,6 +120,9 @@ test('viewer panel windows react to availability changes and reset layout events
   assert.equal(hook.result.isTracksWindowOpen, false);
   assert.equal(hook.result.isAmplitudePlotOpen, false);
   assert.equal(hook.result.isViewerSettingsOpen, true);
+  assert.equal(hook.result.isHoverSettingsWindowOpen, true);
+  assert.equal(hook.result.isDrawRoiWindowOpen, true);
+  assert.equal(hook.result.isRoiManagerWindowOpen, true);
   assert.equal(hook.result.isDiagnosticsWindowOpen, true);
 
   options = {

@@ -1,5 +1,7 @@
 # Fresh Session Prompt
 
+Historical note: this prompt is preserved for reference only. The feature track is complete.
+
 Use this prompt in a new agent session to execute the implementation with continuity:
 
 ---

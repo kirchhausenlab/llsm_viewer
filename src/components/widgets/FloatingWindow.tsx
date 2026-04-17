@@ -79,20 +79,33 @@ function FloatingWindow({
       }
 
       const rect = container.getBoundingClientRect();
+      const measuredHeaderHeight = header?.getBoundingClientRect().height ?? 0;
+      const windowWidth = Math.max(0, window.innerWidth);
+      const windowHeight = Math.max(0, window.innerHeight);
+      const measuredWidth = options?.width ?? rect.width;
+      const measuredHeight = options?.height ?? (isMinimized && measuredHeaderHeight > 0 ? measuredHeaderHeight : rect.height);
       const reservedTop = getReservedTopBoundary();
       const minY = Math.max(WINDOW_MARGIN, reservedTop);
+      const minX = WINDOW_MARGIN;
+      const maxX = Math.max(minX, windowWidth - measuredWidth - WINDOW_MARGIN);
+      const maxY = Math.max(minY, windowHeight - measuredHeight - WINDOW_MARGIN);
 
       if (options?.anchorOffset) {
+        const anchorX = x + options.anchorOffset.x;
         const anchorY = y + options.anchorOffset.y;
-        const clampedAnchorY = Math.max(minY, anchorY);
+        const clampedAnchorX = Math.min(Math.max(minX + options.anchorOffset.x, anchorX), maxX + options.anchorOffset.x);
+        const clampedAnchorY = Math.min(Math.max(minY + options.anchorOffset.y, anchorY), maxY + options.anchorOffset.y);
 
         return {
-          x,
+          x: clampedAnchorX - options.anchorOffset.x,
           y: clampedAnchorY - options.anchorOffset.y
         };
       }
 
-      return { x, y: Math.max(minY, y) };
+      return {
+        x: Math.min(Math.max(minX, x), maxX),
+        y: Math.min(Math.max(minY, y), maxY)
+      };
     },
     [isMinimized]
   );

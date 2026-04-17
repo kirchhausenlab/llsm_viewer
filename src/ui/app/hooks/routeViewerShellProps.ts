@@ -2,7 +2,7 @@ import type { ViewerShellRouteProps } from './useRouteViewerProps';
 
 type RouteViewerShellViewerSection = Pick<
   ViewerShellRouteProps,
-  'viewerMode' | 'viewerPanels' | 'vr'
+  'viewerMode' | 'loadMeasurementVolume' | 'viewerPanels' | 'vr'
 >;
 
 type RouteViewerShellChromeSection = Pick<

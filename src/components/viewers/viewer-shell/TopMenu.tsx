@@ -20,6 +20,7 @@ type DropdownMenuId = 'file' | 'view' | 'edit' | 'tracks' | 'help';
 
 type DropdownMenuItem = {
   label: string;
+  disabled?: boolean;
   onSelect?: () => void;
 };
 
@@ -37,8 +38,11 @@ export default function TopMenu(props: TopMenuProps) {
     onOpenChannelsWindow,
     onOpenPropsWindow,
     onOpenPaintbrush,
+    onOpenDrawRoiWindow,
+    onOpenRoiManagerWindow,
     onOpenRecordWindow,
     onOpenRenderSettingsWindow,
+    onOpenHoverSettingsWindow,
     onOpenTracksWindow,
     onOpenAmplitudePlotWindow,
     onOpenPlotSettingsWindow,
@@ -131,24 +135,25 @@ export default function TopMenu(props: TopMenuProps) {
   const dropdownItems = useMemo<Record<DropdownMenuId, DropdownMenuItem[]>>(
     () => ({
       file: [
-        { label: 'Save changes' },
-        { label: 'Reset changes' },
+        { label: 'Save changes', disabled: true },
+        { label: 'Reset changes', disabled: true },
         { label: 'Recenter windows', onSelect: onResetLayout },
         { label: 'Diagnostics', onSelect: onOpenDiagnosticsWindow },
         { label: 'Exit', onSelect: onReturnToLauncher }
       ],
       view: [
         { label: 'Channels window', onSelect: onOpenChannelsWindow },
-        { label: 'Camera' },
+        { label: 'Camera', disabled: true },
         { label: 'Record', onSelect: onOpenRecordWindow },
-        { label: 'Background' },
+        { label: 'Background', disabled: true },
         { label: 'Render settings', onSelect: onOpenRenderSettingsWindow },
-        { label: 'Hover settings' }
+        { label: 'Hover Settings', onSelect: onOpenHoverSettingsWindow }
       ],
       edit: [
         { label: 'Props', onSelect: onOpenPropsWindow },
         { label: 'Paintbrush', onSelect: onOpenPaintbrush },
-        { label: 'Measure' }
+        { label: 'Draw ROI', onSelect: onOpenDrawRoiWindow },
+        { label: 'ROI Manager', onSelect: onOpenRoiManagerWindow }
       ],
       tracks: [
         { label: 'Tracks window', onSelect: onOpenTracksWindow },
@@ -157,7 +162,7 @@ export default function TopMenu(props: TopMenuProps) {
         { label: 'Tracks settings', onSelect: onOpenTrackSettingsWindow }
       ],
       help: [
-        { label: 'About' },
+        { label: 'About', disabled: true },
         { label: 'Controls', onSelect: openHelpMenu }
       ]
     }),
@@ -165,11 +170,14 @@ export default function TopMenu(props: TopMenuProps) {
       onOpenAmplitudePlotWindow,
       onOpenChannelsWindow,
       onOpenDiagnosticsWindow,
+      onOpenDrawRoiWindow,
       onOpenPaintbrush,
       onOpenPlotSettingsWindow,
       onOpenPropsWindow,
       onOpenRecordWindow,
       onOpenRenderSettingsWindow,
+      onOpenHoverSettingsWindow,
+      onOpenRoiManagerWindow,
       onOpenTrackSettingsWindow,
       onOpenTracksWindow,
       onResetLayout,
@@ -213,7 +221,9 @@ export default function TopMenu(props: TopMenuProps) {
       return;
     }
 
-    const [firstItem] = menuItemRefs.current[openMenu];
+    const [firstItem] = menuItemRefs.current[openMenu].filter(
+      (item): item is HTMLButtonElement => item !== null && item.disabled !== true
+    );
     firstItem?.focus();
   }, [openMenu]);
 
@@ -281,7 +291,9 @@ export default function TopMenu(props: TopMenuProps) {
   };
 
   const handleMenuKeyDown = (menuId: DropdownMenuId, event: ReactKeyboardEvent<HTMLDivElement>) => {
-    const items = menuItemRefs.current[menuId].filter(Boolean) as HTMLButtonElement[];
+    const items = menuItemRefs.current[menuId].filter(
+      (item): item is HTMLButtonElement => item !== null && item.disabled !== true
+    );
     if (items.length === 0) {
       return;
     }
@@ -464,8 +476,9 @@ export default function TopMenu(props: TopMenuProps) {
                               type="button"
                               role="menuitem"
                               className="viewer-top-menu-dropdown-item"
+                              disabled={item.disabled === true}
                               ref={(element) => {
-                                menuItemRefs.current[menuId][index] = element;
+                                menuItemRefs.current[menuId][index] = item.disabled === true ? null : element;
                               }}
                               onClick={() => handleMenuItemSelect(menuId, item.onSelect)}
                             >

@@ -32,7 +32,7 @@ export type UsePreprocessedExperimentResult = {
   publicExperimentCatalog: PublicExperimentCatalogEntry[];
   publicExperimentCatalogError: string | null;
   activePublicExperimentId: string | null;
-  publicExperimentCatalogUrl: string;
+  publicExperimentCatalogUrl: string | null;
   isPreprocessedImporting: boolean;
   preprocessedImportError: string | null;
   handlePreprocessedLoaderOpen: () => void;

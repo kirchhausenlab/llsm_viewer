@@ -3,6 +3,13 @@ import * as THREE from 'three';
 
 import { resolveVolumeHoverLayerSelection } from '../src/components/viewers/volume-viewer/volumeHoverTargetLayer.ts';
 import type { ViewerLayer, VolumeResources } from '../src/components/viewers/VolumeViewer.types.ts';
+import { DEFAULT_HOVER_SETTINGS } from '../src/shared/utils/hoverSettings.ts';
+import {
+  RENDER_STYLE_BL,
+  RENDER_STYLE_ISO,
+  RENDER_STYLE_MIP,
+  RENDER_STYLE_SLICE,
+} from '../src/state/layerSettings.ts';
 
 console.log('Starting volume hover target-layer helper tests');
 
@@ -33,7 +40,7 @@ const createLayer = (key: string, options?: Partial<ViewerLayer>): ViewerLayer =
   color: '#ffffff',
   offsetX: 0,
   offsetY: 0,
-  renderStyle: 0,
+  renderStyle: RENDER_STYLE_MIP,
   blDensityScale: 1,
   blBackgroundCutoff: 0.08,
   blOpacityScale: 1,
@@ -181,6 +188,63 @@ const createBrickAtlas = (layerKey: string) => {
 
   assert.deepStrictEqual(selection.hoverableLayers.map((layer) => layer.key), ['valid']);
   assert.strictEqual(selection.targetLayer?.key, 'valid');
+})();
+
+(() => {
+  const isoLayer = createLayer('iso', { renderStyle: RENDER_STYLE_ISO });
+  const mipLayer = createLayer('mip', { renderStyle: RENDER_STYLE_MIP });
+  const blLayer = createLayer('bl', { renderStyle: RENDER_STYLE_BL });
+  const sliceLayer = createLayer('slice', { renderStyle: RENDER_STYLE_SLICE });
+  const resources = new Map<string, VolumeResources>([
+    ['iso', createResource('3d')],
+    ['mip', createResource('3d')],
+    ['bl', createResource('3d')],
+    ['slice', createResource('slice')],
+  ]);
+
+  const defaultSelection = resolveVolumeHoverLayerSelection(
+    [mipLayer, isoLayer, blLayer, sliceLayer],
+    resources,
+    DEFAULT_HOVER_SETTINGS,
+  );
+  assert.deepStrictEqual(defaultSelection.hoverableLayers.map((layer) => layer.key), ['mip', 'iso', 'bl', 'slice']);
+  assert.strictEqual(defaultSelection.targetLayer?.key, 'mip');
+  assert.strictEqual(defaultSelection.resource?.mode, '3d');
+
+  const crosshairSelection = resolveVolumeHoverLayerSelection(
+    [isoLayer, mipLayer, blLayer],
+    resources,
+    { ...DEFAULT_HOVER_SETTINGS, type: 'crosshair' },
+  );
+  assert.deepStrictEqual(crosshairSelection.hoverableLayers.map((layer) => layer.key), ['bl']);
+  assert.strictEqual(crosshairSelection.targetLayer?.key, 'bl');
+  assert.strictEqual(crosshairSelection.resource?.mode, '3d');
+
+  const disabledSelection = resolveVolumeHoverLayerSelection(
+    [mipLayer, blLayer, sliceLayer],
+    resources,
+    { ...DEFAULT_HOVER_SETTINGS, enabled: false },
+  );
+  assert.deepStrictEqual(disabledSelection.hoverableLayers, []);
+  assert.strictEqual(disabledSelection.targetLayer, null);
+  assert.strictEqual(disabledSelection.resource, null);
+})();
+
+(() => {
+  const isoLayer = createLayer('iso-only', { renderStyle: RENDER_STYLE_ISO });
+  const resources = new Map<string, VolumeResources>([
+    ['iso-only', createResource('3d')],
+  ]);
+
+  const selection = resolveVolumeHoverLayerSelection(
+    [isoLayer],
+    resources,
+    DEFAULT_HOVER_SETTINGS,
+  );
+
+  assert.deepStrictEqual(selection.hoverableLayers.map((layer) => layer.key), ['iso-only']);
+  assert.strictEqual(selection.targetLayer?.key, 'iso-only');
+  assert.strictEqual(selection.resource?.mode, '3d');
 })();
 
 console.log('volume hover target-layer helper tests passed');

@@ -1,91 +1,74 @@
 # Decisions
 
-This file records locked decisions for the per-layer render-style + BL implementation.
-
 Status legend: `LOCKED`, `PROVISIONAL`, `SUPERSEDED`
 
-## D-BL-001: Render style becomes per-layer
+## D-BL-001: Render Style Is Per-Layer
 
 - Status: `LOCKED`
 - Decision:
   - `renderStyle` is stored and edited per layer.
-  - Global render-style toggling is removed as source of truth.
+  - Global render-style toggling is not the source of truth.
 - Rationale:
-  - User requirement.
-  - Matches layer-local controls (windowing, color, invert).
+  - Matches layer-local visualization state.
 
-## D-BL-002: Desktop uses explicit mode buttons
+## D-BL-002: Desktop Uses Explicit Mode Buttons
 
 - Status: `LOCKED`
 - Decision:
-  - Desktop UI shows explicit `MIP`, `ISO`, `BL` buttons (not a toggle cycle).
-  - Control is placed in layer-scoped UI (`ChannelsPanel`) for the selected layer.
+  - Desktop UI uses explicit `MIP`, `ISO`, `BL` buttons in `ChannelsPanel`.
 - Rationale:
-  - User requirement.
-  - Prevents ambiguous mode state in multi-layer scenes.
+  - Makes multi-layer state unambiguous.
 
-## D-BL-003: BL controls are exposed in first release
+## D-BL-003: BL Tuning Controls Are Shared Global Values
 
 - Status: `LOCKED`
 - Decision:
-  - First pass exposes the following per-layer controls:
-    - `blDensityScale`
-    - `blBackgroundCutoff`
-    - `blOpacityScale`
-    - `blEarlyExitAlpha`
-  - Controls are visible only when selected layer render style is `BL`.
-- Initial default values:
+  - `blDensityScale`, `blBackgroundCutoff`, `blOpacityScale`, and `blEarlyExitAlpha` are shared global values.
+  - They are exposed in the selected-layer UI when the selected layer render style is `BL`.
+- Initial defaults:
   - `blDensityScale = 1.0`
   - `blBackgroundCutoff = 0.08`
   - `blOpacityScale = 1.0`
   - `blEarlyExitAlpha = 0.98`
 - Rationale:
-  - User requirement.
-  - Needed for noisy-background data where naive BL can look hazy.
+  - Keeps tuning behavior simple and consistent across visible layers while still making the controls easy to find.
 
-## D-BL-004: Use per-mode shader variants
+## D-BL-004: Use Per-Mode Shader Variants
 
 - Status: `LOCKED`
 - Decision:
-  - Implement separate shader/material variants for `MIP`, `ISO`, and `BL`.
-  - Keep MIP and ISO paths unchanged in active runtime behavior.
+  - Use separate shader/material variants for `MIP`, `ISO`, and `BL`.
 - Rationale:
-  - Avoid measurable MIP/ISO frame-time regression from dormant BL branch logic.
-  - Cleaner evolution for mode-specific uniforms and optimizations.
+  - Avoids measurable MIP/ISO regression from dormant BL branches.
 
-## D-BL-005: Keep existing render-style numeric contract
+## D-BL-005: Keep Existing Numeric Render-Style Contract
 
 - Status: `LOCKED`
 - Decision:
-  - Continue numeric mode ids in runtime (`0 | 1 | 2`) for minimal plumbing churn.
-  - Introduce shared constants/types to remove magic numbers.
+  - Runtime render style remains numeric (`0 | 1 | 2`).
 - Rationale:
-  - Existing shader/state/plumbing already uses numeric render style.
-  - Reduces migration risk and diff size.
+  - Minimizes plumbing churn.
 
+## D-BL-006: Planar Views Do Not Implement BL
 
 - Status: `LOCKED`
 - Decision:
-  - Any type broadening to include `2` is accepted; no BL rendering changes in planar.
+  - Type broadening to include `2` is accepted, but planar rendering does not implement BL behavior.
 - Rationale:
   - BL is a 3D raymarching mode.
-  - Reduces scope and risk.
 
-## D-BL-007: VR uses existing interaction contract
-
-- Status: `LOCKED`
-- Decision:
-  - VR render-style interaction remains in channels HUD.
-  - Callback path stays `onLayerRenderStyleToggle(layerKey?)`, internally upgraded to cycle `MIP -> ISO -> BL -> MIP`.
-- Rationale:
-  - Minimal API churn.
-  - Preserves current VR interaction wiring while adding third mode.
-
-## D-BL-008: Backward compatibility
+## D-BL-007: VR Keeps the Existing Interaction Contract
 
 - Status: `LOCKED`
 - Decision:
-  - No special backward compatibility layer is required for this feature.
+  - VR continues to use `onLayerRenderStyleToggle(layerKey?)`, upgraded to cycle `MIP -> ISO -> BL -> MIP`.
 - Rationale:
-  - Repo policy favors forward progress in early development.
+  - Preserves current VR wiring with minimal API churn.
 
+## D-BL-008: No Special Backward-Compatibility Layer
+
+- Status: `LOCKED`
+- Decision:
+  - No dedicated backward-compatibility layer was added for this feature track.
+- Rationale:
+  - The repo favors forward cleanup over compatibility scaffolding for this area.

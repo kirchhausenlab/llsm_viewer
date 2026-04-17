@@ -145,8 +145,11 @@ function createProps(overrides: Partial<React.ComponentProps<typeof TopMenu>> = 
     onOpenChannelsWindow: () => {},
     onOpenPropsWindow: () => {},
     onOpenPaintbrush: () => {},
+    onOpenDrawRoiWindow: () => {},
+    onOpenRoiManagerWindow: () => {},
     onOpenRecordWindow: () => {},
     onOpenRenderSettingsWindow: () => {},
+    onOpenHoverSettingsWindow: () => {},
     onOpenTracksWindow: () => {},
     onOpenAmplitudePlotWindow: () => {},
     onOpenPlotSettingsWindow: () => {},
@@ -232,8 +235,8 @@ test('top menu renders the requested dropdown order and items', () => {
 
     const expectedMenus = new Map<string, string[]>([
       ['File', ['Save changes', 'Reset changes', 'Recenter windows', 'Diagnostics', 'Exit']],
-      ['View', ['Channels window', 'Camera', 'Record', 'Background', 'Render settings', 'Hover settings']],
-      ['Edit', ['Props', 'Paintbrush', 'Measure']],
+      ['View', ['Channels window', 'Camera', 'Record', 'Background', 'Render settings', 'Hover Settings']],
+      ['Edit', ['Props', 'Paintbrush', 'Draw ROI', 'ROI Manager']],
       ['Tracks', ['Tracks window', 'Amplitude plot', 'Plot settings', 'Tracks settings']],
       ['Help', ['About', 'Controls']]
     ]);
@@ -295,8 +298,11 @@ test('wired dropdown items invoke the expected handlers', () => {
     let channelsCalls = 0;
     let propsCalls = 0;
     let paintbrushCalls = 0;
+    let drawRoiCalls = 0;
+    let roiManagerCalls = 0;
     let recordCalls = 0;
     let renderSettingsCalls = 0;
+    let hoverSettingsCalls = 0;
     let tracksCalls = 0;
     let amplitudePlotCalls = 0;
     let plotSettingsCalls = 0;
@@ -320,11 +326,20 @@ test('wired dropdown items invoke the expected handlers', () => {
       onOpenPaintbrush: () => {
         paintbrushCalls += 1;
       },
+      onOpenDrawRoiWindow: () => {
+        drawRoiCalls += 1;
+      },
+      onOpenRoiManagerWindow: () => {
+        roiManagerCalls += 1;
+      },
       onOpenRecordWindow: () => {
         recordCalls += 1;
       },
       onOpenRenderSettingsWindow: () => {
         renderSettingsCalls += 1;
+      },
+      onOpenHoverSettingsWindow: () => {
+        hoverSettingsCalls += 1;
       },
       onOpenTracksWindow: () => {
         tracksCalls += 1;
@@ -396,10 +411,31 @@ test('wired dropdown items invoke the expected handlers', () => {
     });
 
     act(() => {
+      findDropdownTrigger(renderer, 'Edit').props.onClick();
+    });
+    act(() => {
+      findMenuItem(renderer, 'Draw ROI').props.onClick();
+    });
+
+    act(() => {
+      findDropdownTrigger(renderer, 'Edit').props.onClick();
+    });
+    act(() => {
+      findMenuItem(renderer, 'ROI Manager').props.onClick();
+    });
+
+    act(() => {
       findDropdownTrigger(renderer, 'View').props.onClick();
     });
     act(() => {
       findMenuItem(renderer, 'Render settings').props.onClick();
+    });
+
+    act(() => {
+      findDropdownTrigger(renderer, 'View').props.onClick();
+    });
+    act(() => {
+      findMenuItem(renderer, 'Hover Settings').props.onClick();
     });
 
     act(() => {
@@ -442,14 +478,54 @@ test('wired dropdown items invoke the expected handlers', () => {
     assert.equal(channelsCalls, 1);
     assert.equal(propsCalls, 1);
     assert.equal(paintbrushCalls, 1);
+    assert.equal(drawRoiCalls, 1);
+    assert.equal(roiManagerCalls, 1);
     assert.equal(recordCalls, 1);
     assert.equal(renderSettingsCalls, 1);
+    assert.equal(hoverSettingsCalls, 1);
     assert.equal(tracksCalls, 1);
     assert.equal(amplitudePlotCalls, 1);
     assert.equal(plotSettingsCalls, 1);
     assert.equal(trackSettingsCalls, 1);
     assert.equal(diagnosticsCalls, 1);
     assert.equal(helpCalls, 1);
+
+    renderer.unmount();
+  });
+});
+
+test('top menu placeholder actions render as inactive buttons', () => {
+  withEnvironmentMocks(() => {
+    const renderer = renderTopMenu();
+    const inactiveItems = [
+      'Save changes',
+      'Reset changes',
+      'Camera',
+      'Background',
+      'About'
+    ];
+
+    for (const [menuLabel, itemLabel] of [
+      ['File', 'Save changes'],
+      ['View', 'Camera'],
+      ['Help', 'About']
+    ] as const) {
+      act(() => {
+        findDropdownTrigger(renderer, menuLabel).props.onClick();
+      });
+
+      for (const label of inactiveItems.filter((value) =>
+        menuLabel === 'File'
+          ? value === 'Save changes' || value === 'Reset changes'
+          : menuLabel === 'View'
+            ? value === 'Camera' || value === 'Background'
+            : value === 'About'
+      )) {
+        assert.equal(findMenuItem(renderer, label).props.disabled, true);
+      }
+
+      assert.equal(findMenuItem(renderer, itemLabel).props.disabled, true);
+    }
 
     renderer.unmount();
   });
@@ -483,7 +559,7 @@ test('top menu does not close the controls window when another menu opens', () =
       'Record',
       'Background',
       'Render settings',
-      'Hover settings'
+      'Hover Settings'
     ]);
     assert.equal(closeHelpCalls, 0);
 

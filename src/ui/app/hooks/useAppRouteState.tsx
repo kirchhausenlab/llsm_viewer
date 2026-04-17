@@ -1,11 +1,18 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { FrontPageContainerProps } from '../../../components/pages/FrontPageContainer';
-import type { ViewerShellContainerProps } from '../../../components/viewers/ViewerShellContainer';
+import type { NormalizedVolume } from '../../../core/volumeProcessing';
 import type {
   LoadedDatasetLayer,
   StagedPreprocessedExperiment
 } from '../../../hooks/dataset';
+import type { LayerSettings } from '../../../state/layerSettings';
 import { deriveChannelTrackOffsets } from '../../../state/channelTrackOffsets';
+import {
+  createLayerAutoThresholdRecord,
+  createVolumeDerivedBrightnessState,
+  createLayerDefaultSettingsRecord,
+  createLayerDefaultSettingsFromLayer,
+  layerBrightnessStatesMatch
+} from './layerDefaults';
 import type { FollowedVoxelTarget } from '../../../types/follow';
 import type { HoveredVoxelInfo } from '../../../types/hover';
 import { computeTrackSummary } from '../../../shared/utils/trackSummary';
@@ -43,23 +50,12 @@ import { createRouteDatasetSetupProps } from './routeDatasetSetupProps';
 import { createRouteViewerShellProps } from './routeViewerShellProps';
 import { useViewerModePlayback } from './useViewerModePlayback';
 import { useWindowLayout } from './useWindowLayout';
+import type { ViewerCameraNavigationSample } from '../../../hooks/useVolumeRenderSetup';
 import {
   collectInitialHttpLaunchTrackedTargets
 } from './initialHttpLaunch';
 import { getTrackPlaybackIndexWindow, snapTimeIndexToWindow } from '../../../shared/utils';
-
-export type DatasetSetupRouteProps = FrontPageContainerProps;
-
-export type ViewerRouteProps = {
-  viewerShellProps: Omit<ViewerShellContainerProps, 'isHelpMenuOpen' | 'openHelpMenu' | 'closeHelpMenu'>;
-  isViewerLaunched: boolean;
-};
-
-export type AppRouteState = {
-  isViewerLaunched: boolean;
-  datasetSetupProps: DatasetSetupRouteProps;
-  viewerRouteProps: ViewerRouteProps;
-};
+import type { AppRouteState } from '../../contracts/routes';
 
 function selectDeterministicId(values: ReadonlyArray<string>): string | null {
   if (values.length === 0) {
@@ -116,11 +112,17 @@ function getResolvedLoadedScaleLevel({
   return typeof scaleLevel === 'number' && Number.isFinite(scaleLevel) ? Number(scaleLevel) : null;
 }
 
-type ViewerCameraNavigationSample = {
-  distanceToTarget: number;
-  isMoving: boolean;
-  capturedAtMs: number;
-};
+export type ProjectionMode = 'perspective' | 'orthographic';
+
+export function normalizeProjectionModeForVr(
+  projectionMode: ProjectionMode,
+  isVrActive: boolean
+): ProjectionMode {
+  if (isVrActive && projectionMode === 'orthographic') {
+    return 'perspective';
+  }
+  return projectionMode;
+}
 
 export function useAppRouteState(): AppRouteState {
   const {
@@ -129,6 +131,7 @@ export function useAppRouteState(): AppRouteState {
     tracks,
     setTracks,
     setLayerTimepointCounts,
+    setLayerTimepointCountErrors,
     channelIdRef,
     layerIdRef,
     trackSetIdRef,
@@ -151,15 +154,19 @@ export function useAppRouteState(): AppRouteState {
     setLayerSettings,
     layerAutoThresholds,
     setLayerAutoThresholds,
-    setGlobalRenderStyle,
+    getChannelDefaultColor,
     globalSamplingMode,
     setGlobalSamplingMode,
+    globalBlDensityScale,
     setGlobalBlDensityScale,
+    globalBlBackgroundCutoff,
     setGlobalBlBackgroundCutoff,
+    globalBlOpacityScale,
     setGlobalBlOpacityScale,
+    globalBlEarlyExitAlpha,
     setGlobalBlEarlyExitAlpha,
+    globalMipEarlyExitThreshold,
     setGlobalMipEarlyExitThreshold,
-    createLayerDefaultSettings,
     createLayerDefaultBrightnessState,
   } = useChannelLayerStateContext();
   const [preprocessedExperiment, setPreprocessedExperiment] = useState<StagedPreprocessedExperiment | null>(null);
@@ -175,6 +182,10 @@ export function useAppRouteState(): AppRouteState {
       }))
     );
   }, [preprocessedExperiment]);
+  const loadedDatasetLayerByKey = useMemo(
+    () => new Map(loadedDatasetLayers.map((layer) => [layer.key, layer])),
+    [loadedDatasetLayers]
+  );
   const [isExperimentSetupStarted, setIsExperimentSetupStarted] = useState(false);
   const {
     voxelResolution: voxelResolutionHook,
@@ -191,13 +202,16 @@ export function useAppRouteState(): AppRouteState {
     showInteractionWarning
   } = useDatasetSetup({
     channels,
+    setTracks,
     loadedLayers: loadedDatasetLayers,
     layerSettings,
     setChannels,
     setLayerSettings,
     setLayerAutoThresholds,
     setLayerTimepointCounts,
+    setLayerTimepointCountErrors,
     computeLayerTimepointCount,
+    createChannelSource,
     createVolumeSource
   });
   const {
@@ -212,6 +226,7 @@ export function useAppRouteState(): AppRouteState {
     bumpDatasetErrorResetSignal
   } = datasetErrors;
   const [blendingMode, setBlendingMode] = useState<'alpha' | 'additive'>('additive');
+  const [projectionMode, setProjectionMode] = useState<ProjectionMode>('perspective');
   const resetPreprocessedStateRef = useRef<() => void>(() => {});
   const hasScheduledOpfsCleanupRef = useRef(false);
   const [resetViewHandler, setResetViewHandler] = useState<(() => void) | null>(null);
@@ -220,6 +235,7 @@ export function useAppRouteState(): AppRouteState {
   const [followedVoxel, setFollowedVoxel] = useState<FollowedVoxelTarget | null>(null);
   const [lastHoveredVolumeVoxel, setLastHoveredVolumeVoxel] = useState<HoveredVoxelInfo | null>(null);
   const [viewerCameraSample, setViewerCameraSample] = useState<ViewerCameraNavigationSample | null>(null);
+  const initializedPreprocessedLayerDefaultsRef = useRef<StagedPreprocessedExperiment | null>(null);
   const initialHttpLaunchScaleTargetsRef = useRef<Map<string, number>>(new Map());
   const initialHttpLaunchObservationDoneRef = useRef(false);
   const [isInitialHttpLaunchLoading, setIsInitialHttpLaunchLoading] = useState(false);
@@ -239,18 +255,107 @@ export function useAppRouteState(): AppRouteState {
     }
     return saved;
   }, [preprocessedExperiment, trackScale]);
+  const createLayerDefaultSettings = useCallback(
+    (layerKey: string): LayerSettings =>
+      createLayerDefaultSettingsFromLayer({
+        layer: loadedDatasetLayerByKey.get(layerKey) ?? null,
+        getChannelDefaultColor,
+        globalSamplingMode,
+        globalBlDensityScale,
+        globalBlBackgroundCutoff,
+        globalBlOpacityScale,
+        globalBlEarlyExitAlpha,
+        globalMipEarlyExitThreshold
+      }),
+    [
+      getChannelDefaultColor,
+      globalBlBackgroundCutoff,
+      globalBlDensityScale,
+      globalBlEarlyExitAlpha,
+      globalBlOpacityScale,
+      globalMipEarlyExitThreshold,
+      globalSamplingMode,
+      loadedDatasetLayerByKey
+    ]
+  );
+  const handleLaunchLayerVolumesResolved = useCallback(
+    (loadedVolumes: Record<string, NormalizedVolume | null>) => {
+      const derivedByLayerKey = new Map<
+        string,
+        ReturnType<typeof createVolumeDerivedBrightnessState>
+      >();
+      for (const layer of loadedDatasetLayers) {
+        const volume = loadedVolumes[layer.key] ?? null;
+        if (!volume) {
+          continue;
+        }
+        derivedByLayerKey.set(layer.key, createVolumeDerivedBrightnessState(volume));
+      }
+
+      if (derivedByLayerKey.size === 0) {
+        return;
+      }
+
+      setLayerSettings((current) => {
+        let changed = false;
+        const next: Record<string, LayerSettings> = { ...current };
+        for (const layer of loadedDatasetLayers) {
+          const derived = derivedByLayerKey.get(layer.key);
+          if (!derived) {
+            continue;
+          }
+          const defaultSettings = createLayerDefaultSettings(layer.key);
+          const previous = current[layer.key] ?? defaultSettings;
+          if (!layerBrightnessStatesMatch(previous, defaultSettings)) {
+            continue;
+          }
+          if (layerBrightnessStatesMatch(previous, derived.brightnessState)) {
+            continue;
+          }
+          next[layer.key] = {
+            ...previous,
+            ...derived.brightnessState
+          };
+          changed = true;
+        }
+        return changed ? next : current;
+      });
+
+      setLayerAutoThresholds((current) => {
+        let changed = false;
+        const next = { ...current };
+        for (const layer of loadedDatasetLayers) {
+          const derived = derivedByLayerKey.get(layer.key);
+          if (!derived || derived.autoThreshold <= 0) {
+            continue;
+          }
+          if ((current[layer.key] ?? 0) !== 0) {
+            continue;
+          }
+          next[layer.key] = derived.autoThreshold;
+          changed = true;
+        }
+        return changed ? next : current;
+      });
+    },
+    [createLayerDefaultSettings, loadedDatasetLayers, setLayerAutoThresholds, setLayerSettings]
+  );
 
   const {
     layoutResetToken,
     layersWindowInitialPosition,
     paintbrushWindowInitialPosition,
+    drawRoiWindowInitialPosition,
     propsWindowInitialPosition,
+    roiManagerWindowInitialPosition,
     trackWindowInitialPosition,
     viewerSettingsWindowInitialPosition,
     recordWindowInitialPosition,
     selectedTracksWindowInitialPosition,
     plotSettingsWindowInitialPosition,
     trackSettingsWindowInitialPosition,
+    measurementsWindowInitialPosition,
+    setMeasurementsWindowInitialPosition,
     resetLayout: handleResetWindowLayout
   } = useWindowLayout();
 
@@ -480,6 +585,7 @@ export function useAppRouteState(): AppRouteState {
   const handleBeforeEnterVr = useCallback(() => {
     setFollowedTrack(null);
     setFollowedVoxel(null);
+    setProjectionMode('perspective');
   }, [setFollowedTrack, setFollowedVoxel]);
 
   const resetHoveredVoxel = useCallback(() => {
@@ -574,6 +680,7 @@ export function useAppRouteState(): AppRouteState {
     channelVisibility,
     layerChannelMap,
     preferBrickResidency,
+    projectionMode,
     viewerCameraSample,
     volumeTimepointCount,
     selectedIndex: resolvedSelectedIndex,
@@ -587,8 +694,15 @@ export function useAppRouteState(): AppRouteState {
     finishLaunchSessionAttempt,
     setSelectedIndex,
     setIsPlaying,
-    showLaunchError
+    showLaunchError,
+    onLaunchLayerVolumesResolved: handleLaunchLayerVolumesResolved
   });
+  useEffect(() => {
+    if (!isViewerLaunched) {
+      return;
+    }
+    handleLaunchLayerVolumesResolved(currentLayerVolumes);
+  }, [currentLayerVolumes, handleLaunchLayerVolumesResolved, isViewerLaunched]);
   const handleLaunchViewer = useCallback(
     () => handleRouteLaunchViewer({ performanceMode: false }),
     [handleRouteLaunchViewer]
@@ -804,7 +918,6 @@ export function useAppRouteState(): AppRouteState {
   const {
     viewerControls,
     playbackDisabled,
-    playbackLabel,
     handleTogglePlayback,
     handleTimeIndexChange
   } = useViewerModePlayback({
@@ -856,6 +969,22 @@ export function useAppRouteState(): AppRouteState {
   } = viewerControls;
 
   useEffect(() => {
+    setProjectionMode((current) => normalizeProjectionModeForVr(current, isVrActive));
+  }, [isVrActive]);
+
+  const handleProjectionModeChange = useCallback(
+    (nextProjectionMode: ProjectionMode) => {
+      setProjectionMode((current) => {
+        if (isVrActive && nextProjectionMode === 'orthographic') {
+          return 'perspective';
+        }
+        return current === nextProjectionMode ? current : nextProjectionMode;
+      });
+    },
+    [isVrActive]
+  );
+
+  useEffect(() => {
     if (datasetError && datasetErrorContext === 'launch') {
       bumpDatasetErrorResetSignal();
     }
@@ -881,14 +1010,19 @@ export function useAppRouteState(): AppRouteState {
     const normalizedDistance = Number.isFinite(sample.distanceToTarget)
       ? Math.max(0, sample.distanceToTarget)
       : Number.NaN;
-    if (!Number.isFinite(normalizedDistance)) {
+    const normalizedProjectedPixels = Number.isFinite(sample.projectedPixelsPerVoxel)
+      ? Math.max(0, sample.projectedPixelsPerVoxel)
+      : Number.NaN;
+    if (!Number.isFinite(normalizedDistance) || !Number.isFinite(normalizedProjectedPixels)) {
       return;
     }
 
     const capturedAtMs =
       Number.isFinite(sample.capturedAtMs) && sample.capturedAtMs > 0 ? sample.capturedAtMs : Date.now();
     const nextSample: ViewerCameraNavigationSample = {
+      projectionMode: sample.projectionMode,
       distanceToTarget: normalizedDistance,
+      projectedPixelsPerVoxel: normalizedProjectedPixels,
       isMoving: Boolean(sample.isMoving),
       capturedAtMs
     };
@@ -898,14 +1032,30 @@ export function useAppRouteState(): AppRouteState {
     const absoluteDelta = previous
       ? Math.abs(previous.distanceToTarget - nextSample.distanceToTarget)
       : Number.POSITIVE_INFINITY;
+    const projectedPixelsDelta = previous
+      ? Math.abs(previous.projectedPixelsPerVoxel - nextSample.projectedPixelsPerVoxel)
+      : Number.POSITIVE_INFINITY;
     const relativeDelta =
       previous && previous.distanceToTarget > 1e-6
         ? absoluteDelta / previous.distanceToTarget
         : absoluteDelta;
+    const relativeProjectedDelta =
+      previous && previous.projectedPixelsPerVoxel > 1e-6
+        ? projectedPixelsDelta / previous.projectedPixelsPerVoxel
+        : projectedPixelsDelta;
     const movementChanged = previous ? previous.isMoving !== nextSample.isMoving : true;
+    const projectionChanged = previous ? previous.projectionMode !== nextSample.projectionMode : true;
     const minIntervalMs = nextSample.isMoving ? 100 : 250;
 
-    if (!movementChanged && elapsedMs < minIntervalMs && absoluteDelta < 0.03 && relativeDelta < 0.08) {
+    if (
+      !movementChanged &&
+      !projectionChanged &&
+      elapsedMs < minIntervalMs &&
+      absoluteDelta < 0.03 &&
+      relativeDelta < 0.08 &&
+      projectedPixelsDelta < 0.05 &&
+      relativeProjectedDelta < 0.08
+    ) {
       return;
     }
 
@@ -958,6 +1108,7 @@ export function useAppRouteState(): AppRouteState {
     handleChannelNameChange,
     handleRemoveChannel
   } = useRouteDatasetSetupState({
+    channels,
     resetPreprocessedState,
     setIsExperimentSetupStarted,
     resetChannelEditingState,
@@ -968,7 +1119,8 @@ export function useAppRouteState(): AppRouteState {
     queuePendingChannelFocus,
     startEditingChannel,
     handleChannelRemoved,
-    setLayerTimepointCounts
+    setLayerTimepointCounts,
+    setLayerTimepointCountErrors
   });
   const { handleReturnToFrontPage } = useRouteDatasetResetState({
     resetPreprocessedState,
@@ -1023,6 +1175,42 @@ export function useAppRouteState(): AppRouteState {
       };
     });
   }, []);
+
+  useEffect(() => {
+    if (!preprocessedExperiment) {
+      initializedPreprocessedLayerDefaultsRef.current = null;
+      return;
+    }
+    if (initializedPreprocessedLayerDefaultsRef.current === preprocessedExperiment) {
+      return;
+    }
+    initializedPreprocessedLayerDefaultsRef.current = preprocessedExperiment;
+    setLayerSettings(
+      createLayerDefaultSettingsRecord({
+        layers: loadedDatasetLayers,
+        getChannelDefaultColor,
+        globalSamplingMode,
+        globalBlDensityScale,
+        globalBlBackgroundCutoff,
+        globalBlOpacityScale,
+        globalBlEarlyExitAlpha,
+        globalMipEarlyExitThreshold
+      })
+    );
+    setLayerAutoThresholds(createLayerAutoThresholdRecord(loadedDatasetLayers));
+  }, [
+    getChannelDefaultColor,
+    globalBlBackgroundCutoff,
+    globalBlDensityScale,
+    globalBlEarlyExitAlpha,
+    globalBlOpacityScale,
+    globalMipEarlyExitThreshold,
+    globalSamplingMode,
+    loadedDatasetLayers,
+    preprocessedExperiment,
+    setLayerAutoThresholds,
+    setLayerSettings
+  ]);
 
   useEffect(() => {
     if (!preprocessedExperiment) {
@@ -1127,7 +1315,6 @@ export function useAppRouteState(): AppRouteState {
     layerChannelMap,
     loadedChannelIds,
     setActiveChannelTabId,
-    setGlobalRenderStyle,
     setGlobalSamplingMode,
     setGlobalBlDensityScale,
     setGlobalBlBackgroundCutoff,
@@ -1242,6 +1429,7 @@ export function useAppRouteState(): AppRouteState {
   const routeViewerShell = createRouteViewerShellProps({
     viewer: {
       viewerMode,
+      loadMeasurementVolume: volumeProvider ? volumeProvider.getVolume : null,
       viewerPanels: {
         layers: viewerLayers,
         playbackWarmupLayers: viewerPlaybackWarmupLayers,
@@ -1334,11 +1522,15 @@ export function useAppRouteState(): AppRouteState {
         recordWindowInitialPosition,
         layersWindowInitialPosition,
         paintbrushWindowInitialPosition,
+        drawRoiWindowInitialPosition,
         propsWindowInitialPosition,
+        roiManagerWindowInitialPosition,
         trackWindowInitialPosition,
         selectedTracksWindowInitialPosition,
         plotSettingsWindowInitialPosition,
-        trackSettingsWindowInitialPosition
+        trackSettingsWindowInitialPosition,
+        measurementsWindowInitialPosition,
+        setMeasurementsWindowInitialPosition,
       },
       modeControls: {
         is3dModeAvailable: is3dViewerAvailable,
@@ -1349,6 +1541,8 @@ export function useAppRouteState(): AppRouteState {
         vrButtonDisabled,
         vrButtonTitle,
         vrButtonLabel,
+        projectionMode: normalizeProjectionModeForVr(projectionMode, isVrActive),
+        onProjectionModeChange: handleProjectionModeChange,
         samplingMode: globalSamplingMode,
         onSamplingModeToggle: () => handleLayerSamplingModeToggle(),
         blendingMode,

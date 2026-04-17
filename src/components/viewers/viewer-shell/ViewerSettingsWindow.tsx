@@ -46,6 +46,8 @@ export default function ViewerSettingsWindow({
 }: ViewerSettingsWindowProps) {
   const { windowMargin, controlWindowWidth, resetToken, viewerSettingsWindowInitialPosition } = layout;
   const {
+    projectionMode,
+    onProjectionModeChange,
     is3dModeAvailable
   } = modeToggle;
   const {
@@ -88,6 +90,35 @@ export default function ViewerSettingsWindow({
     >
       <div className="sidebar sidebar-right">
         <div className="global-controls">
+          {is3dModeAvailable ? (
+            <div className="control-group">
+              <span className="control-label control-label--compact">Projection mode</span>
+              <div className="viewer-mode-row">
+                <button
+                  type="button"
+                  className={projectionMode === 'perspective' ? 'viewer-mode-button is-active' : 'viewer-mode-button'}
+                  onClick={() => onProjectionModeChange('perspective')}
+                  aria-pressed={projectionMode === 'perspective'}
+                >
+                  Perspective
+                </button>
+                <button
+                  type="button"
+                  className={projectionMode === 'orthographic' ? 'viewer-mode-button is-active' : 'viewer-mode-button'}
+                  onClick={() => onProjectionModeChange('orthographic')}
+                  disabled={modeToggle.isVrActive}
+                  title={modeToggle.isVrActive ? 'Orthographic projection is unavailable while VR is active.' : undefined}
+                  aria-pressed={projectionMode === 'orthographic'}
+                >
+                  Orthographic
+                </button>
+              </div>
+              {modeToggle.isVrActive ? (
+                <div className="control-hint">Orthographic projection is unavailable while VR is active.</div>
+              ) : null}
+            </div>
+          ) : null}
+
           {is3dModeAvailable ? (
             <div className="control-group">
               <div className="viewer-mode-row">

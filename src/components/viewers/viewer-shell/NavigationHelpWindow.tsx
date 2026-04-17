@@ -34,7 +34,6 @@ const HELP_TABS: HelpTab[] = [
           'Scroll to zoom in or out.',
           'Use the arrow keys to look left, right, up, and down.',
           'Use W/A/S/D to move. Press Space to rise and C to descend.',
-          'Hold Shift to move faster.',
           'Press Q/E to roll the camera counterclockwise or clockwise.',
           'Use Reset view in the top bar to restore the default camera.'
         ]
@@ -46,7 +45,7 @@ const HELP_TABS: HelpTab[] = [
           'Use Follow in the Tracks window to keep the camera on a selected track over time.',
           'Double-click a hovered voxel to follow that point in the volume.',
           'While following a target, drag or use the arrow keys to orbit around it.',
-          'W/A/S/D, Space, C, and Shift movement are disabled while following.'
+          'W/A/S/D, Space, and C movement are disabled while following.'
         ]
       }
     ]

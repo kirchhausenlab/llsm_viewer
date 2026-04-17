@@ -157,11 +157,12 @@
   display: grid;
   grid-template-columns: minmax(220px, 280px) minmax(0, 1fr);
   gap: 0.9rem;
-  align-items: start;
+  align-items: stretch;
 }
 
 .setup-row .channel-tab {
   width: 100%;
+  height: 100%;
   box-sizing: border-box;
 }
 

@@ -84,7 +84,6 @@ const createAtlas = (timepoint: number, scaleLevel = 1): VolumeBrickAtlas => ({
       layerChannelMap: new Map<string, string>([['layer-a', 'channel-a']]),
       loadedChannelIds: ['channel-a'],
       setActiveChannelTabId: () => {},
-      setGlobalRenderStyle: () => {},
       setGlobalSamplingMode: () => {},
       setGlobalBlDensityScale: () => {},
       setGlobalBlBackgroundCutoff: () => {},

@@ -2,13 +2,21 @@ import type React from 'react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import {
+  computeDrawRoiWindowDefaultPosition,
+  computeDrawRoiWindowRecenterPosition,
   computeLayersWindowDefaultPosition,
   computePaintbrushWindowRecenterPosition,
   computePaintbrushWindowDefaultPosition,
   computePlotSettingsWindowDefaultPosition,
+  computeMeasurementsWindowDefaultPosition,
+  computeMeasurementsWindowRecenterPosition,
   computePropsWindowRecenterPosition,
   computePropsWindowDefaultPosition,
   computeRecordWindowDefaultPosition,
+  computeRoiManagerWindowDefaultPosition,
+  computeRoiManagerWindowRecenterPosition,
+  computeSetMeasurementsWindowDefaultPosition,
+  computeSetMeasurementsWindowRecenterPosition,
   computeSelectedTracksWindowDefaultPosition,
   computeTrackSettingsWindowRecenterPosition,
   computeTrackSettingsWindowDefaultPosition,
@@ -23,12 +31,16 @@ type UseWindowLayoutResult = {
   layersWindowInitialPosition: WindowPosition;
   recordWindowInitialPosition: WindowPosition;
   paintbrushWindowInitialPosition: WindowPosition;
+  drawRoiWindowInitialPosition: WindowPosition;
   propsWindowInitialPosition: WindowPosition;
+  roiManagerWindowInitialPosition: WindowPosition;
   trackWindowInitialPosition: WindowPosition;
   viewerSettingsWindowInitialPosition: WindowPosition;
   selectedTracksWindowInitialPosition: WindowPosition;
   plotSettingsWindowInitialPosition: WindowPosition;
   trackSettingsWindowInitialPosition: WindowPosition;
+  measurementsWindowInitialPosition: WindowPosition;
+  setMeasurementsWindowInitialPosition: WindowPosition;
   resetLayout: () => void;
 };
 
@@ -46,8 +58,14 @@ export function useWindowLayout(): UseWindowLayoutResult {
   const [paintbrushWindowInitialPosition, setPaintbrushWindowInitialPosition] = useState<WindowPosition>(
     () => computePaintbrushWindowDefaultPosition()
   );
+  const [drawRoiWindowInitialPosition, setDrawRoiWindowInitialPosition] = useState<WindowPosition>(
+    () => computeDrawRoiWindowDefaultPosition()
+  );
   const [recordWindowInitialPosition, setRecordWindowInitialPosition] = useState<WindowPosition>(
     () => computeRecordWindowDefaultPosition()
+  );
+  const [roiManagerWindowInitialPosition, setRoiManagerWindowInitialPosition] = useState<WindowPosition>(
+    () => computeRoiManagerWindowDefaultPosition()
   );
   const [viewerSettingsWindowInitialPosition, setViewerSettingsWindowInitialPosition] =
     useState<WindowPosition>(() => computeViewerSettingsWindowDefaultPosition());
@@ -57,6 +75,10 @@ export function useWindowLayout(): UseWindowLayoutResult {
     useState<WindowPosition>(() => computePlotSettingsWindowDefaultPosition());
   const [trackSettingsWindowInitialPosition, setTrackSettingsWindowInitialPosition] =
     useState<WindowPosition>(() => computeTrackSettingsWindowDefaultPosition());
+  const [measurementsWindowInitialPosition, setMeasurementsWindowInitialPosition] =
+    useState<WindowPosition>(() => computeMeasurementsWindowDefaultPosition());
+  const [setMeasurementsDialogWindowInitialPosition, setSetMeasurementsWindowInitialPosition] =
+    useState<WindowPosition>(() => computeSetMeasurementsWindowDefaultPosition());
 
   const updatePositionToDefault = useCallback(
     (
@@ -82,6 +104,13 @@ export function useWindowLayout(): UseWindowLayoutResult {
 
   useEffect(() => {
     updatePositionToDefault(
+      computeDrawRoiWindowDefaultPosition,
+      setDrawRoiWindowInitialPosition
+    );
+  }, [updatePositionToDefault]);
+
+  useEffect(() => {
+    updatePositionToDefault(
       computeViewerSettingsWindowDefaultPosition,
       setViewerSettingsWindowInitialPosition
     );
@@ -89,6 +118,13 @@ export function useWindowLayout(): UseWindowLayoutResult {
 
   useEffect(() => {
     updatePositionToDefault(computeRecordWindowDefaultPosition, setRecordWindowInitialPosition);
+  }, [updatePositionToDefault]);
+
+  useEffect(() => {
+    updatePositionToDefault(
+      computeRoiManagerWindowDefaultPosition,
+      setRoiManagerWindowInitialPosition
+    );
   }, [updatePositionToDefault]);
 
   useEffect(() => {
@@ -113,16 +149,31 @@ export function useWindowLayout(): UseWindowLayoutResult {
     );
   }, [updatePositionToDefault]);
 
+  useEffect(() => {
+    updatePositionToDefault(computeMeasurementsWindowDefaultPosition, setMeasurementsWindowInitialPosition);
+  }, [updatePositionToDefault]);
+
+  useEffect(() => {
+    updatePositionToDefault(
+      computeSetMeasurementsWindowDefaultPosition,
+      setSetMeasurementsWindowInitialPosition
+    );
+  }, [updatePositionToDefault]);
+
   const resetLayout = useCallback(() => {
     setLayoutResetToken(nextLayoutResetToken);
     setPropsWindowInitialPosition(computePropsWindowRecenterPosition());
     setTrackWindowInitialPosition(computeTrackWindowDefaultPosition());
     setPaintbrushWindowInitialPosition(computePaintbrushWindowRecenterPosition());
+    setDrawRoiWindowInitialPosition(computeDrawRoiWindowRecenterPosition());
+    setRoiManagerWindowInitialPosition(computeRoiManagerWindowRecenterPosition());
     setViewerSettingsWindowInitialPosition(computeViewerSettingsWindowDefaultPosition());
     setRecordWindowInitialPosition(computeRecordWindowDefaultPosition());
     setSelectedTracksWindowInitialPosition(computeSelectedTracksWindowDefaultPosition());
     setPlotSettingsWindowInitialPosition(computePlotSettingsWindowDefaultPosition());
     setTrackSettingsWindowInitialPosition(computeTrackSettingsWindowRecenterPosition());
+    setMeasurementsWindowInitialPosition(computeMeasurementsWindowRecenterPosition());
+    setSetMeasurementsWindowInitialPosition(computeSetMeasurementsWindowRecenterPosition());
   }, []);
 
   return {
@@ -130,12 +181,16 @@ export function useWindowLayout(): UseWindowLayoutResult {
     layersWindowInitialPosition,
     recordWindowInitialPosition,
     paintbrushWindowInitialPosition,
+    drawRoiWindowInitialPosition,
     propsWindowInitialPosition,
+    roiManagerWindowInitialPosition,
     trackWindowInitialPosition,
     viewerSettingsWindowInitialPosition,
     selectedTracksWindowInitialPosition,
     plotSettingsWindowInitialPosition,
     trackSettingsWindowInitialPosition,
+    measurementsWindowInitialPosition,
+    setMeasurementsWindowInitialPosition: setMeasurementsDialogWindowInitialPosition,
     resetLayout
   };
 }

@@ -9,8 +9,7 @@ import type {
   CompiledTrackSummary,
   NumericRange,
   TrackDefinition,
-  TrackPoint,
-  TrackSummary
+  TrackPoint
 } from '../../types/tracks';
 import { createDefaultTrackSetState } from './useTrackStyling';
 

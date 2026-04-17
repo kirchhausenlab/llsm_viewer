@@ -11,7 +11,7 @@ This playbook exists so work can continue safely across sessions with clear sequ
 
 ## Guardrails (do not violate)
 
-- Preserve preprocessed output semantics and schema contract (`llsm-viewer-preprocessed-vnext`).
+- Preserve preprocessed output semantics and schema contract (`llsm-viewer-preprocessed-vnext-hes1`).
 - Keep segmentation output deterministic for a given `(layerKey, timepoint)` seed path.
 - Do not regress visualization/runtime performance to speed preprocessing.
 - Keep each optimization small and independently reversible.

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef } from 'react';
 import type { MutableRefObject } from 'react';
 import * as THREE from 'three';
 
+import type { DesktopViewerCamera } from '../../../hooks/useVolumeRenderSetup';
 import type { ViewerPropsConfig } from '../VolumeViewer.types';
 import type { ViewerProp } from '../../../types/viewerProps';
 import {
@@ -43,7 +44,7 @@ type UseViewerPropsRenderingParams = {
   renderContextRevision: number;
   volumeRootGroupRef: MutableRefObject<THREE.Group | null>;
   rendererRef: MutableRefObject<THREE.WebGLRenderer | null>;
-  cameraRef: MutableRefObject<THREE.PerspectiveCamera | null>;
+  cameraRef: MutableRefObject<DesktopViewerCamera | null>;
   hoverRaycasterRef: MutableRefObject<THREE.Raycaster | null>;
 };
 
@@ -532,7 +533,7 @@ function refreshWorldPropResource(
   resource: WorldPropResource,
   prop: ViewerProp,
   viewerPropsConfig: ViewerPropsConfig | undefined,
-  camera: THREE.PerspectiveCamera | null
+  camera: THREE.Camera | null
 ) {
   const layout =
     prop.type === 'scalebar'

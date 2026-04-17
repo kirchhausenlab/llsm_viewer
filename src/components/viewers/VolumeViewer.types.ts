@@ -2,78 +2,39 @@ import type * as THREE from 'three';
 import type { Line2 } from 'three/examples/jsm/lines/Line2';
 import type { LineGeometry } from 'three/examples/jsm/lines/LineGeometry';
 import type { LineMaterial } from 'three/examples/jsm/lines/LineMaterial';
+import type { LineSegments2 } from 'three/examples/jsm/lines/LineSegments2';
 import type { LineSegmentsGeometry } from 'three/examples/jsm/lines/LineSegmentsGeometry';
 
-import type { NormalizedVolume } from '../../core/volumeProcessing';
 import type {
-  VolumeBackgroundMask,
-  VolumeBrickAtlas,
   VolumeBrickPageTable,
   VolumeProviderDiagnostics
 } from '../../core/volumeProvider';
 import type { LODPolicyDiagnosticsSnapshot } from '../../core/lodPolicyDiagnostics';
+import type { ViewerLayer } from '../../ui/contracts/viewerLayer';
 import type { FollowedVoxelTarget } from '../../types/follow';
-import type { HoveredVoxelInfo } from '../../types/hover';
+import type { HoveredVoxelInfo, HoverSettings } from '../../types/hover';
 import type { PaintbrushStrokeHandlers } from '../../types/paintbrush';
+import type { RoiDefinition, RoiDimensionMode, RoiTool, SavedRoi } from '../../types/roi';
 import type {
   CompiledTrackSetPayload,
   CompiledTrackSummary,
   TrackColorMode,
 } from '../../types/tracks';
-import type { VolumeDataType } from '../../types/volume';
 import type { ViewerProp } from '../../types/viewerProps';
 import type { TemporalResolutionMetadata, VoxelResolutionValues } from '../../types/voxelResolution';
 import type { RenderStyle, SamplingMode } from '../../state/layerSettings';
 import type { TrackSetState } from '../../types/channelTracks';
 import type { PlaybackIndexWindow } from '../../shared/utils';
+import type {
+  DesktopViewState,
+  DesktopViewStateMap,
+  DesktopViewerCamera,
+  ViewerCameraNavigationSample,
+  ViewerProjectionMode,
+} from '../../hooks/useVolumeRenderSetup';
 
 export type InstancedLineGeometry = LineGeometry & { instanceCount: number };
 export type InstancedLineSegmentsGeometry = LineSegmentsGeometry & { instanceCount: number };
-
-export type ViewerLayer = {
-  key: string;
-  label: string;
-  channelName: string;
-  fullResolutionWidth: number;
-  fullResolutionHeight: number;
-  fullResolutionDepth: number;
-  volume: NormalizedVolume | null;
-  channels?: number;
-  dataType?: VolumeDataType;
-  min?: number;
-  max?: number;
-  visible: boolean;
-  isHoverTarget?: boolean;
-  sliderRange: number;
-  minSliderIndex: number;
-  maxSliderIndex: number;
-  brightnessSliderIndex: number;
-  contrastSliderIndex: number;
-  windowMin: number;
-  windowMax: number;
-  color: string;
-  offsetX: number;
-  offsetY: number;
-  renderStyle: RenderStyle;
-  blDensityScale: number;
-  blBackgroundCutoff: number;
-  blOpacityScale: number;
-  blEarlyExitAlpha: number;
-  mipEarlyExitThreshold: number;
-  invert: boolean;
-  samplingMode: SamplingMode;
-  isSegmentation?: boolean;
-  mode?: '3d' | 'slice';
-  sliceIndex?: number;
-  scaleLevel?: number;
-  brickPageTable?: VolumeBrickPageTable | null;
-  brickAtlas?: VolumeBrickAtlas | null;
-  backgroundMask?: VolumeBackgroundMask | null;
-  playbackWarmupForLayerKey?: string;
-  playbackWarmupTimeIndex?: number;
-  playbackRole?: 'active' | 'warmup';
-  playbackSlotIndex?: number;
-};
 
 export type VolumeViewerVrPanelLayerSettings = {
   sliderRange: number;
@@ -170,9 +131,25 @@ export type ViewerPropsConfig = {
   onUpdateWorldPosition: (propId: string, nextPosition: { x: number; y: number }) => void;
 };
 
+export type ViewerRoiConfig = {
+  isDrawWindowOpen: boolean;
+  tool: RoiTool;
+  dimensionMode: RoiDimensionMode;
+  selectedZIndex: number;
+  defaultColor: string;
+  workingRoi: RoiDefinition | null;
+  savedRois: SavedRoi[];
+  activeSavedRoiId: string | null;
+  editingSavedRoiId: string | null;
+  showAllSavedRois: boolean;
+  onWorkingRoiChange: (roi: RoiDefinition | null) => void;
+  onSavedRoiActivate: (roiId: string) => void;
+};
+
 export type VolumeViewerProps = {
   layers: ViewerLayer[];
   playbackWarmupLayers?: ViewerLayer[];
+  projectionMode?: ViewerProjectionMode;
   timeIndex: number;
   totalTimepoints: number;
   temporalResolution?: TemporalResolutionMetadata | null;
@@ -199,11 +176,7 @@ export type VolumeViewerProps = {
   onFpsChange: (value: number) => void;
   onVolumeStepScaleChange?: (value: number) => void;
   onRegisterVolumeStepScaleChange?: (handler: ((value: number) => void) | null) => void;
-  onCameraNavigationSample?: (sample: {
-    distanceToTarget: number;
-    isMoving: boolean;
-    capturedAtMs: number;
-  }) => void;
+  onCameraNavigationSample?: (sample: ViewerCameraNavigationSample) => void;
   onRegisterReset: (handler: (() => void) | null) => void;
   onRegisterCaptureTarget?: (
     target: HTMLCanvasElement | (() => HTMLCanvasElement | null) | null,
@@ -226,15 +199,19 @@ export type VolumeViewerProps = {
   onTrackFollowRequest: (trackId: string) => void;
   onVoxelFollowRequest: (voxel: FollowedVoxelTarget) => void;
   onHoverVoxelChange?: (value: HoveredVoxelInfo | null) => void;
+  hoverSettings?: HoverSettings;
   viewerPropsConfig?: ViewerPropsConfig;
+  roiConfig?: ViewerRoiConfig;
   paintbrush?: PaintbrushStrokeHandlers;
   vr?: VolumeViewerVrProps;
 };
 
 export type { FollowedVoxelTarget };
+export type { ViewerLayer } from '../../ui/contracts/viewerLayer';
 
 export type VolumeResources = {
   mesh: THREE.Mesh;
+  roiBlOcclusionAlphaMesh?: THREE.Mesh | null;
   texture: THREE.Data3DTexture | THREE.DataTexture;
   labelTexture?: THREE.Data3DTexture | null;
   paletteTexture?: THREE.DataTexture | null;
@@ -246,6 +223,7 @@ export type VolumeResources = {
   channels: number;
   mode: '3d' | 'slice';
   renderStyle?: RenderStyle;
+  projectionMode?: ViewerProjectionMode;
   samplingMode: 'linear' | 'nearest';
   sliceBuffer?: Uint8Array | null;
   brickPageTable?: VolumeBrickPageTable | null;
@@ -301,6 +279,7 @@ export type VolumeResources = {
       | 'enabled'
       | 'disabled-for-direct-volume-linear'
       | 'missing-page-table'
+      | 'mismatched-page-table-source'
       | 'invalid-page-table'
       | 'invalid-min-max-range'
       | 'invalid-hierarchy-shape'
@@ -330,6 +309,8 @@ export type MovementState = {
   rollLeft: boolean;
   rollRight: boolean;
 };
+
+export type { ViewerProjectionMode, DesktopViewerCamera, DesktopViewState, DesktopViewStateMap, ViewerCameraNavigationSample };
 
 export type TrackLineResource = {
   kind: 'overlay';
@@ -377,3 +358,16 @@ export type TrackBatchResource = {
 };
 
 export type TrackRenderResource = TrackLineResource | TrackBatchResource;
+
+export type RoiRenderResource = {
+  key: string;
+  roiId: string;
+  line: LineSegments2;
+  geometry: InstancedLineSegmentsGeometry;
+  material: LineMaterial;
+  color: THREE.Color;
+  baseOpacity: number;
+  isActive: boolean;
+  isInvalid: boolean;
+  shouldBlink: boolean;
+};

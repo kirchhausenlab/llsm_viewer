@@ -4,6 +4,7 @@ import {
   collectInitialHttpLaunchTrackedTargets,
   resolveInitialHttpLaunchTargetScaleLevel
 } from '../../../src/ui/app/hooks/initialHttpLaunch.ts';
+import { normalizeProjectionModeForVr } from '../../../src/ui/app/hooks/useAppRouteState.tsx';
 
 console.log('Starting useAppRouteState tests');
 
@@ -66,6 +67,12 @@ console.log('Starting useAppRouteState tests');
     ['layer-a', 1],
     ['layer-b', 1]
   ]);
+})();
+
+(() => {
+  assert.equal(normalizeProjectionModeForVr('orthographic', true), 'perspective');
+  assert.equal(normalizeProjectionModeForVr('orthographic', false), 'orthographic');
+  assert.equal(normalizeProjectionModeForVr('perspective', true), 'perspective');
 })();
 
 console.log('useAppRouteState tests passed');

@@ -15,14 +15,15 @@ Last updated: **2026-02-18**
 
 1. Render style is per-layer.
 2. Desktop uses explicit `MIP`/`ISO`/`BL` buttons.
-3. BL controls are exposed immediately.
+3. BL controls are shared global values exposed in selected-layer UI.
 4. Use per-mode shader variants.
 
 ## What shipped this session
 
 - Per-layer render style (`0|1|2`) is propagated through state, loaders, desktop UI, VR HUD/state, and volume renderer contracts.
 - Desktop `ChannelsPanel` now has explicit per-layer `MIP`, `ISO`, `BL` controls and BL sliders (visible only in BL mode).
-- Global desktop render-style toggle was removed from `PlaybackControlsPanel` viewer settings.
+- BL sliders drive shared global BL tuning values rather than per-layer overrides.
+- Global desktop render-style toggle was removed from the viewer settings window.
 - VR render-style action now cycles `MIP -> ISO -> BL -> MIP` and displays current mode label.
 - Shader system now uses per-mode compiled variants and BL mode includes Beer-Lambert accumulation with four exposed uniforms.
 - Tests were added/updated for layer controls, channel UI visibility, and shader/resource variant + BL uniform behavior.

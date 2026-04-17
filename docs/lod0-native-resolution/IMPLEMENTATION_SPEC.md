@@ -4,8 +4,8 @@ This spec defines the target architecture and implementation details for reliabl
 
 ## 1) Current-state summary
 
-- Route scale selection currently prefers level `0` when paused and `1` when playing for atlas paths.
-- Playback prefetch mirrors the same `0/1` policy.
+- Route scale selection currently uses projected-footprint selection for paused/interactive view, while active atlas playback intentionally prefers a coarser scale (`L1` when available).
+- Playback prefetch mirrors the same playback-scale policy so warmup/current-frame requests stay aligned.
 - Fallback to coarser scales is triggered by fixed atlas/volume size hints and allocation-like errors.
 - Shader adaptive LOD is based on ray-step length, not projected pixel footprint.
 - MIP and ISO include local LOD0 refinement loops; BL currently does not.
@@ -36,12 +36,18 @@ Selection and promotion must be deterministic under identical camera/timepoint i
 
 ### 2.3 Projected-footprint scale selection
 
-Replace binary desired scale with projected-footprint estimation:
+Use projected-footprint estimation for paused/interactive selection:
 
 - estimate screen pixels per voxel at current camera pose
 - compare against per-scale voxel size (from `downsampleFactor`)
 - choose finest scale meeting target quality window
 - apply hysteresis bands to avoid oscillation
+
+Active atlas playback is intentionally different:
+
+- keep the current playback frame on the playback scale chosen by route policy
+- prefer `L1` over `L0` when a coarser scale exists
+- do not repromote the visible playback frame to `L0` solely because the camera moved closer
 
 ### 2.4 Coarse-to-fine transition contract
 
@@ -58,6 +64,7 @@ Prefetch queue is unified over `(layer, timepoint, scale)` and ranked by:
 3. speculative warmup
 
 Queue must be cancellation-aware and bounded by per-class concurrency.
+Playback prefetch must stay consistent with the visible playback scale policy instead of independently chasing paused-view `L0` selection.
 
 ### 2.6 GPU residency policy upgrades
 
@@ -131,9 +138,9 @@ Queue must be cancellation-aware and bounded by per-class concurrency.
 
 ### Phase 1: Adaptive scale selector
 
-- implement projected-footprint estimator and hysteresis
-- replace route `isPlaying ? 1 : 0` selection logic
-- update playback prefetch scale resolution to match selector
+- implement projected-footprint estimator and hysteresis for paused/interactive viewing
+- preserve the conservative playback-scale policy for active atlas playback
+- wire playback prefetch to the same route-selected playback scale used by the visible frame
 
 ### Phase 2: Coarse-to-fine promotion
 
