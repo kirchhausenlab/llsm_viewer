@@ -50,6 +50,7 @@ import {
 } from '../../shared/utils/windowLayout';
 import { RENDER_STYLE_BL, RENDER_STYLE_SLICE } from '../../state/layerSettings';
 import FloatingWindow from '../widgets/FloatingWindow';
+import { DEFAULT_HOVER_SETTINGS, normalizeHoverSettings } from '../../shared/utils/hoverSettings';
 
 function formatPercentage(value: number): string {
   if (!Number.isFinite(value)) {
@@ -226,6 +227,7 @@ function VolumeViewer({
   onTrackFollowRequest,
   onVoxelFollowRequest,
   onHoverVoxelChange,
+  hoverSettings = DEFAULT_HOVER_SETTINGS,
   viewerPropsConfig,
   roiConfig,
   paintbrush,
@@ -313,6 +315,10 @@ function VolumeViewer({
     resetHudPlacementCallbackRef,
     trackFollowRequestCallbackRef,
   } = useVolumeViewerState();
+  const resolvedHoverSettings = useMemo(
+    () => normalizeHoverSettings(hoverSettings),
+    [hoverSettings]
+  );
   const enableKeyboardNavigation = useMemo(
     () =>
       layers.some((layer) => {
@@ -468,6 +474,7 @@ function VolumeViewer({
     voxelHoverDebugRef,
     setVoxelHoverDebug,
     isDevMode,
+    hoverSettings: resolvedHoverSettings,
     onHoverVoxelChange,
   });
 
@@ -967,6 +974,7 @@ function VolumeViewer({
     setHoverNotReady,
     isAdditiveBlending,
     zClipFrontFraction,
+    hoverSettings: resolvedHoverSettings,
   });
   useVolumeViewerResets({
     projectionMode,

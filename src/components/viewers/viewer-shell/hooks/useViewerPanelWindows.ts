@@ -19,6 +19,9 @@ type UseViewerPanelWindowsResult = {
   isViewerSettingsOpen: boolean;
   openViewerSettings: () => void;
   closeViewerSettings: () => void;
+  isHoverSettingsWindowOpen: boolean;
+  openHoverSettingsWindow: () => void;
+  closeHoverSettingsWindow: () => void;
   isRecordWindowOpen: boolean;
   openRecordWindow: () => void;
   closeRecordWindow: () => void;
@@ -55,6 +58,7 @@ export function useViewerPanelWindows({
   const [isPropsWindowOpen, setIsPropsWindowOpen] = useState(false);
   const [isTracksWindowOpen, setIsTracksWindowOpen] = useState(hasTrackData);
   const [isViewerSettingsOpen, setIsViewerSettingsOpen] = useState(false);
+  const [isHoverSettingsWindowOpen, setIsHoverSettingsWindowOpen] = useState(false);
   const [isRecordWindowOpen, setIsRecordWindowOpen] = useState(false);
   const [isAmplitudePlotOpen, setIsAmplitudePlotOpen] = useState(false);
   const [isPlotSettingsOpen, setIsPlotSettingsOpen] = useState(false);
@@ -98,6 +102,14 @@ export function useViewerPanelWindows({
 
   const closeViewerSettings = useCallback(() => {
     setIsViewerSettingsOpen(false);
+  }, []);
+
+  const openHoverSettingsWindow = useCallback(() => {
+    setIsHoverSettingsWindowOpen(true);
+  }, []);
+
+  const closeHoverSettingsWindow = useCallback(() => {
+    setIsHoverSettingsWindowOpen(false);
   }, []);
 
   const openRecordWindow = useCallback(() => {
@@ -211,6 +223,9 @@ export function useViewerPanelWindows({
     isViewerSettingsOpen,
     openViewerSettings,
     closeViewerSettings,
+    isHoverSettingsWindowOpen,
+    openHoverSettingsWindow,
+    closeHoverSettingsWindow,
     isRecordWindowOpen,
     openRecordWindow,
     closeRecordWindow,

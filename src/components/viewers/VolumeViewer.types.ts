@@ -12,7 +12,7 @@ import type {
 import type { LODPolicyDiagnosticsSnapshot } from '../../core/lodPolicyDiagnostics';
 import type { ViewerLayer } from '../../ui/contracts/viewerLayer';
 import type { FollowedVoxelTarget } from '../../types/follow';
-import type { HoveredVoxelInfo } from '../../types/hover';
+import type { HoveredVoxelInfo, HoverSettings } from '../../types/hover';
 import type { PaintbrushStrokeHandlers } from '../../types/paintbrush';
 import type { RoiDefinition, RoiDimensionMode, RoiTool, SavedRoi } from '../../types/roi';
 import type {
@@ -199,6 +199,7 @@ export type VolumeViewerProps = {
   onTrackFollowRequest: (trackId: string) => void;
   onVoxelFollowRequest: (voxel: FollowedVoxelTarget) => void;
   onHoverVoxelChange?: (value: HoveredVoxelInfo | null) => void;
+  hoverSettings?: HoverSettings;
   viewerPropsConfig?: ViewerPropsConfig;
   roiConfig?: ViewerRoiConfig;
   paintbrush?: PaintbrushStrokeHandlers;

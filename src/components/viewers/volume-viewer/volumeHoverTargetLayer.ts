@@ -1,5 +1,7 @@
 import type { ViewerLayer, VolumeResources } from '../VolumeViewer.types';
 import { RENDER_STYLE_SLICE } from '../../../state/layerSettings';
+import type { HoverSettings } from '../../../types/hover';
+import { DEFAULT_HOVER_SETTINGS, isHoverEnabledForRenderStyle } from '../../../shared/utils/hoverSettings';
 
 export type VolumeHoverLayerSelection = {
   hoverableLayers: ViewerLayer[];
@@ -10,7 +12,12 @@ export type VolumeHoverLayerSelection = {
 export function resolveVolumeHoverLayerSelection(
   layers: ViewerLayer[],
   resources: Map<string, VolumeResources>,
+  hoverSettings: Pick<HoverSettings, 'enabled' | 'type'> = DEFAULT_HOVER_SETTINGS,
 ): VolumeHoverLayerSelection {
+  if (!hoverSettings.enabled) {
+    return { hoverableLayers: [], targetLayer: null, resource: null };
+  }
+
   const hoverableLayers: ViewerLayer[] = [];
   let targetLayer: ViewerLayer | null = null;
   let resource: VolumeResources | null = null;
@@ -48,6 +55,9 @@ export function resolveVolumeHoverLayerSelection(
 
     const canSampleLayer = viewerMode === '3d' || hasVolumeDepth;
     if (!canSampleLayer) {
+      continue;
+    }
+    if (!isHoverEnabledForRenderStyle(layer.renderStyle, hoverSettings)) {
       continue;
     }
 

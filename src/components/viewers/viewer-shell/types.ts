@@ -11,7 +11,7 @@ import type { VolumeBrickAtlas } from '../../../core/volumeProvider';
 import type { LayerSettings, RenderStyle, SamplingMode } from '../../../state/layerSettings';
 import type { TrackSetState } from '../../../types/channelTracks';
 import type { FollowedVoxelTarget } from '../../../types/follow';
-import type { HoveredVoxelInfo } from '../../../types/hover';
+import type { HoveredVoxelInfo, HoverSettings, HoverType } from '../../../types/hover';
 import type { NumericRange, TrackColorMode, TrackPoint, TrackSummary } from '../../../types/tracks';
 
 export type TopMenuChromeProps = {
@@ -71,6 +71,7 @@ export type TopMenuProps = TopMenuChromeProps &
     onOpenRoiManagerWindow: () => void;
     onOpenRecordWindow: () => void;
     onOpenRenderSettingsWindow: () => void;
+    onOpenHoverSettingsWindow: () => void;
     onOpenTracksWindow: () => void;
     onOpenAmplitudePlotWindow: () => void;
     onOpenPlotSettingsWindow: () => void;
@@ -282,6 +283,14 @@ export type LayoutProps = {
 export type TrackDefaults = {
   opacity: number;
   lineWidth: number;
+};
+
+export type HoverSettingsProps = {
+  settings: HoverSettings;
+  onEnabledChange: (enabled: boolean) => void;
+  onTypeChange: (type: HoverType) => void;
+  onStrengthChange: (value: number) => void;
+  onRadiusChange: (value: number) => void;
 };
 
 export type ViewerShellProps = {

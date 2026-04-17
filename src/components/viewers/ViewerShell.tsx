@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import DrawRoiWindow from './viewer-shell/DrawRoiWindow';
+import HoverSettingsWindow from './viewer-shell/HoverSettingsWindow';
 import VolumeViewer from './VolumeViewer';
 import ChannelsPanel from './viewer-shell/ChannelsPanel';
 import MeasurementsWindow from './viewer-shell/MeasurementsWindow';
@@ -36,9 +37,15 @@ import {
   type RoiMeasurementsSnapshot,
 } from '../../types/roiMeasurements';
 import {
+  computeHoverSettingsWindowDefaultPosition,
   MEASUREMENTS_WINDOW_WIDTH,
   SET_MEASUREMENTS_WINDOW_WIDTH,
 } from '../../shared/utils/windowLayout';
+import {
+  DEFAULT_HOVER_SETTINGS,
+  clampHoverSliderValue,
+} from '../../shared/utils/hoverSettings';
+import type { HoverSettings, HoverType } from '../../types/hover';
 
 const NAVIGATION_HELP_WINDOW_WIDTH = 420;
 
@@ -146,6 +153,11 @@ function ViewerShell({
     };
   }, [channelLayersMap]);
   const [renderingQuality, setRenderingQuality] = useState(1.1);
+  const [hoverSettings, setHoverSettings] = useState<HoverSettings>(() => ({ ...DEFAULT_HOVER_SETTINGS }));
+  const [hoverSettingsWindowInitialPosition, setHoverSettingsWindowInitialPosition] = useState(() =>
+    computeHoverSettingsWindowDefaultPosition()
+  );
+  const lastHoverSettingsResetTokenRef = useRef(resetToken);
 
   const handleRenderingQualityChange = (value: number) => {
     setRenderingQuality(value);
@@ -189,6 +201,9 @@ function ViewerShell({
     isViewerSettingsOpen,
     openViewerSettings,
     closeViewerSettings,
+    isHoverSettingsWindowOpen,
+    openHoverSettingsWindow,
+    closeHoverSettingsWindow,
     isRecordWindowOpen,
     openRecordWindow,
     closeRecordWindow,
@@ -218,6 +233,30 @@ function ViewerShell({
     hasTrackData,
     canShowPlotSettings: selectedTracksPanel.shouldRender
   });
+
+  useEffect(() => {
+    if (lastHoverSettingsResetTokenRef.current === resetToken) {
+      return;
+    }
+    lastHoverSettingsResetTokenRef.current = resetToken;
+    setHoverSettingsWindowInitialPosition(computeHoverSettingsWindowDefaultPosition());
+  }, [resetToken]);
+
+  const handleHoverEnabledChange = useCallback((enabled: boolean) => {
+    setHoverSettings((current) => ({ ...current, enabled }));
+  }, []);
+
+  const handleHoverTypeChange = useCallback((type: HoverType) => {
+    setHoverSettings((current) => ({ ...current, type }));
+  }, []);
+
+  const handleHoverStrengthChange = useCallback((value: number) => {
+    setHoverSettings((current) => ({ ...current, strength: clampHoverSliderValue(value) }));
+  }, []);
+
+  const handleHoverRadiusChange = useCallback((value: number) => {
+    setHoverSettings((current) => ({ ...current, radius: clampHoverSliderValue(value) }));
+  }, []);
   const propsController = useViewerPropsState({
     volumeDimensions,
     totalTimepoints: totalViewerPropTimepoints,
@@ -746,6 +785,7 @@ function ViewerShell({
       onOpenRoiManagerWindow: openRoiManagerWindow,
       onOpenRecordWindow: openRecordWindow,
       onOpenRenderSettingsWindow: openViewerSettings,
+      onOpenHoverSettingsWindow: openHoverSettingsWindow,
       onOpenTracksWindow: openTracksWindow,
       onOpenAmplitudePlotWindow: openAmplitudePlot,
       onOpenPlotSettingsWindow: openPlotSettings,
@@ -793,6 +833,7 @@ function ViewerShell({
       openPlotSettings,
       openChannelsWindow,
       openDiagnosticsWindow,
+      openHoverSettingsWindow,
       openPaintbrush,
       openDrawRoiWindow,
       openRecordWindow,
@@ -811,6 +852,7 @@ function ViewerShell({
   const volumeViewerPropsWithViewerProps = useMemo(
     () => ({
       ...volumeViewerWithCaptureTarget,
+      hoverSettings,
       viewerPropsConfig: {
         props: propsController.props,
         selectedPropId: propsController.selectedPropId,
@@ -859,6 +901,7 @@ function ViewerShell({
       showAllSavedRois,
       volumeViewerProps.temporalResolution,
       volumeViewerWithCaptureTarget,
+      hoverSettings,
       workingRoi,
       playbackState.zSliderValue,
     ]
@@ -998,6 +1041,24 @@ function ViewerShell({
         renderingQuality={renderingQuality}
         onRenderingQualityChange={handleRenderingQualityChange}
         globalRenderControls={globalRenderControls}
+      />
+
+      <HoverSettingsWindow
+        layout={{
+          windowMargin,
+          controlWindowWidth,
+          hoverSettingsWindowInitialPosition,
+          resetToken,
+        }}
+        hoverSettings={{
+          settings: hoverSettings,
+          onEnabledChange: handleHoverEnabledChange,
+          onTypeChange: handleHoverTypeChange,
+          onStrengthChange: handleHoverStrengthChange,
+          onRadiusChange: handleHoverRadiusChange,
+        }}
+        isOpen={isHoverSettingsWindowOpen}
+        onClose={closeHoverSettingsWindow}
       />
 
       <RecordWindow

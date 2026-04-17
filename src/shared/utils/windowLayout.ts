@@ -11,6 +11,7 @@ export const PAINTBRUSH_WINDOW_VERTICAL_OFFSET = 220;
 export const WARNING_WINDOW_WIDTH = 360;
 export const RUNTIME_DIAGNOSTICS_WINDOW_WIDTH = 320;
 export const VIEWER_SETTINGS_WINDOW_ESTIMATED_HEIGHT = 320;
+export const HOVER_SETTINGS_WINDOW_ESTIMATED_HEIGHT = 260;
 export const RECORD_WINDOW_ESTIMATED_HEIGHT = 220;
 export const PROPS_WINDOW_ESTIMATED_HEIGHT = 560;
 export const PAINTBRUSH_WINDOW_ESTIMATED_HEIGHT = 420;
@@ -90,6 +91,10 @@ export const computePaintbrushWindowDefaultPosition = (): WindowPosition => ({
 
 export const computeViewerSettingsWindowDefaultPosition = (): WindowPosition => {
   return computeTopCenteredWindowPosition(CONTROL_WINDOW_WIDTH, VIEWER_SETTINGS_WINDOW_ESTIMATED_HEIGHT);
+};
+
+export const computeHoverSettingsWindowDefaultPosition = (): WindowPosition => {
+  return computeTopCenteredWindowPosition(CONTROL_WINDOW_WIDTH, HOVER_SETTINGS_WINDOW_ESTIMATED_HEIGHT);
 };
 
 export const computeRecordWindowDefaultPosition = (): WindowPosition =>

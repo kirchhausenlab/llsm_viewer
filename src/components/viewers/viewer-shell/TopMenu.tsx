@@ -42,6 +42,7 @@ export default function TopMenu(props: TopMenuProps) {
     onOpenRoiManagerWindow,
     onOpenRecordWindow,
     onOpenRenderSettingsWindow,
+    onOpenHoverSettingsWindow,
     onOpenTracksWindow,
     onOpenAmplitudePlotWindow,
     onOpenPlotSettingsWindow,
@@ -146,7 +147,7 @@ export default function TopMenu(props: TopMenuProps) {
         { label: 'Record', onSelect: onOpenRecordWindow },
         { label: 'Background', disabled: true },
         { label: 'Render settings', onSelect: onOpenRenderSettingsWindow },
-        { label: 'Hover settings', disabled: true }
+        { label: 'Hover Settings', onSelect: onOpenHoverSettingsWindow }
       ],
       edit: [
         { label: 'Props', onSelect: onOpenPropsWindow },
@@ -175,6 +176,7 @@ export default function TopMenu(props: TopMenuProps) {
       onOpenPropsWindow,
       onOpenRecordWindow,
       onOpenRenderSettingsWindow,
+      onOpenHoverSettingsWindow,
       onOpenRoiManagerWindow,
       onOpenTrackSettingsWindow,
       onOpenTracksWindow,

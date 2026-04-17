@@ -517,6 +517,8 @@ type VolumeUniforms = {
   u_hoverScale: { value: Vector3 };
   u_hoverRadius: { value: number };
   u_hoverActive: { value: number };
+  u_hoverVisualMode: { value: number };
+  u_hoverStrength: { value: number };
   u_hoverPulse: { value: number };
   u_hoverLabel: { value: number };
   u_hoverSegmentationMode: { value: number };
@@ -586,6 +588,8 @@ const uniforms = {
   u_hoverScale: { value: new Vector3() },
   u_hoverRadius: { value: 0 },
   u_hoverActive: { value: 0 },
+  u_hoverVisualMode: { value: 0 },
+  u_hoverStrength: { value: 1 },
   u_hoverPulse: { value: 0 },
   u_hoverLabel: { value: 0 },
   u_hoverSegmentationMode: { value: 0 },
@@ -678,6 +682,8 @@ const volumeRenderFragmentShader = /* glsl */ `
     uniform vec3 u_hoverScale;
     uniform float u_hoverRadius;
     uniform float u_hoverActive;
+    uniform float u_hoverVisualMode;
+    uniform float u_hoverStrength;
     uniform float u_hoverPulse;
     uniform float u_hoverLabel;
     uniform float u_hoverSegmentationMode;
@@ -2007,6 +2013,15 @@ const volumeRenderFragmentShader = /* glsl */ `
       return vec2(eventT, clamp(alpha, 0.0, 1.0));
     }
 
+    float compute_hover_volume_weight(vec3 sampleLoc, float radiusVoxels) {
+      if (radiusVoxels <= 0.0 || length(u_hoverScale) <= 0.0) {
+        return 0.0;
+      }
+      vec3 delta = (sampleLoc - u_hoverPos) * u_hoverScale;
+      float distanceVoxels = length(delta);
+      return 1.0 - smoothstep(0.0, radiusVoxels, distanceVoxels);
+    }
+
     float volume_texcoords_to_clip_depth(vec3 texcoords) {
       vec3 localPos = texcoords * u_size - vec3(0.5);
       vec4 clipPos = u_modelViewProjectionMatrix * vec4(localPos, 1.0);
@@ -2443,17 +2458,18 @@ const volumeRenderFragmentShader = /* glsl */ `
 
       if (u_hoverActive > 0.5 && length(u_hoverScale) > 0.0) {
         float pulse = clamp(u_hoverPulse, 0.0, 1.0);
+        float hoverStrength = max(u_hoverStrength, 0.0);
         bool segmentationHover = u_hoverSegmentationMode > 0.5;
         if (segmentationHover) {
           float sampleLabel = sample_segmentation_label(max_loc);
           if (abs(sampleLabel - u_hoverLabel) <= 0.5) {
-            color.rgb = mix(color.rgb, vec3(1.0), pulse * 0.6);
+            color.rgb = mix(color.rgb, vec3(1.0), clamp(pulse * 0.6 * hoverStrength, 0.0, 1.0));
           }
         } else if (u_hoverRadius > 0.0) {
           vec3 delta = (max_loc - u_hoverPos) * u_hoverScale;
           float falloff = smoothstep(0.0, u_hoverRadius, length(delta));
           float highlight = (1.0 - falloff) * pulse;
-          color.rgb = mix(color.rgb, vec3(1.0), highlight * 0.6);
+          color.rgb = mix(color.rgb, vec3(1.0), clamp(highlight * 0.6 * hoverStrength, 0.0, 1.0));
         }
       }
 
@@ -2538,16 +2554,17 @@ const volumeRenderFragmentShader = /* glsl */ `
       }
       if (u_hoverActive > 0.5 && length(u_hoverScale) > 0.0) {
         float pulse = clamp(u_hoverPulse, 0.0, 1.0);
+        float hoverStrength = max(u_hoverStrength, 0.0);
         bool segmentationHover = u_hoverSegmentationMode > 0.5;
         if (segmentationHover) {
           if (abs(hitLabel - u_hoverLabel) <= 0.5) {
-            color.rgb = mix(color.rgb, vec3(1.0), pulse * 0.6);
+            color.rgb = mix(color.rgb, vec3(1.0), clamp(pulse * 0.6 * hoverStrength, 0.0, 1.0));
           }
         } else if (u_hoverRadius > 0.0) {
           vec3 delta = (hitLoc - u_hoverPos) * u_hoverScale;
           float falloff = smoothstep(0.0, u_hoverRadius, length(delta));
           float highlight = (1.0 - falloff) * pulse;
-          color.rgb = mix(color.rgb, vec3(1.0), highlight * 0.6);
+          color.rgb = mix(color.rgb, vec3(1.0), clamp(highlight * 0.6 * hoverStrength, 0.0, 1.0));
         }
       }
 
@@ -2557,6 +2574,7 @@ const volumeRenderFragmentShader = /* glsl */ `
     #if defined(VOLUME_STYLE_ISO)
     void cast_iso(vec3 start_loc, vec3 step, int nsteps, vec3 view_ray) {
       vec4 hitColor = vec4(0.0);
+      vec3 hitLoc = start_loc;
       vec3 dstep = 1.5 / u_size;
       vec3 loc = start_loc;
       float baseAdaptiveLod = compute_adaptive_lod_base(step, start_loc);
@@ -2613,6 +2631,7 @@ const volumeRenderFragmentShader = /* glsl */ `
             float refined = normalize_intensity(refinedRaw);
             float adjustedRefined = apply_inversion(refined);
             if (adjustedRefined > u_renderthreshold) {
+              hitLoc = iloc;
               hitColor = add_lighting(refined, iloc, dstep, view_ray, colorSample);
               hasHit = true;
               break;
@@ -2630,6 +2649,15 @@ const volumeRenderFragmentShader = /* glsl */ `
         }
         loc += step * float(stepDelta);
         traversedSteps += stepDelta;
+      }
+
+      if (hasHit && u_hoverActive > 0.5 && length(u_hoverScale) > 0.0 && u_hoverRadius > 0.0) {
+        float pulse = clamp(u_hoverPulse, 0.0, 1.0);
+        float hoverStrength = max(u_hoverStrength, 0.0);
+        vec3 delta = (hitLoc - u_hoverPos) * u_hoverScale;
+        float falloff = smoothstep(0.0, u_hoverRadius, length(delta));
+        float highlight = (1.0 - falloff) * pulse;
+        hitColor.rgb = mix(hitColor.rgb, vec3(1.0), clamp(highlight * 0.6 * hoverStrength, 0.0, 1.0));
       }
 
       gl_FragColor = apply_blending_mode(hitColor);
@@ -2661,12 +2689,18 @@ const volumeRenderFragmentShader = /* glsl */ `
       roiOcclusionDepth = linearize_depth(roiOcclusionDepth);
 #endif
       bool hoverActive = false;
+      bool hoverDefaultActive = false;
+      bool hoverCrosshairActive = false;
       float hoverPulse = 0.0;
+      float hoverStrength = 1.0;
       float hoverLineRadius = 0.0;
       float hoverAxisDensity = 0.0;
 #if !defined(VOLUME_ROI_OCCLUSION_ALPHA_PASS)
       hoverActive = u_hoverActive > 0.5 && length(u_hoverScale) > 0.0;
+      hoverCrosshairActive = hoverActive && u_hoverVisualMode > 0.5;
+      hoverDefaultActive = hoverActive && !hoverCrosshairActive;
       hoverPulse = clamp(u_hoverPulse, 0.0, 1.0);
+      hoverStrength = max(u_hoverStrength, 0.0);
       hoverLineRadius = max(u_hoverRadius * 0.45, 0.55);
       hoverAxisDensity = mix(2.6, 3.4, hoverPulse);
 #endif
@@ -2688,7 +2722,7 @@ const volumeRenderFragmentShader = /* glsl */ `
       float hierarchyTraversalNodeIsoLowThreshold = -2.0;
       int hierarchyLevelCount = int(clamp(floor(u_skipHierarchyLevelCount + 0.5), 0.0, float(MAX_SKIP_HIERARCHY_LEVELS)));
       bool skipTraversalEnabled = u_brickSkipEnabled > 0.5 && hierarchyLevelCount > 0;
-      if (hoverActive && u_hoverRadius > 0.0 && raySpeed > 0.0) {
+      if (hoverCrosshairActive && u_hoverRadius > 0.0 && raySpeed > 0.0) {
         axisXEvent = compute_crosshair_axis_event(
           vec2(start_loc.y - u_hoverPos.y, start_loc.z - u_hoverPos.z),
           vec2(rayDelta.y, rayDelta.z),
@@ -2802,8 +2836,20 @@ const volumeRenderFragmentShader = /* glsl */ `
                 1.0
               );
             float sigmaT = cutoffAdjustedIntensity * safeDensity * safeOpacity;
-            float alphaStep = 1.0 - exp(-sigmaT * stepDistance);
             vec4 sampleColor = compose_color(normalizedIntensity, colorSample);
+            if (hoverDefaultActive && u_hoverRadius > 0.0) {
+              float hoverWeight = compute_hover_volume_weight(sampleLoc, u_hoverRadius);
+              if (hoverWeight > 0.0) {
+                float hoverGlow = hoverWeight * (0.35 + 0.65 * hoverPulse);
+                sampleColor.rgb = mix(
+                  sampleColor.rgb,
+                  vec3(1.0),
+                  clamp(hoverGlow * 0.7 * hoverStrength, 0.0, 1.0)
+                );
+                sigmaT *= mix(1.0, 1.0 + 0.9 * hoverStrength, clamp(hoverGlow, 0.0, 1.0));
+              }
+            }
+            float alphaStep = 1.0 - exp(-sigmaT * stepDistance);
             float remainingStepAlpha = 1.0 - stepAlpha;
             stepPremultipliedColor += remainingStepAlpha * alphaStep * sampleColor.rgb;
             stepAlpha = 1.0 - (1.0 - stepAlpha) * (1.0 - alphaStep);
