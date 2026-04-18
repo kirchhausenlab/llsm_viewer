@@ -51,4 +51,5 @@ export type CameraWindowController = {
     cameraPosition?: CameraCoordinate | null;
     cameraRotation: CameraRotation;
   }) => boolean;
+  captureCameraState: () => CameraWindowState | null;
 };

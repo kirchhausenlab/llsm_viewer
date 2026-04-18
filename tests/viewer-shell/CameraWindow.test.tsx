@@ -47,7 +47,7 @@ function createProps(overrides: Partial<React.ComponentProps<typeof CameraWindow
     translationEnabled: true,
     rotationEnabled: true,
     canUpdate: true,
-    voxelFollowDraft: { x: '4', y: '5', z: '6' },
+    voxelFollowDraft: { x: '5', y: '6', z: '7' },
     voxelFollowLocked: false,
     voxelFollowButtonLabel: 'Follow' as const,
     voxelFollowButtonDisabled: false,
@@ -175,7 +175,7 @@ function createProps(overrides: Partial<React.ComponentProps<typeof CameraWindow
   assert.ok(clearButton);
   assert.equal(renderer.root.findAll((node) => node.props.id === 'camera-position-x')[0]?.props.value, '1');
   assert.equal(renderer.root.findAll((node) => node.props.id === 'camera-rotation-yaw')[0]?.props.value, '10');
-  assert.equal(renderer.root.findAll((node) => node.props.id === 'camera-follow-z')[0]?.props.value, '6');
+  assert.equal(renderer.root.findAll((node) => node.props.id === 'camera-follow-z')[0]?.props.value, '7');
   assert.ok(selectedViewButton);
 
   act(() => updateButton.props.onClick());

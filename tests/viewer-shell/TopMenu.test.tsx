@@ -260,6 +260,50 @@ test('top menu renders the requested dropdown order and items', () => {
   });
 });
 
+test('top menu renders and toggles the 2D view button state', () => {
+  withEnvironmentMocks(() => {
+    let toggleCalls = 0;
+    const renderer = renderTopMenu({
+      twoDViewButtonDisabled: false,
+      onToggle2dView: () => {
+        toggleCalls += 1;
+      }
+    });
+
+    const twoDButton = renderer.root.findAll(
+      (node) => node.type === 'button' && extractText(node) === '2D view'
+    )[0];
+    assert.ok(twoDButton);
+    assert.equal(twoDButton.props['aria-pressed'], false);
+
+    act(() => {
+      twoDButton.props.onClick();
+    });
+
+    assert.equal(toggleCalls, 1);
+
+    renderer.update(
+      <UiThemeProvider>
+        <TopMenu {...createProps({
+          is2dViewActive: true,
+          twoDViewButtonDisabled: false,
+          onToggle2dView: () => {
+            toggleCalls += 1;
+          }
+        })} />
+      </UiThemeProvider>
+    );
+
+    const threeDButton = renderer.root.findAll(
+      (node) => node.type === 'button' && extractText(node) === '3D view'
+    )[0];
+    assert.ok(threeDButton);
+    assert.equal(threeDButton.props['aria-pressed'], true);
+
+    renderer.unmount();
+  });
+});
+
 test('top menu renders the initial loading warning when provided', () => {
   withEnvironmentMocks(() => {
     const renderer = renderTopMenu({
@@ -840,7 +884,7 @@ test('top menu reports followed voxel coordinates next to the stop control', () 
     });
 
     const followTargets = renderer.root.findAll(
-      (node) => hasClassName(node, 'viewer-top-menu-follow-target') && extractText(node) === 'Following voxel (12, 34, 56)'
+      (node) => hasClassName(node, 'viewer-top-menu-follow-target') && extractText(node) === 'Following voxel (13, 35, 57)'
     );
     const stopButtons = renderer.root.findAll(
       (node) => node.type === 'button' && extractText(node) === 'Stop'

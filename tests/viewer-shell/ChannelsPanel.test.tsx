@@ -284,4 +284,31 @@ function findNodesByText(renderer: TestRenderer.ReactTestRenderer, text: string)
   renderer.unmount();
 })();
 
+(() => {
+  const renderer = TestRenderer.create(
+    <ChannelsPanel
+      {...(createProps(RENDER_STYLE_MIP, () => {}) as any)}
+      renderModeLocked
+    />,
+  );
+
+  const renderModeSelect = findRenderModeSelect(renderer);
+  assert.equal(renderModeSelect?.props.disabled, true);
+  assert.equal(renderModeSelect?.props.title, 'Render mode is locked while 2D view is active.');
+
+  renderer.update(
+    <ChannelsPanel
+      {...(createProps(RENDER_STYLE_SLICE, () => {}, () => {}, segmentationLayer) as any)}
+      renderModeLocked
+    />,
+  );
+
+  const segmentation3dButton = findButtonByLabel(renderer, '3D');
+  const sliceButton = findButtonByLabel(renderer, 'Slice');
+  assert.equal(segmentation3dButton?.props.disabled, true);
+  assert.equal(sliceButton?.props.disabled, true);
+
+  renderer.unmount();
+})();
+
 console.log('ChannelsPanel tests passed');

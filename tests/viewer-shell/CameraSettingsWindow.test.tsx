@@ -112,4 +112,26 @@ function createProps(isOpen: boolean) {
   renderer.unmount();
 })();
 
+(() => {
+  const props = createProps(true);
+  const renderer = TestRenderer.create(
+    <CameraSettingsWindow {...(props as any)} projectionLocked />
+  );
+  const perspectiveButton = renderer.root.findAll(
+    (node) => node.type === 'button' && node.children.join('') === 'Perspective'
+  )[0];
+  const isometricButton = renderer.root.findAll(
+    (node) => node.type === 'button' && node.children.join('') === 'Isometric'
+  )[0];
+
+  assert.equal(perspectiveButton.props.disabled, true);
+  assert.equal(isometricButton.props.disabled, true);
+  assert.equal(
+    renderer.root.findAll((node) => node.children.join('') === 'Projection mode is locked while 2D view is active.').length,
+    1
+  );
+
+  renderer.unmount();
+})();
+
 console.log('CameraSettingsWindow tests passed');

@@ -24,7 +24,12 @@ import { useViewerPropsState } from './viewer-shell/hooks/useViewerPropsState';
 import { useViewerRoiState } from './viewer-shell/hooks/useViewerRoiState';
 import { useViewerRecording } from './viewer-shell/hooks/useViewerRecording';
 import type { ViewerShellProps } from './viewer-shell/types';
-import { createDefaultLayerSettings } from '../../state/layerSettings';
+import {
+  createDefaultLayerSettings,
+  RENDER_STYLE_SLICE,
+  type RenderStyle,
+  type SamplingMode,
+} from '../../state/layerSettings';
 import type {
   CameraCoordinate,
   CameraRotation,
@@ -59,6 +64,11 @@ import {
   DEFAULT_HOVER_SETTINGS,
   clampHoverSliderValue,
 } from '../../shared/utils/hoverSettings';
+import {
+  fromUserFacingVoxelIndex,
+  getUserFacingVoxelIndexDigits,
+  toUserFacingVoxelIndex,
+} from '../../shared/utils/voxelIndex';
 import type { HoverSettings, HoverType } from '../../types/hover';
 
 type CoordinateDraft = {
@@ -72,6 +82,8 @@ type RotationDraft = {
   pitch: string;
   roll: string;
 };
+
+type LayerRenderModeSnapshot = Record<string, { renderStyle: RenderStyle; samplingMode: SamplingMode }>;
 
 const EMPTY_COORDINATE_DRAFT: CoordinateDraft = { x: '', y: '', z: '' };
 
@@ -101,6 +113,14 @@ function coordinateToDraft(
   };
 }
 
+function voxelCoordinateToDraft(coordinate: CameraCoordinate): CoordinateDraft {
+  return {
+    x: toUserFacingVoxelIndex(coordinate.x).toString(),
+    y: toUserFacingVoxelIndex(coordinate.y).toString(),
+    z: toUserFacingVoxelIndex(coordinate.z).toString(),
+  };
+}
+
 function rotationToDraft(rotation: CameraRotation): RotationDraft {
   return {
     yaw: Number.isFinite(rotation.yaw) ? rotation.yaw.toString() : '',
@@ -115,6 +135,21 @@ function parseCoordinateDraft(
   const x = Number(draft.x);
   const y = Number(draft.y);
   const z = Number(draft.z);
+  if (![x, y, z].every((value) => Number.isFinite(value))) {
+    return { value: null, valid: false };
+  }
+  return {
+    value: { x, y, z },
+    valid: true,
+  };
+}
+
+function parseVoxelCoordinateDraft(
+  draft: CoordinateDraft,
+): { value: CameraCoordinate | null; valid: boolean } {
+  const x = fromUserFacingVoxelIndex(Number(draft.x));
+  const y = fromUserFacingVoxelIndex(Number(draft.y));
+  const z = fromUserFacingVoxelIndex(Number(draft.z));
   if (![x, y, z].every((value) => Number.isFinite(value))) {
     return { value: null, valid: false };
   }
@@ -183,6 +218,10 @@ function ViewerShell({
     setMeasurementsWindowInitialPosition,
   } = layout;
   const { loadedChannelIds, channelLayersMap } = channelsPanel;
+  const managedChannelLayers = useMemo(
+    () => loadedChannelIds.flatMap((channelId) => channelLayersMap.get(channelId) ?? []),
+    [channelLayersMap, loadedChannelIds]
+  );
 
   const hasVolumeData = loadedChannelIds.some((channelId) =>
     (channelLayersMap.get(channelId) ?? []).some((layer) => layer.volumeCount > 0)
@@ -213,9 +252,9 @@ function ViewerShell({
     }
 
     return {
-      x: Math.max(1, String(Math.max(0, maxWidth - 1)).length),
-      y: Math.max(1, String(Math.max(0, maxHeight - 1)).length),
-      z: Math.max(1, String(Math.max(0, maxDepth - 1)).length)
+      x: getUserFacingVoxelIndexDigits(maxWidth),
+      y: getUserFacingVoxelIndexDigits(maxHeight),
+      z: getUserFacingVoxelIndexDigits(maxDepth)
     };
   }, [channelLayersMap]);
   const hoverIntensityValueDigits = useMemo(() => {
@@ -383,6 +422,8 @@ function ViewerShell({
     dimensionMode: roiDimensionMode,
     defaultColor: roiDefaultColor,
     workingRoi,
+    twoDCurrentZEnabled,
+    twoDStartZIndex,
     savedRois,
     selectedSavedRoiIds,
     activeSavedRoiId,
@@ -391,8 +432,11 @@ function ViewerShell({
     setTool: setRoiTool,
     setDimensionMode: setRoiDimensionMode,
     setDefaultColor: setRoiDefaultColor,
+    setTwoDCurrentZEnabled,
+    setTwoDStartZIndex,
     setWorkingRoi,
     updateWorkingRoi,
+    clearWorkingRoiAttachment,
     activateSavedRoi,
     selectSavedRoi,
     addWorkingRoi,
@@ -409,7 +453,9 @@ function ViewerShell({
     () => savedRois.find((roi) => roi.id === activeSavedRoiId) ?? null,
     [activeSavedRoiId, savedRois]
   );
-  const currentRoiName = activeSavedRoi?.name ?? 'Unsaved ROI';
+  const currentRoiName = activeSavedRoi?.name ?? (workingRoi ? 'Unsaved ROI' : 'No ROI');
+  const roiAttachmentState: 'none' | 'unsaved' | 'saved' =
+    activeSavedRoi !== null ? 'saved' : workingRoi ? 'unsaved' : 'none';
   const selectedSavedRois = useMemo(
     () =>
       selectedSavedRoiIds
@@ -457,7 +503,12 @@ function ViewerShell({
   const cameraLoadInputRef = useRef<HTMLInputElement | null>(null);
   const cameraControllerRef = useRef<CameraWindowController | null>(null);
   const pendingCameraViewRef = useRef<SavedCameraView | null>(null);
+  const pending2dResetRef = useRef(false);
+  const pending3dPoseRestoreRef = useRef<CameraWindowState | null>(null);
+  const previous3dPoseRef = useRef<CameraWindowState | null>(null);
+  const previousLayerRenderModesRef = useRef<LayerRenderModeSnapshot>({});
   const [cameraWindowState, setCameraWindowState] = useState<CameraWindowState | null>(null);
+  const [is2dViewActive, setIs2dViewActive] = useState(false);
   const [translationSpeedMultiplier, setTranslationSpeedMultiplier] = useState(1);
   const [rotationSpeedMultiplier, setRotationSpeedMultiplier] = useState(1);
   const [cameraPositionDraft, setCameraPositionDraft] = useState<CoordinateDraft>(EMPTY_COORDINATE_DRAFT);
@@ -483,6 +534,46 @@ function ViewerShell({
     },
     [setRoiDefaultColor, updateWorkingRoi, workingRoi]
   );
+
+  useEffect(() => {
+    if (!twoDCurrentZEnabled || roiDimensionMode !== '2d') {
+      return;
+    }
+
+    const targetZIndex = Math.max(0, (playbackState.zSliderValue ?? 1) - 1);
+    if (workingRoi?.mode === '2d') {
+      if (workingRoi.start.z === targetZIndex && workingRoi.end.z === targetZIndex) {
+        return;
+      }
+      updateWorkingRoi((current) => ({
+        ...current,
+        start: {
+          ...current.start,
+          z: targetZIndex,
+        },
+        end: {
+          ...current.end,
+          z: targetZIndex,
+        },
+      }));
+      return;
+    }
+
+    if (!workingRoi) {
+      setTwoDStartZIndex(targetZIndex);
+    }
+  }, [
+    playbackState.zSliderValue,
+    roiDimensionMode,
+    setTwoDStartZIndex,
+    twoDCurrentZEnabled,
+    updateWorkingRoi,
+    workingRoi,
+  ]);
+
+  const handleClearOrDetachRoi = useCallback(() => {
+    clearWorkingRoiAttachment();
+  }, [clearWorkingRoiAttachment]);
 
   const handleRenameActiveRoi = useCallback(() => {
     if (!activeSavedRoi) {
@@ -788,16 +879,107 @@ function ViewerShell({
     setCameraRotationDraft(rotationToDraft(cameraWindowState.cameraRotation));
   }, [cameraWindowState, isCameraDraftDirty]);
 
+  const captureCurrentCameraState = useCallback(
+    () => cameraControllerRef.current?.captureCameraState() ?? cameraWindowState,
+    [cameraWindowState]
+  );
+  const captureLayerRenderModes = useCallback((): LayerRenderModeSnapshot => {
+    const snapshot: LayerRenderModeSnapshot = {};
+    for (const layer of managedChannelLayers) {
+      const settings = channelsPanel.layerSettings[layer.key] ?? channelsPanel.getLayerDefaultSettings(layer.key);
+      snapshot[layer.key] = {
+        renderStyle: settings.renderStyle,
+        samplingMode: settings.samplingMode,
+      };
+    }
+    return snapshot;
+  }, [channelsPanel.getLayerDefaultSettings, channelsPanel.layerSettings, managedChannelLayers]);
+  const force2dLayerModes = useCallback(() => {
+    for (const layer of managedChannelLayers) {
+      channelsPanel.onLayerRenderStyleChange(layer.key, RENDER_STYLE_SLICE, 'nearest');
+    }
+  }, [channelsPanel.onLayerRenderStyleChange, managedChannelLayers]);
+  const restoreLayerRenderModes = useCallback(
+    (snapshot: LayerRenderModeSnapshot) => {
+      const activeLayerKeys = new Set(managedChannelLayers.map((layer) => layer.key));
+      for (const [layerKey, settings] of Object.entries(snapshot)) {
+        if (!activeLayerKeys.has(layerKey)) {
+          continue;
+        }
+        channelsPanel.onLayerRenderStyleChange(layerKey, settings.renderStyle, settings.samplingMode);
+      }
+    },
+    [channelsPanel.onLayerRenderStyleChange, managedChannelLayers]
+  );
+
+  const handleToggle2dView = useCallback(() => {
+    if (is2dViewActive) {
+      pending2dResetRef.current = false;
+      pending3dPoseRestoreRef.current = previous3dPoseRef.current;
+      setIs2dViewActive(false);
+      restoreLayerRenderModes(previousLayerRenderModesRef.current);
+      modeControls.onProjectionModeChange('perspective');
+      return;
+    }
+
+    if (modeControls.isVrActive || !modeControls.resetViewHandler) {
+      return;
+    }
+
+    previous3dPoseRef.current = captureCurrentCameraState();
+    previousLayerRenderModesRef.current = captureLayerRenderModes();
+    pending3dPoseRestoreRef.current = null;
+    pending2dResetRef.current = true;
+    setIs2dViewActive(true);
+    force2dLayerModes();
+    modeControls.onProjectionModeChange('orthographic');
+  }, [
+    captureCurrentCameraState,
+    captureLayerRenderModes,
+    force2dLayerModes,
+    is2dViewActive,
+    modeControls.isVrActive,
+    modeControls.onProjectionModeChange,
+    modeControls.resetViewHandler,
+    restoreLayerRenderModes,
+  ]);
+
+  useEffect(() => {
+    if (!is2dViewActive || !pending2dResetRef.current || modeControls.projectionMode !== 'orthographic') {
+      return;
+    }
+    pending2dResetRef.current = false;
+    modeControls.resetViewHandler?.();
+  }, [is2dViewActive, modeControls.projectionMode, modeControls.resetViewHandler]);
+
+  useEffect(() => {
+    const pendingPose = pending3dPoseRestoreRef.current;
+    if (is2dViewActive || !pendingPose || modeControls.projectionMode !== 'perspective') {
+      return;
+    }
+
+    const controller = cameraControllerRef.current;
+    if (
+      controller?.applyCameraPose({
+        cameraPosition: pendingPose.cameraPosition,
+        cameraRotation: pendingPose.cameraRotation,
+      })
+    ) {
+      pending3dPoseRestoreRef.current = null;
+      setIsCameraDraftDirty(false);
+    }
+  }, [is2dViewActive, modeControls.projectionMode]);
+
   useEffect(() => {
     if (!volumeViewerProps.followedVoxel) {
       return;
     }
-    setVoxelFollowDraft(coordinateToDraft(volumeViewerProps.followedVoxel.coordinates));
+    setVoxelFollowDraft(voxelCoordinateToDraft(volumeViewerProps.followedVoxel.coordinates));
   }, [volumeViewerProps.followedVoxel]);
 
   useEffect(() => {
     const pendingView = pendingCameraViewRef.current;
-    if (!pendingView || volumeViewerProps.followedTrackId !== null) {
+    if (!pendingView || is2dViewActive || volumeViewerProps.followedTrackId !== null) {
       return;
     }
 
@@ -823,28 +1005,33 @@ function ViewerShell({
       pendingCameraViewRef.current = null;
       setIsCameraDraftDirty(false);
     }
-  }, [volumeViewerProps.followedTrackId, volumeViewerProps.followedVoxel]);
+  }, [is2dViewActive, volumeViewerProps.followedTrackId, volumeViewerProps.followedVoxel]);
 
-  const translationEnabled = volumeViewerProps.followedTrackId === null && volumeViewerProps.followedVoxel === null;
-  const rotationEnabled = true;
+  const translationEnabled =
+    !is2dViewActive && volumeViewerProps.followedTrackId === null && volumeViewerProps.followedVoxel === null;
+  const rotationEnabled = !is2dViewActive;
   const parsedCameraPosition = useMemo(() => parseCoordinateDraft(cameraPositionDraft), [cameraPositionDraft]);
   const parsedCameraRotation = useMemo(() => parseRotationDraft(cameraRotationDraft), [cameraRotationDraft]);
-  const parsedFollowVoxel = useMemo(() => parseCoordinateDraft(voxelFollowDraft), [voxelFollowDraft]);
+  const parsedFollowVoxel = useMemo(() => parseVoxelCoordinateDraft(voxelFollowDraft), [voxelFollowDraft]);
   const canUpdateCamera =
+    !is2dViewActive &&
     cameraControllerRef.current !== null &&
     parsedCameraRotation.valid &&
     (translationEnabled ? parsedCameraPosition.valid : true);
-  const voxelFollowLocked = volumeViewerProps.followedTrackId !== null || volumeViewerProps.followedVoxel !== null;
+  const voxelFollowLocked =
+    is2dViewActive || volumeViewerProps.followedTrackId !== null || volumeViewerProps.followedVoxel !== null;
   const voxelFollowButtonLabel: 'Follow' | 'Stop' = volumeViewerProps.followedVoxel ? 'Stop' : 'Follow';
   const voxelFollowButtonDisabled =
+    is2dViewActive ||
     volumeViewerProps.followedTrackId !== null ||
     (volumeViewerProps.followedVoxel === null && !parsedFollowVoxel.valid);
-  const canAddCameraView = cameraWindowState !== null && volumeViewerProps.followedTrackId === null;
-  const canActivateCameraViews = volumeViewerProps.followedTrackId === null;
-  const canRemoveCameraView = selectedCameraViewId !== null;
-  const canSaveCameraViews = savedCameraViews.length > 0;
-  const canLoadCameraViews = hasVolumeData;
-  const canClearCameraViews = savedCameraViews.length > 0;
+  const canAddCameraView =
+    !is2dViewActive && cameraWindowState !== null && volumeViewerProps.followedTrackId === null;
+  const canActivateCameraViews = !is2dViewActive && volumeViewerProps.followedTrackId === null;
+  const canRemoveCameraView = !is2dViewActive && selectedCameraViewId !== null;
+  const canSaveCameraViews = !is2dViewActive && savedCameraViews.length > 0;
+  const canLoadCameraViews = !is2dViewActive && hasVolumeData;
+  const canClearCameraViews = !is2dViewActive && savedCameraViews.length > 0;
 
   const handleCameraPositionChange = useCallback((axis: keyof CoordinateDraft, value: string) => {
     setCameraPositionDraft((current) => ({ ...current, [axis]: value }));
@@ -857,6 +1044,9 @@ function ViewerShell({
   }, []);
 
   const handleApplyCameraUpdate = useCallback(() => {
+    if (is2dViewActive) {
+      return;
+    }
     const controller = cameraControllerRef.current;
     if (!controller || !parsedCameraRotation.value) {
       return;
@@ -869,14 +1059,14 @@ function ViewerShell({
     if (applied) {
       setIsCameraDraftDirty(false);
     }
-  }, [parsedCameraPosition.value, parsedCameraRotation.value, translationEnabled]);
+  }, [is2dViewActive, parsedCameraPosition.value, parsedCameraRotation.value, translationEnabled]);
 
   const handleVoxelFollowChange = useCallback((axis: keyof CoordinateDraft, value: string) => {
     setVoxelFollowDraft((current) => ({ ...current, [axis]: value }));
   }, []);
 
   const handleVoxelFollowButtonClick = useCallback(() => {
-    if (volumeViewerProps.followedTrackId !== null) {
+    if (is2dViewActive || volumeViewerProps.followedTrackId !== null) {
       return;
     }
 
@@ -894,11 +1084,12 @@ function ViewerShell({
       y: Math.min(Math.max(Math.round(parsedFollowVoxel.value.y), 0), volumeDimensions.height - 1),
       z: Math.min(Math.max(Math.round(parsedFollowVoxel.value.z), 0), volumeDimensions.depth - 1),
     };
-    setVoxelFollowDraft(coordinateToDraft(clampedCoordinates));
+    setVoxelFollowDraft(voxelCoordinateToDraft(clampedCoordinates));
     volumeViewerProps.onVoxelFollowRequest({
       coordinates: clampedCoordinates,
     });
   }, [
+    is2dViewActive,
     parsedFollowVoxel.value,
     topMenu,
     volumeDimensions.depth,
@@ -908,7 +1099,7 @@ function ViewerShell({
   ]);
 
   const handleAddCameraView = useCallback(() => {
-    if (!cameraWindowState || volumeViewerProps.followedTrackId !== null) {
+    if (is2dViewActive || !cameraWindowState || volumeViewerProps.followedTrackId !== null) {
       return;
     }
 
@@ -933,7 +1124,7 @@ function ViewerShell({
             };
       return [...current, nextView];
     });
-  }, [cameraWindowState, volumeViewerProps.followedTrackId, volumeViewerProps.followedVoxel]);
+  }, [cameraWindowState, is2dViewActive, volumeViewerProps.followedTrackId, volumeViewerProps.followedVoxel]);
 
   const handleRemoveCameraView = useCallback(() => {
     if (!selectedCameraViewId) {
@@ -974,6 +1165,9 @@ function ViewerShell({
 
   const handleSelectCameraView = useCallback(
     (viewId: string) => {
+      if (is2dViewActive) {
+        return;
+      }
       setSelectedCameraViewId(viewId);
       if (volumeViewerProps.followedTrackId !== null) {
         return;
@@ -1012,7 +1206,7 @@ function ViewerShell({
         setIsCameraDraftDirty(false);
       }
     },
-    [savedCameraViews, topMenu, volumeViewerProps],
+    [is2dViewActive, savedCameraViews, topMenu, volumeViewerProps],
   );
 
   const handleSaveCameraViews = useCallback(async () => {
@@ -1234,6 +1428,13 @@ function ViewerShell({
       onMipEarlyExitThresholdChange: withLayerKey(channelsPanel.onLayerMipEarlyExitThresholdChange)
     };
   }, [channelsPanel]);
+  const resolvedGlobalRenderControls = useMemo(
+    () => ({
+      ...globalRenderControls,
+      disabled: globalRenderControls.disabled || is2dViewActive,
+    }),
+    [globalRenderControls, is2dViewActive]
+  );
 
   const { modeToggle, viewerSettings } = useViewerModeControls({
     modeControls,
@@ -1242,6 +1443,16 @@ function ViewerShell({
     onRenderingQualityChange: handleRenderingQualityChange,
     hasVolumeData
   });
+  const twoDViewButtonDisabled = modeToggle.isVrActive || (!is2dViewActive && !modeToggle.resetViewHandler);
+  const twoDViewButtonTitle = modeToggle.isVrActive
+    ? '2D view is unavailable while VR is active.'
+    : !is2dViewActive && !modeToggle.resetViewHandler
+      ? '2D view is unavailable until the viewer is ready.'
+      : undefined;
+  const vrButtonDisabled = modeToggle.vrButtonDisabled || is2dViewActive;
+  const vrButtonTitle = is2dViewActive
+    ? 'VR is unavailable while 2D view is active.'
+    : modeToggle.vrButtonTitle;
   const segmentationChannelIds = useMemo(() => {
     const next = new Set<string>();
 
@@ -1311,9 +1522,13 @@ function ViewerShell({
       onOpenDiagnosticsWindow: openDiagnosticsWindow,
       is3dModeAvailable: modeToggle.is3dModeAvailable,
       resetViewHandler: modeToggle.resetViewHandler,
+      is2dViewActive,
+      onToggle2dView: handleToggle2dView,
+      twoDViewButtonDisabled,
+      twoDViewButtonTitle,
       onVrButtonClick: modeToggle.onVrButtonClick,
-      vrButtonDisabled: modeToggle.vrButtonDisabled,
-      vrButtonTitle: modeToggle.vrButtonTitle,
+      vrButtonDisabled,
+      vrButtonTitle,
       vrButtonLabel: modeToggle.vrButtonLabel,
       volumeTimepointCount: playbackState.volumeTimepointCount,
       isPlaying: playbackState.isPlaying,
@@ -1357,6 +1572,7 @@ function ViewerShell({
       openPaintbrush,
       openDrawRoiWindow,
       handleOpenSetMeasurementsWindow,
+      handleToggle2dView,
       openRecordWindow,
       openRoiManagerWindow,
       openPropsWindow,
@@ -1365,8 +1581,13 @@ function ViewerShell({
       openViewerSettings,
       playbackState,
       segmentationChannelIds,
+      is2dViewActive,
+      twoDViewButtonDisabled,
+      twoDViewButtonTitle,
       trackVisibilitySummaryByTrackSet,
       tracksPanel,
+      vrButtonDisabled,
+      vrButtonTitle,
       topMenu
     ]
   );
@@ -1376,6 +1597,7 @@ function ViewerShell({
       hoverSettings,
       translationSpeedMultiplier,
       rotationSpeedMultiplier,
+      rotationLocked: is2dViewActive,
       onCameraWindowStateChange: handleCameraWindowStateChange,
       onRegisterCameraWindowController: handleRegisterCameraWindowController,
       viewerPropsConfig: {
@@ -1395,6 +1617,8 @@ function ViewerShell({
         tool: roiTool,
         dimensionMode: roiDimensionMode,
         selectedZIndex: Math.max(0, (playbackState.zSliderValue ?? 1) - 1),
+        twoDCurrentZEnabled,
+        twoDStartZIndex,
         defaultColor: roiDefaultColor,
         workingRoi,
         savedRois,
@@ -1411,6 +1635,8 @@ function ViewerShell({
       isPropsWindowOpen,
       isDrawRoiWindowOpen,
       activateSavedRoi,
+      twoDCurrentZEnabled,
+      twoDStartZIndex,
       propsController.props,
       propsController.selectProp,
       propsController.selectedPropId,
@@ -1427,6 +1653,7 @@ function ViewerShell({
       volumeViewerProps.temporalResolution,
       volumeViewerWithCaptureTarget,
       hoverSettings,
+      is2dViewActive,
       translationSpeedMultiplier,
       rotationSpeedMultiplier,
       handleCameraWindowStateChange,
@@ -1580,6 +1807,7 @@ function ViewerShell({
         rotationSpeedMultiplier={rotationSpeedMultiplier}
         onTranslationSpeedMultiplierChange={setTranslationSpeedMultiplier}
         onRotationSpeedMultiplierChange={setRotationSpeedMultiplier}
+        projectionLocked={is2dViewActive}
       />
 
       {isPaintbrushOpen ? (
@@ -1619,13 +1847,20 @@ function ViewerShell({
           volumeDimensions={volumeDimensions}
           tool={roiTool}
           dimensionMode={roiDimensionMode}
+          selectedZIndex={Math.max(0, (playbackState.zSliderValue ?? 1) - 1)}
           currentRoiName={currentRoiName}
+          roiAttachmentState={roiAttachmentState}
           currentColor={currentRoiColor}
           workingRoi={workingRoi}
+          twoDCurrentZEnabled={twoDCurrentZEnabled}
+          twoDStartZIndex={twoDStartZIndex}
           onToolChange={setRoiTool}
           onDimensionModeChange={setRoiDimensionMode}
           onColorChange={handleRoiColorChange}
+          onTwoDCurrentZEnabledChange={setTwoDCurrentZEnabled}
+          onTwoDStartZIndexChange={setTwoDStartZIndex}
           onUpdateWorkingRoi={updateWorkingRoi}
+          onClearOrDetach={handleClearOrDetachRoi}
           onClose={closeDrawRoiWindow}
         />
       ) : null}
@@ -1667,7 +1902,7 @@ function ViewerShell({
         onClose={closeViewerSettings}
         renderingQuality={renderingQuality}
         onRenderingQualityChange={handleRenderingQualityChange}
-        globalRenderControls={globalRenderControls}
+        globalRenderControls={resolvedGlobalRenderControls}
       />
 
       <HoverSettingsWindow
@@ -1766,6 +2001,7 @@ function ViewerShell({
         layout={{ windowMargin, controlWindowWidth, layersWindowInitialPosition, resetToken }}
         isOpen={isChannelsWindowOpen}
         onClose={closeChannelsWindow}
+        renderModeLocked={is2dViewActive}
         {...channelsPanel}
       />
 

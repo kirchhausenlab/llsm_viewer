@@ -2,6 +2,7 @@ import FloatingWindow from '../../widgets/FloatingWindow';
 import type { LayoutProps } from './types';
 import type { RoiDefinition, RoiDimensionMode, RoiTool } from '../../../types/roi';
 import { ROI_COLOR_SWATCHES } from '../../../types/roi';
+import { fromUserFacingVoxelIndex, toUserFacingVoxelIndex } from '../../../shared/utils/voxelIndex';
 
 type DrawRoiWindowProps = {
   initialPosition: LayoutProps['drawRoiWindowInitialPosition'];
@@ -15,13 +16,20 @@ type DrawRoiWindowProps = {
   };
   tool: RoiTool;
   dimensionMode: RoiDimensionMode;
+  selectedZIndex: number;
   currentRoiName: string;
+  roiAttachmentState: 'none' | 'unsaved' | 'saved';
   currentColor: string;
   workingRoi: RoiDefinition | null;
+  twoDCurrentZEnabled: boolean;
+  twoDStartZIndex: number;
   onToolChange: (tool: RoiTool) => void;
   onDimensionModeChange: (mode: RoiDimensionMode) => void;
   onColorChange: (color: string) => void;
+  onTwoDCurrentZEnabledChange: (enabled: boolean) => void;
+  onTwoDStartZIndexChange: (value: number) => void;
   onUpdateWorkingRoi: (updater: (current: RoiDefinition) => RoiDefinition) => void;
+  onClearOrDetach: () => void;
   onClose: () => void;
 };
 
@@ -69,19 +77,34 @@ export default function DrawRoiWindow({
   volumeDimensions,
   tool,
   dimensionMode,
+  selectedZIndex,
   currentRoiName,
+  roiAttachmentState,
   currentColor,
   workingRoi,
+  twoDCurrentZEnabled,
+  twoDStartZIndex,
   onToolChange,
   onDimensionModeChange,
   onColorChange,
+  onTwoDCurrentZEnabledChange,
+  onTwoDStartZIndexChange,
   onUpdateWorkingRoi,
+  onClearOrDetach,
   onClose,
 }: DrawRoiWindowProps) {
-  const slidersDisabled = workingRoi === null;
-  const endZDisabled = slidersDisabled || workingRoi?.mode === '2d';
+  const hasAttachedRoi = workingRoi !== null;
+  const effectiveTool = workingRoi?.shape ?? tool;
+  const effectiveDimensionMode = workingRoi?.mode ?? dimensionMode;
+  const isTwoDMode = effectiveDimensionMode === '2d';
+  const actionButtonLabel = roiAttachmentState === 'saved' ? 'Detach' : 'Clear';
+  const actionButtonDisabled = roiAttachmentState === 'none';
 
   const handlePointCoordinateChange = (pointKey: 'start' | 'end', axis: AxisKey, nextValue: number) => {
+    if (!workingRoi && axis === 'z' && pointKey === 'start' && isTwoDMode) {
+      onTwoDStartZIndexChange(nextValue);
+      return;
+    }
     if (!workingRoi) {
       return;
     }
@@ -121,13 +144,14 @@ export default function DrawRoiWindow({
             aria-label="ROI dimension"
           >
             {(['2d', '3d'] as const).map((mode) => {
-              const isSelected = dimensionMode === mode;
+              const isSelected = effectiveDimensionMode === mode;
               return (
                 <button
                   key={mode}
                   type="button"
                   className={isSelected ? 'draw-roi-segment-button is-active' : 'draw-roi-segment-button'}
                   aria-pressed={isSelected}
+                  disabled={hasAttachedRoi}
                   onClick={() => onDimensionModeChange(mode)}
                 >
                   {mode.toUpperCase()}
@@ -143,9 +167,14 @@ export default function DrawRoiWindow({
           >
             <button
               type="button"
-              className={tool === 'line' ? 'draw-roi-segment-button draw-roi-tool-button is-active' : 'draw-roi-segment-button draw-roi-tool-button'}
-              aria-pressed={tool === 'line'}
+              className={
+                effectiveTool === 'line'
+                  ? 'draw-roi-segment-button draw-roi-tool-button is-active'
+                  : 'draw-roi-segment-button draw-roi-tool-button'
+              }
+              aria-pressed={effectiveTool === 'line'}
               aria-label="Line"
+              disabled={hasAttachedRoi}
               onClick={() => onToolChange('line')}
               title="Line"
             >
@@ -153,9 +182,14 @@ export default function DrawRoiWindow({
             </button>
             <button
               type="button"
-              className={tool === 'rectangle' ? 'draw-roi-segment-button draw-roi-tool-button is-active' : 'draw-roi-segment-button draw-roi-tool-button'}
-              aria-pressed={tool === 'rectangle'}
+              className={
+                effectiveTool === 'rectangle'
+                  ? 'draw-roi-segment-button draw-roi-tool-button is-active'
+                  : 'draw-roi-segment-button draw-roi-tool-button'
+              }
+              aria-pressed={effectiveTool === 'rectangle'}
               aria-label="Rectangle"
+              disabled={hasAttachedRoi}
               onClick={() => onToolChange('rectangle')}
               title="Rectangle"
             >
@@ -163,9 +197,14 @@ export default function DrawRoiWindow({
             </button>
             <button
               type="button"
-              className={tool === 'ellipse' ? 'draw-roi-segment-button draw-roi-tool-button is-active' : 'draw-roi-segment-button draw-roi-tool-button'}
-              aria-pressed={tool === 'ellipse'}
+              className={
+                effectiveTool === 'ellipse'
+                  ? 'draw-roi-segment-button draw-roi-tool-button is-active'
+                  : 'draw-roi-segment-button draw-roi-tool-button'
+              }
+              aria-pressed={effectiveTool === 'ellipse'}
               aria-label="Ellipse"
+              disabled={hasAttachedRoi}
               onClick={() => onToolChange('ellipse')}
               title="Ellipse"
             >
@@ -176,34 +215,76 @@ export default function DrawRoiWindow({
 
         <div className="draw-roi-sliders" role="group" aria-label="ROI coordinates">
           <div className="draw-roi-name-row">
-            <span>ROI name</span>
             <span>{currentRoiName}</span>
+            <button
+              type="button"
+              className="draw-roi-action-button"
+              disabled={actionButtonDisabled}
+              onClick={onClearOrDetach}
+            >
+              {actionButtonLabel}
+            </button>
           </div>
           {(['x', 'y', 'z'] as const).map((axis) => (
             <div key={axis} className="control-row draw-roi-slider-row">
               {(['start', 'end'] as const).map((pointKey) => {
+                if (axis === 'z' && pointKey === 'end' && isTwoDMode) {
+                  return (
+                    <div
+                      key="two-d-current-z"
+                      className="control-group control-group--slider draw-roi-slider-group draw-roi-slider-group--toggle"
+                    >
+                      <label htmlFor="draw-roi-current-z-toggle" className="draw-roi-checkbox-row">
+                        <input
+                          id="draw-roi-current-z-toggle"
+                          type="checkbox"
+                          checked={twoDCurrentZEnabled}
+                          onChange={(event) => onTwoDCurrentZEnabledChange(event.target.checked)}
+                        />
+                        <span>Current Z</span>
+                      </label>
+                    </div>
+                  );
+                }
+
                 const max =
                   axis === 'x'
                     ? Math.max(0, volumeDimensions.width - 1)
                     : axis === 'y'
                       ? Math.max(0, volumeDimensions.height - 1)
                       : Math.max(0, volumeDimensions.depth - 1);
-                const value = workingRoi ? workingRoi[pointKey][axis] : 0;
-                const disabled = pointKey === 'end' && axis === 'z' ? endZDisabled : slidersDisabled;
+                const value = (() => {
+                  if (axis === 'z' && pointKey === 'start' && isTwoDMode) {
+                    if (twoDCurrentZEnabled) {
+                      return workingRoi?.start.z ?? selectedZIndex;
+                    }
+                    return workingRoi?.start.z ?? twoDStartZIndex;
+                  }
+                  return workingRoi ? workingRoi[pointKey][axis] : 0;
+                })();
+                const disabled = (() => {
+                  if (axis === 'z' && pointKey === 'start' && isTwoDMode) {
+                    return twoDCurrentZEnabled;
+                  }
+                  return !workingRoi;
+                })();
+
                 return (
                   <div key={`${pointKey}-${axis}`} className="control-group control-group--slider draw-roi-slider-group">
                     <label htmlFor={`draw-roi-${pointKey}-${axis}-slider`}>
-                      {axis.toUpperCase()} {pointKey === 'start' ? 'Start' : 'End'} <span>{value}</span>
+                      {axis.toUpperCase()} {pointKey === 'start' ? 'Start' : 'End'} <span>{toUserFacingVoxelIndex(value)}</span>
                     </label>
                     <input
                       id={`draw-roi-${pointKey}-${axis}-slider`}
                       type="range"
-                      min={0}
-                      max={max}
+                      min={1}
+                      max={max + 1}
                       step={1}
-                      value={value}
+                      value={toUserFacingVoxelIndex(value)}
                       disabled={disabled}
-                      onChange={(event) => handlePointCoordinateChange(pointKey, axis, Number(event.target.value))}
+                      onChange={(event) =>
+                        handlePointCoordinateChange(pointKey, axis, fromUserFacingVoxelIndex(Number(event.target.value)))
+                      }
                     />
                   </div>
                 );

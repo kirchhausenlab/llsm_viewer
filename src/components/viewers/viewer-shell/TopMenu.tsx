@@ -15,6 +15,7 @@ import VolumeChannelTabs from './VolumeChannelTabs';
 import VolumeTrackTabs from './VolumeTrackTabs';
 import { formatCompactChannelLabel } from './channelLabel';
 import { isLightHexColor } from '../../../shared/utils/appHelpers';
+import { toUserFacingVoxelIndex } from '../../../shared/utils/voxelIndex';
 
 type DropdownMenuId = 'file' | 'view' | 'edit' | 'tracks' | 'help';
 
@@ -35,9 +36,9 @@ const formatFollowCoordinate = (value: number): string => {
     return '?';
   }
   if (Number.isInteger(value)) {
-    return String(value);
+    return String(toUserFacingVoxelIndex(value));
   }
-  return Number(value.toFixed(2)).toString();
+  return Number((value + 1).toFixed(2)).toString();
 };
 
 const formatFollowedTrackNumber = (trackId: string): string => {
@@ -86,6 +87,10 @@ export default function TopMenu(props: TopMenuProps) {
     zSliderValue,
     zSliderMax,
     onZSliderChange,
+    is2dViewActive = false,
+    onToggle2dView,
+    twoDViewButtonDisabled = true,
+    twoDViewButtonTitle,
     loadedChannelIds,
     channelNameMap,
     channelVisibility,
@@ -630,6 +635,16 @@ export default function TopMenu(props: TopMenuProps) {
             <button
               type="button"
               className="viewer-top-menu-button"
+              onClick={() => onToggle2dView?.()}
+              disabled={twoDViewButtonDisabled}
+              title={twoDViewButtonTitle}
+              aria-pressed={is2dViewActive}
+            >
+              {is2dViewActive ? '3D view' : '2D view'}
+            </button>
+            <button
+              type="button"
+              className="viewer-top-menu-button"
               onClick={() => resetViewHandler?.()}
               disabled={!resetViewHandler}
             >
@@ -749,15 +764,15 @@ export default function TopMenu(props: TopMenuProps) {
                   <span className="viewer-top-menu-coordinates">
                     (
                     <span className="viewer-top-menu-coordinate-value" style={{ width: `${hoverCoordinateDigits.x}ch` }}>
-                      {hoveredVoxel.coordinates.x}
+                      {toUserFacingVoxelIndex(hoveredVoxel.coordinates.x)}
                     </span>
                     ,{' '}
                     <span className="viewer-top-menu-coordinate-value" style={{ width: `${hoverCoordinateDigits.y}ch` }}>
-                      {hoveredVoxel.coordinates.y}
+                      {toUserFacingVoxelIndex(hoveredVoxel.coordinates.y)}
                     </span>
                     ,{' '}
                     <span className="viewer-top-menu-coordinate-value" style={{ width: `${hoverCoordinateDigits.z}ch` }}>
-                      {hoveredVoxel.coordinates.z}
+                      {toUserFacingVoxelIndex(hoveredVoxel.coordinates.z)}
                     </span>
                     )
                   </span>

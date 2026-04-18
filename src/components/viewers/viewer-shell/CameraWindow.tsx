@@ -158,7 +158,7 @@ export default function CameraWindow({
                   <input
                     id={`camera-follow-${axis}`}
                     type="number"
-                    min={0}
+                    min={1}
                     step={1}
                     value={voxelFollowDraft[axis]}
                     disabled={voxelFollowLocked}
