@@ -52,7 +52,7 @@ await (async () => {
       computeLayerTimepointCount: async (files) => files.length,
       createChannelSource: (name, channelType = 'channel') => ({ id: `channel-generated-${name || 'empty'}`, name, volume: null, channelType }),
       createVolumeSource: (files) => ({ id: `layer-${layerCounter.current++}`, files, isSegmentation: false }),
-      probeVolumeSourceChannels: async () => 1
+      probeVolumeSourceMetadata: async () => ({ channels: 1, dataType: 'uint8' as const })
     });
 
     return {
@@ -103,7 +103,7 @@ await (async () => {
       computeLayerTimepointCount: async (files) => files.length,
       createChannelSource: (name, channelType = 'channel') => ({ id: `channel-generated-${name || 'empty'}`, name, volume: null, channelType }),
       createVolumeSource: (files) => ({ id: `layer-${layerCounter.current++}`, files, isSegmentation: false }),
-      probeVolumeSourceChannels: async () => 1
+      probeVolumeSourceMetadata: async () => ({ channels: 1, dataType: 'uint8' as const })
     });
 
     return datasetSetup;
@@ -152,7 +152,7 @@ await (async () => {
       },
       createChannelSource: (name, channelType = 'channel') => ({ id: `channel-generated-${name || 'empty'}`, name, volume: null, channelType }),
       createVolumeSource: (files) => ({ id: `layer-${layerCounter.current++}`, files, isSegmentation: false }),
-      probeVolumeSourceChannels: async () => 1
+      probeVolumeSourceMetadata: async () => ({ channels: 1, dataType: 'uint8' as const })
     });
 
     return {
@@ -233,7 +233,7 @@ await (async () => {
         };
       },
       createVolumeSource: (files) => ({ id: `layer-${layerCounter.current++}`, files, isSegmentation: false }),
-      probeVolumeSourceChannels: async () => 3
+      probeVolumeSourceMetadata: async () => ({ channels: 3, dataType: 'uint8' as const })
     });
 
     return {
@@ -309,7 +309,7 @@ await (async () => {
       computeLayerTimepointCount: async (files) => files.length,
       createChannelSource: (name, channelType = 'channel') => ({ id: `channel-generated-${name || 'empty'}`, name, volume: null, channelType }),
       createVolumeSource: (files) => ({ id: 'seg-layer', files, isSegmentation: false }),
-      probeVolumeSourceChannels: async () => 2
+      probeVolumeSourceMetadata: async () => ({ channels: 2, dataType: 'uint8' as const })
     });
 
     return {

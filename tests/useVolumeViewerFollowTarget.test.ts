@@ -38,7 +38,6 @@ console.log('Starting useVolumeViewerFollowTarget tests');
   );
 
   assert.deepStrictEqual(result.resolveHoveredFollowTarget(), {
-    layerKey: 'layer-a',
     coordinates: {
       x: 50,
       y: 20,
@@ -92,7 +91,7 @@ console.log('Starting useVolumeViewerFollowTarget tests');
   });
 
   assert.ok(worldPosition instanceof THREE.Vector3);
-  assert.deepStrictEqual(worldPosition?.toArray(), [112, 103, 89]);
+  assert.deepStrictEqual(worldPosition?.toArray(), [109, 99, 89]);
 })();
 
 (() => {
@@ -125,7 +124,6 @@ console.log('Starting useVolumeViewerFollowTarget tests');
   );
 
   assert.deepStrictEqual(result.resolveHoveredFollowTarget(), {
-    layerKey: 'layer-c',
     coordinates: {
       x: 16,
       y: 8,

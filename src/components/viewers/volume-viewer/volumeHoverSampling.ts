@@ -1,17 +1,17 @@
 import { denormalizeValue } from '../../../shared/utils/intensityFormatting';
 import { clampValue } from '../../../shared/utils/hoverSampling';
-import { isSegmentationVolume, type NormalizedVolume } from '../../../core/volumeProcessing';
+import { getNormalizedIntensityDenominator, isSegmentationVolume, type NormalizedVolume } from '../../../core/volumeProcessing';
 import type { VolumeBrickAtlasTextureFormat, VolumeBrickPageTable } from '../../../core/volumeProvider';
-import type { VolumeDataType } from '../../../types/volume';
 
 type VectorLike = { x: number; y: number; z: number };
 
 type BrickAtlasSampleSource = {
+  kind: 'intensity' | 'segmentation';
   pageTable: Pick<VolumeBrickPageTable, 'gridShape' | 'chunkShape' | 'volumeShape' | 'brickAtlasIndices'>;
-  atlasData: Uint8Array | Uint16Array;
+  atlasData: Uint8Array | Uint16Array | Float32Array;
   textureFormat: VolumeBrickAtlasTextureFormat;
   sourceChannels: number;
-  dataType: VolumeDataType;
+  dataType: 'uint8' | 'uint16';
   min: number;
   max: number;
 };
@@ -104,7 +104,7 @@ export function sampleBrickAtlasAtNormalizedPosition(
   source: BrickAtlasSampleSource,
   coords: VectorLike,
 ): { normalizedValues: number[]; rawValues: number[] } {
-  if (source.dataType === 'uint16') {
+  if (source.kind === 'segmentation') {
     const label = sampleBrickAtlasLabelAtNormalizedPosition(source, coords);
     return {
       normalizedValues: [label > 0 ? 1 : 0],
@@ -147,6 +147,8 @@ export function sampleBrickAtlasAtNormalizedPosition(
   const safeMin = Number.isFinite(source.min) ? source.min : 0;
   const safeMax = Number.isFinite(source.max) ? source.max : 255;
   const range = safeMax - safeMin;
+  const denominator = getNormalizedIntensityDenominator(source.dataType);
+  const atlasUsesFloatNormalization = source.atlasData instanceof Float32Array;
 
   const normalizedValues: number[] = [];
   const rawValues: number[] = [];
@@ -171,8 +173,9 @@ export function sampleBrickAtlasAtNormalizedPosition(
       bottomLeftBack * weight011 +
       bottomRightBack * weight111;
 
-    normalizedValues.push(interpolated / 255);
-    rawValues.push(safeMin + (interpolated / 255) * range);
+    const normalizedValue = atlasUsesFloatNormalization ? interpolated : interpolated / denominator;
+    normalizedValues.push(normalizedValue);
+    rawValues.push(safeMin + normalizedValue * range);
   }
 
   return { normalizedValues, rawValues };
@@ -230,6 +233,7 @@ export function sampleVolumeAtNormalizedPosition(
 
   const normalizedValues: number[] = [];
   const rawValues: number[] = [];
+  const denominator = getNormalizedIntensityDenominator(volume.normalizedDataType);
 
   for (let channelIndex = 0; channelIndex < channels; channelIndex++) {
     const baseChannelOffset = channelIndex;
@@ -253,7 +257,7 @@ export function sampleVolumeAtNormalizedPosition(
       bottomLeftBack * weight011 +
       bottomRightBack * weight111;
 
-    normalizedValues.push(interpolated / 255);
+    normalizedValues.push(interpolated / denominator);
     rawValues.push(denormalizeValue(interpolated, volume));
   }
 

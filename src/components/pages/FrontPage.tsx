@@ -73,6 +73,8 @@ export type ExperimentConfigurationState = {
   backgroundMaskError: string | null;
   onBackgroundMaskToggle: (value: boolean) => void;
   onBackgroundMaskValuesInputChange: (value: string) => void;
+  renderIn16Bit: boolean;
+  onRenderIn16BitToggle: (value: boolean) => void;
 };
 
 export type PreprocessedSummaryProps = {
@@ -308,6 +310,8 @@ export default function FrontPage({
               backgroundMaskError={experimentConfiguration.backgroundMaskError}
               onBackgroundMaskToggle={experimentConfiguration.onBackgroundMaskToggle}
               onBackgroundMaskValuesInputChange={experimentConfiguration.onBackgroundMaskValuesInputChange}
+              renderIn16Bit={experimentConfiguration.renderIn16Bit}
+              onRenderIn16BitToggle={experimentConfiguration.onRenderIn16BitToggle}
               isFrontPageLocked={isFrontPageLocked}
             />
           ) : null}

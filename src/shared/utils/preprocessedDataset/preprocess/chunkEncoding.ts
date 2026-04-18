@@ -58,6 +58,7 @@ export function chunkLength(totalSize: number, start: number, chunkSize: number)
 export function extractDataChunkBytesAndComputeStatistics({
   source,
   dataType,
+  isSegmentation,
   width,
   height,
   channels,
@@ -72,6 +73,7 @@ export function extractDataChunkBytesAndComputeStatistics({
 }: {
   source: Uint8Array | Uint16Array;
   dataType: 'uint8' | 'uint16';
+  isSegmentation: boolean;
   width: number;
   height: number;
   channels: number;
@@ -126,7 +128,8 @@ export function extractDataChunkBytesAndComputeStatistics({
     throw new Error('Background mask dimensions do not match the chunk source dimensions.');
   }
 
-  let min = 255;
+  const denominator = dataType === 'uint16' ? 0xffff : 0xff;
+  let min = denominator;
   let max = 0;
   let occupiedVoxelCount = 0;
   const voxelCount = zLength * yLength * xLength;
@@ -145,7 +148,7 @@ export function extractDataChunkBytesAndComputeStatistics({
         ? backgroundMask.data.subarray(maskOffset, maskOffset + xLength)
         : null;
 
-      if (!histogram) {
+      if (isSegmentation) {
         for (let voxelIndex = 0; voxelIndex < xLength; voxelIndex += 1) {
           if (maskLine && (maskLine[voxelIndex] ?? 0) > 0) {
             continue;
@@ -173,7 +176,9 @@ export function extractDataChunkBytesAndComputeStatistics({
           if (value > 0) {
             occupiedVoxelCount += 1;
           }
-          histogram[value] += 1;
+          if (histogram) {
+            histogram[Math.round((value * 255) / denominator)] += 1;
+          }
           consideredVoxelCount += 1;
         }
       } else if (channels === 2) {
@@ -199,7 +204,9 @@ export function extractDataChunkBytesAndComputeStatistics({
           if (red > 0 || green > 0) {
             occupiedVoxelCount += 1;
           }
-          histogram[Math.round((red + green) * 0.5)] += 1;
+          if (histogram) {
+            histogram[Math.round((Math.round((red + green) * 0.5) * 255) / denominator)] += 1;
+          }
           consideredVoxelCount += 1;
         }
       } else {
@@ -248,9 +255,10 @@ export function extractDataChunkBytesAndComputeStatistics({
             max = voxelMax;
           }
 
-          const intensity = Math.round(red * 0.2126 + green * 0.7152 + blue * 0.0722);
-          const clampedIntensity = intensity < 0 ? 0 : intensity > 255 ? 255 : intensity;
-          histogram[clampedIntensity] += 1;
+          if (histogram) {
+            const intensity = Math.round(red * 0.2126 + green * 0.7152 + blue * 0.0722);
+            histogram[Math.round((intensity * 255) / denominator)] += 1;
+          }
 
           if (voxelOccupied) {
             occupiedVoxelCount += 1;
@@ -268,7 +276,7 @@ export function extractDataChunkBytesAndComputeStatistics({
     max = 0;
   }
 
-  const chunk = new Uint8Array(chunkValues.buffer, chunkValues.byteOffset, chunkValues.byteLength);
+  const chunk = toByteView(chunkValues);
   return {
     chunk,
     stats: {
@@ -368,10 +376,14 @@ export function assertSkipHierarchyDescriptorMatchesGrid({
 
 type SkipHierarchyLevelBuffers = {
   gridShape: [number, number, number];
-  min: Uint8Array;
-  max: Uint8Array;
+  min: Uint8Array | Uint16Array;
+  max: Uint8Array | Uint16Array;
   occupancy: Uint8Array;
 };
+
+function toByteView(view: Uint8Array | Uint16Array): Uint8Array {
+  return new Uint8Array(view.buffer, view.byteOffset, view.byteLength);
+}
 
 function reduceSkipHierarchyLevelBuffers(child: SkipHierarchyLevelBuffers): SkipHierarchyLevelBuffers {
   const [childZ, childY, childX] = child.gridShape;
@@ -382,11 +394,12 @@ function reduceSkipHierarchyLevelBuffers(child: SkipHierarchyLevelBuffers): Skip
   ];
   const [parentZ, parentY, parentX] = parentGridShape;
   const parentVoxelCount = parentZ * parentY * parentX;
-  const parentMin = new Uint8Array(parentVoxelCount);
-  const parentMax = new Uint8Array(parentVoxelCount);
+  const parentMin = child.min instanceof Uint16Array ? new Uint16Array(parentVoxelCount) : new Uint8Array(parentVoxelCount);
+  const parentMax = child.max instanceof Uint16Array ? new Uint16Array(parentVoxelCount) : new Uint8Array(parentVoxelCount);
   const parentOccupancy = new Uint8Array(parentVoxelCount);
   const childPlaneSize = childY * childX;
   const parentPlaneSize = parentY * parentX;
+  const denominator = child.min instanceof Uint16Array ? 0xffff : 0xff;
 
   for (let z = 0; z < parentZ; z += 1) {
     const childZStart = z * 2;
@@ -396,7 +409,7 @@ function reduceSkipHierarchyLevelBuffers(child: SkipHierarchyLevelBuffers): Skip
         const childXStart = x * 2;
         const parentIndex = (z * parentPlaneSize) + (y * parentX) + x;
         let occupied = false;
-        let localMin = 255;
+        let localMin = denominator;
         let localMax = 0;
 
         for (let localZ = 0; localZ < 2; localZ += 1) {
@@ -460,8 +473,8 @@ export function buildSkipHierarchyLevelBuffersFromLeaf({
   levelCount
 }: {
   leafGridShape: [number, number, number];
-  leafMin: Uint8Array;
-  leafMax: Uint8Array;
+  leafMin: Uint8Array | Uint16Array;
+  leafMax: Uint8Array | Uint16Array;
   leafOccupancy: Uint8Array;
   levelCount: number;
 }): SkipHierarchyLevelBuffers[] {
@@ -554,6 +567,7 @@ export function buildPlaybackAtlasBlock({
     throw new Error(`Playback atlas block byte length mismatch: expected ${expectedChunkBytes}, got ${chunkBytes.byteLength}.`);
   }
   const blockValueCount = chunkDepth * chunkHeight * chunkWidth * textureChannels;
+  const denominator = dataType === 'uint16' ? 0xffff : 0xff;
   const blockValues = dataType === 'uint16'
     ? new Uint16Array(blockValueCount)
     : new Uint8Array(blockValueCount);
@@ -566,7 +580,7 @@ export function buildPlaybackAtlasBlock({
         const sourceVoxelOffset = (((localZ * yExtent + localY) * xExtent + localX) * sourceChannels);
         const atlasVoxelOffset = (((localZ * chunkHeight + localY) * chunkWidth + localX) * textureChannels);
         if (textureFormat === 'rgba' && sourceChannels === 3) {
-          blockValues[atlasVoxelOffset + 3] = 255;
+          blockValues[atlasVoxelOffset + 3] = denominator;
         }
         for (let sourceChannel = 0; sourceChannel < sourceChannels; sourceChannel += 1) {
           const textureChannel = mapPlaybackSourceChannelToTextureChannel(
@@ -593,6 +607,8 @@ export async function writeDataChunksForScale({
   playbackAtlasDescriptor,
   timepoint,
   volume,
+  isSegmentation = false,
+  emitHistogram = false,
   backgroundMask,
   signal
 }: {
@@ -609,6 +625,8 @@ export async function writeDataChunksForScale({
     channels: number;
     data: Uint8Array | Uint16Array;
   };
+  isSegmentation?: boolean;
+  emitHistogram?: boolean;
   backgroundMask?: BackgroundMaskVolume | null;
   signal?: AbortSignal;
 }): Promise<Uint32Array | null> {
@@ -647,10 +665,10 @@ export async function writeDataChunksForScale({
   const chunkCount = zChunks * yChunks * xChunks;
   const leafGridShape: [number, number, number] = [zChunks, yChunks, xChunks];
   const expectedTimepoints = descriptor.shape[0] ?? 0;
-  const histogram = descriptor.dataType === 'uint8' ? new Uint32Array(HISTOGRAM_BINS) : null;
+  const histogram = emitHistogram ? new Uint32Array(HISTOGRAM_BINS) : null;
 
-  let leafMinValues: Uint8Array | null = null;
-  let leafMaxValues: Uint8Array | null = null;
+  let leafMinValues: Uint8Array | Uint16Array | null = null;
+  let leafMaxValues: Uint8Array | Uint16Array | null = null;
   let leafOccupancyValues: Uint8Array | null = null;
   if (skipHierarchyDescriptor) {
     const leafLevel = skipHierarchyDescriptor.levels[0];
@@ -661,14 +679,14 @@ export async function writeDataChunksForScale({
       descriptor: leafLevel.min,
       expectedTimepoints,
       expectedGridShape: leafGridShape,
-      expectedDataType: 'uint8',
+      expectedDataType: leafLevel.min.dataType,
       label: 'min'
     });
     assertSkipHierarchyDescriptorMatchesGrid({
       descriptor: leafLevel.max,
       expectedTimepoints,
       expectedGridShape: leafGridShape,
-      expectedDataType: 'uint8',
+      expectedDataType: leafLevel.max.dataType,
       label: 'max'
     });
     assertSkipHierarchyDescriptorMatchesGrid({
@@ -679,12 +697,12 @@ export async function writeDataChunksForScale({
       label: 'occupancy'
     });
 
-    leafMinValues = new Uint8Array(chunkCount);
-    leafMaxValues = new Uint8Array(chunkCount);
+    leafMinValues = leafLevel.min.dataType === 'uint16' ? new Uint16Array(chunkCount) : new Uint8Array(chunkCount);
+    leafMaxValues = leafLevel.max.dataType === 'uint16' ? new Uint16Array(chunkCount) : new Uint8Array(chunkCount);
     leafOccupancyValues = new Uint8Array(chunkCount);
   }
 
-  let subcellTextureBytes: Uint8Array | null = null;
+  let subcellTextureBytes: Uint8Array | Uint16Array | null = null;
   let subcellTextureSize: { width: number; height: number; depth: number } | null = null;
   let subcellGridShape: [number, number, number] | null = null;
   if (subcellDescriptor) {
@@ -711,7 +729,9 @@ export async function writeDataChunksForScale({
     ) {
       throw new Error(`Subcell descriptor shape mismatch for ${descriptor.path}.`);
     }
-    subcellTextureBytes = new Uint8Array(expectedTextureLength);
+    subcellTextureBytes = subcellDescriptor.data.dataType === 'uint16'
+      ? new Uint16Array(expectedTextureLength)
+      : new Uint8Array(expectedTextureLength);
     subcellGridShape = subcellDescriptor.gridShape;
   }
 
@@ -737,6 +757,7 @@ export async function writeDataChunksForScale({
         const { chunk, stats } = extractDataChunkBytesAndComputeStatistics({
           source: volume.data,
           dataType: descriptor.dataType as 'uint8' | 'uint16',
+          isSegmentation,
           width: volume.width,
           height: volume.height,
           channels: volume.channels,
@@ -784,6 +805,7 @@ export async function writeDataChunksForScale({
           const subcellChunk = buildBrickSubcellChunkData({
             chunkShape: [chunkDepth, chunkHeight, chunkWidth],
             components: volume.channels,
+            outputDataType: subcellDescriptor?.data.dataType === 'uint16' ? 'uint16' : 'uint8',
             readVoxelComponent: (localZ, localY, localX, component) => {
               if (localZ < 0 || localZ >= zLength || localY < 0 || localY >= yLength || localX < 0 || localX >= xLength) {
                 return 0;
@@ -845,13 +867,13 @@ export async function writeDataChunksForScale({
       await chunkWriter.writeChunk({
         descriptor: hierarchyDescriptor.min,
         chunkCoords: [timepoint, 0, 0, 0],
-        bytes: hierarchyData.min,
+        bytes: toByteView(hierarchyData.min),
         signal
       });
       await chunkWriter.writeChunk({
         descriptor: hierarchyDescriptor.max,
         chunkCoords: [timepoint, 0, 0, 0],
-        bytes: hierarchyData.max,
+        bytes: toByteView(hierarchyData.max),
         signal
       });
       await chunkWriter.writeChunk({
@@ -867,7 +889,7 @@ export async function writeDataChunksForScale({
     await chunkWriter.writeChunk({
       descriptor: subcellDescriptor.data,
       chunkCoords: [timepoint, 0, 0, 0, 0],
-      bytes: subcellTextureBytes,
+      bytes: toByteView(subcellTextureBytes),
       signal
     });
   }

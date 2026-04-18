@@ -10,7 +10,7 @@ import {
 import type { LoadedDatasetLayer } from '../../../src/hooks/dataset/useDatasetSetup.ts';
 import { DEFAULT_LAYER_COLOR } from '../../../src/shared/colorMaps/layerColors.ts';
 import type { IntensityVolume } from '../../../src/core/volumeProcessing.ts';
-import { DEFAULT_RENDER_STYLE, brightnessContrastModel } from '../../../src/state/layerSettings.ts';
+import { DEFAULT_RENDER_STYLE, RENDER_STYLE_ISO, brightnessContrastModel } from '../../../src/state/layerSettings.ts';
 
 console.log('Starting layerDefaults tests');
 
@@ -54,6 +54,26 @@ const createLoadedLayer = (
   assert.equal(settings.blOpacityScale, 1.5);
   assert.equal(settings.blEarlyExitAlpha, 0.85);
   assert.equal(settings.mipEarlyExitThreshold, 0.77);
+})();
+
+(() => {
+  const layer = {
+    ...createLoadedLayer('layer-binary', 'channel-a', false),
+    isBinaryLike: true
+  };
+  const settings = createLayerDefaultSettingsFromLayer({
+    layer,
+    getChannelDefaultColor: () => '#123456',
+    globalSamplingMode: 'nearest',
+    globalBlDensityScale: 1,
+    globalBlBackgroundCutoff: 0.08,
+    globalBlOpacityScale: 1,
+    globalBlEarlyExitAlpha: 0.98,
+    globalMipEarlyExitThreshold: 0.999
+  });
+
+  assert.equal(settings.renderStyle, RENDER_STYLE_ISO);
+  assert.equal(settings.samplingMode, 'linear');
 })();
 
 (() => {

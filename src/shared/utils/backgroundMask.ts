@@ -220,7 +220,7 @@ export function applyBackgroundMaskInPlace({
   channels,
   mask
 }: {
-  target: Uint8Array;
+  target: Uint8Array | Uint16Array;
   channels: number;
   mask: Uint8Array;
 }): void {

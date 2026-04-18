@@ -11,12 +11,14 @@ function buildLayerSummaryFromManifest(layer: PreprocessedLayerManifestEntry): P
     key: layer.key,
     label: layer.label,
     isSegmentation: layer.isSegmentation,
+    isBinaryLike: layer.isBinaryLike,
     volumeCount: layer.volumeCount,
     width: layer.width,
     height: layer.height,
     depth: layer.depth,
     channels: layer.channels,
     dataType: layer.dataType,
+    storedDataType: layer.storedDataType,
     min: layer.normalization?.min ?? 0,
     max: layer.normalization?.max ?? 255
   };

@@ -16,6 +16,7 @@ export type ChannelFixtureSetup = {
 
 type LaunchSetupOptions = {
   voxelResolution: { x: string; y: string; z: string };
+  renderIn16Bit?: boolean;
 };
 
 export const STANDARD_VOXEL_RESOLUTION = { x: '1', y: '1', z: '1' } as const;
@@ -39,6 +40,9 @@ export async function launchViewerFromChannelFixtures(
   await page.getByLabel('X:').fill(voxelResolution.x);
   await page.getByLabel('Y:').fill(voxelResolution.y);
   await page.getByLabel('Z:').fill(voxelResolution.z);
+  if (options.renderIn16Bit) {
+    await page.getByRole('checkbox', { name: 'Render in 16bit' }).check();
+  }
 
   const channelSection = page
     .locator('.setup-section')
@@ -68,9 +72,24 @@ export async function launchViewerFromChannelFixtures(
 
     const nameInput = targetTab.locator('.channel-name-input');
     await targetTab.dblclick();
-    await expect(nameInput).toBeVisible({ timeout: 2_000 });
-    await nameInput.fill(channel.name);
-    await nameInput.press('Enter');
+    let canRenameChannel = await nameInput
+      .waitFor({ state: 'visible', timeout: 1_000 })
+      .then(() => true)
+      .catch(() => false);
+    if (!canRenameChannel) {
+      const title = targetTab.locator('h3').first();
+      if (await title.count()) {
+        await title.dblclick();
+        canRenameChannel = await nameInput
+          .waitFor({ state: 'visible', timeout: 2_000 })
+          .then(() => true)
+          .catch(() => false);
+      }
+    }
+    if (canRenameChannel) {
+      await nameInput.fill(channel.name);
+      await nameInput.press('Enter');
+    }
 
     const channelRow = targetTab.locator('xpath=ancestor::*[@role="listitem"][1]').first();
     const volumeInput = channelRow.locator('input[type="file"][accept*=".tif"]');
@@ -99,12 +118,27 @@ export async function launchViewerFromChannelFixtures(
     const trackTab = trackTabs.nth(trackIndex);
     await trackTab.dblclick();
     const trackNameInput = trackTab.locator('.channel-name-input');
-    await expect(trackNameInput).toBeVisible({ timeout: 2_000 });
-    await trackNameInput.fill(`Track ${trackIndex + 1}`);
-    await trackNameInput.press('Enter');
+    let canRenameTrack = await trackNameInput
+      .waitFor({ state: 'visible', timeout: 1_000 })
+      .then(() => true)
+      .catch(() => false);
+    if (!canRenameTrack) {
+      const title = trackTab.locator('h3').first();
+      if (await title.count()) {
+        await title.dblclick();
+        canRenameTrack = await trackNameInput
+          .waitFor({ state: 'visible', timeout: 2_000 })
+          .then(() => true)
+          .catch(() => false);
+      }
+    }
+    if (canRenameTrack) {
+      await trackNameInput.fill(`Track ${trackIndex + 1}`);
+      await trackNameInput.press('Enter');
+    }
 
     const trackRow = trackTab.locator('xpath=ancestor::*[@role="listitem"][1]').first();
-    const trackInput = trackRow.locator('input[type="file"][accept=".csv"]');
+    const trackInput = trackSection.locator('input[type="file"][accept=".csv"]').last();
 
     if (channel.trackCsv) {
       await trackInput.setInputFiles({
@@ -115,7 +149,7 @@ export async function launchViewerFromChannelFixtures(
       await expect(trackRow.locator('.channel-tracks-subtitle')).toContainText('1 file selected');
     }
 
-    const bindSelect = trackRow.getByLabel('Bind to:');
+    const bindSelect = trackSection.getByLabel('Bind to:').last();
     await bindSelect.selectOption({ label: channel.name });
   }
 

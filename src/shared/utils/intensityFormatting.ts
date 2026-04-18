@@ -1,4 +1,4 @@
-import type { NormalizedVolume } from '../../core/volumeProcessing';
+import { getNormalizedIntensityDenominator, type NormalizedVolume } from '../../core/volumeProcessing';
 import type { VolumeDataType } from '../../types/volume';
 
 export type FormattedChannelValue = { text: string; channelLabel: string | null };
@@ -9,7 +9,8 @@ const isIntegerDataType = (type: VolumeDataType) =>
   INTEGER_PREFIXES.some((prefix) => type.startsWith(prefix));
 
 export function denormalizeValue(value: number, volume: NormalizedVolume) {
-  const ratio = value / 255;
+  const denominator = volume.kind === 'intensity' ? getNormalizedIntensityDenominator(volume.normalizedDataType) : 255;
+  const ratio = value / denominator;
   return volume.min + ratio * (volume.max - volume.min);
 }
 

@@ -242,7 +242,7 @@ export type VolumeResources = {
   renderStyle?: RenderStyle;
   projectionMode?: ViewerProjectionMode;
   samplingMode: 'linear' | 'nearest';
-  sliceBuffer?: Uint8Array | null;
+  sliceBuffer?: Uint8Array | Float32Array | null;
   brickPageTable?: VolumeBrickPageTable | null;
   brickOccupancyTexture?: THREE.Data3DTexture | null;
   brickMinTexture?: THREE.Data3DTexture | null;
@@ -263,7 +263,7 @@ export type VolumeResources = {
   brickSubcellSourceToken?: object | Uint8Array | null;
   brickSubcellGrid?: { x: number; y: number; z: number } | null;
   brickAtlasSourceToken?: object | null;
-  brickAtlasSourceData?: Uint8Array | Uint16Array | null;
+  brickAtlasSourceData?: Uint8Array | Uint16Array | Float32Array | null;
   brickAtlasSourceFormat?: THREE.Data3DTexture['format'] | null;
   brickAtlasSourcePageTable?: VolumeBrickPageTable | null;
   brickAtlasSlotGrid?: { x: number; y: number; z: number } | null;

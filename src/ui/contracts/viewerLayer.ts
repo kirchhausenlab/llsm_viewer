@@ -6,6 +6,7 @@ import type {
 } from '../../core/volumeProvider';
 import type { RenderStyle, SamplingMode } from '../../state/layerSettings';
 import type { VolumeDataType } from '../../types/volume';
+import type { StoredIntensityDataType } from '../../shared/utils/preprocessedDataset/types';
 
 export type ViewerLayer = {
   key: string;
@@ -17,6 +18,7 @@ export type ViewerLayer = {
   volume: NormalizedVolume | null;
   channels?: number;
   dataType?: VolumeDataType;
+  storedDataType?: StoredIntensityDataType;
   min?: number;
   max?: number;
   visible: boolean;

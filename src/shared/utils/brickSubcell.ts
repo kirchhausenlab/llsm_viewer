@@ -5,7 +5,7 @@ export type BrickSubcellGrid = {
 };
 
 export type BrickSubcellChunkBuildResult = {
-  data: Uint8Array;
+  data: Uint8Array | Uint16Array;
   subcellGrid: BrickSubcellGrid;
 };
 
@@ -50,10 +50,12 @@ export function buildBrickSubcellTextureSize({
 export function buildBrickSubcellChunkData({
   chunkShape,
   components,
+  outputDataType = 'uint8',
   readVoxelComponent,
 }: {
   chunkShape: [number, number, number];
   components: number;
+  outputDataType?: 'uint8' | 'uint16';
   readVoxelComponent: (
     localZ: number,
     localY: number,
@@ -96,13 +98,14 @@ export function buildBrickSubcellChunkData({
   }
 
   const subcellCount = subcellGrid.x * subcellGrid.y * subcellGrid.z;
-  const subcellMin = new Uint8Array(subcellCount);
-  const subcellMax = new Uint8Array(subcellCount);
-  const subcellOccupancy = new Uint8Array(subcellCount);
+  const denominator = outputDataType === 'uint16' ? 0xffff : 0xff;
+  const subcellMin = outputDataType === 'uint16' ? new Uint16Array(subcellCount) : new Uint8Array(subcellCount);
+  const subcellMax = outputDataType === 'uint16' ? new Uint16Array(subcellCount) : new Uint8Array(subcellCount);
+  const subcellOccupancy = outputDataType === 'uint16' ? new Uint16Array(subcellCount) : new Uint8Array(subcellCount);
   const subcellSeen = new Uint8Array(subcellCount);
-  const data = new Uint8Array(subcellCount * 4);
+  const data = outputDataType === 'uint16' ? new Uint16Array(subcellCount * 4) : new Uint8Array(subcellCount * 4);
 
-  subcellMin.fill(255);
+  subcellMin.fill(denominator);
 
   for (let localZ = 0; localZ < chunkDepth; localZ += 1) {
     const subcellZ = zToSubcell[localZ] ?? 0;
@@ -111,12 +114,12 @@ export function buildBrickSubcellChunkData({
       for (let localX = 0; localX < chunkWidth; localX += 1) {
         const subcellX = xToSubcell[localX] ?? 0;
         const subcellIndex = (subcellZ * subcellGrid.y + subcellY) * subcellGrid.x + subcellX;
-        let voxelMin = 255;
+        let voxelMin = denominator;
         let voxelMax = 0;
         let voxelOccupied = false;
         for (let component = 0; component < components; component += 1) {
           const rawValue = readVoxelComponent(localZ, localY, localX, component);
-          const value = rawValue < 0 ? 0 : rawValue > 255 ? 255 : rawValue;
+          const value = rawValue < 0 ? 0 : rawValue > denominator ? denominator : rawValue;
           if (value < voxelMin) {
             voxelMin = value;
           }
@@ -140,7 +143,7 @@ export function buildBrickSubcellChunkData({
           }
         }
         if (voxelOccupied) {
-          subcellOccupancy[subcellIndex] = 255;
+          subcellOccupancy[subcellIndex] = denominator;
         }
       }
     }
@@ -149,13 +152,13 @@ export function buildBrickSubcellChunkData({
   for (let subcellIndex = 0; subcellIndex < subcellCount; subcellIndex += 1) {
     const targetIndex = subcellIndex * 4;
     if ((subcellSeen[subcellIndex] ?? 0) <= 0) {
-      data[targetIndex + 3] = 255;
+      data[targetIndex + 3] = denominator;
       continue;
     }
     data[targetIndex] = subcellOccupancy[subcellIndex] ?? 0;
     data[targetIndex + 1] = subcellMin[subcellIndex] ?? 0;
     data[targetIndex + 2] = subcellMax[subcellIndex] ?? 0;
-    data[targetIndex + 3] = 255;
+    data[targetIndex + 3] = denominator;
   }
 
   return {
@@ -171,10 +174,10 @@ export function writeBrickSubcellChunkData({
   chunkData,
   subcellGrid,
 }: {
-  targetData: Uint8Array;
+  targetData: Uint8Array | Uint16Array;
   targetSize: { width: number; height: number; depth: number };
   brickCoords: { x: number; y: number; z: number };
-  chunkData: Uint8Array;
+  chunkData: Uint8Array | Uint16Array;
   subcellGrid: BrickSubcellGrid;
 }): void {
   const { width, height } = targetSize;

@@ -37,6 +37,7 @@ export type ChannelVolumeSource = {
   files: File[];
   isSegmentation: boolean;
   sourceChannels?: number;
+  sourceDataType?: import('../../types/volume').VolumeDataType;
   componentIndex?: number;
   multichannelOwnerChannelId?: string | null;
 };
@@ -271,6 +272,7 @@ export function useChannelSources(): ChannelSourcesApi {
       files,
       isSegmentation: false,
       sourceChannels: 1,
+      sourceDataType: undefined,
       componentIndex: 0,
       multichannelOwnerChannelId: null
     };

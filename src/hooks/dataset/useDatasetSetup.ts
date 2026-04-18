@@ -3,6 +3,7 @@ import { fromBlob } from 'geotiff';
 
 import { DEFAULT_LAYER_COLOR, normalizeHexColor } from '../../shared/colorMaps/layerColors';
 import { resolveImagejPageChannelLayout } from '../../shared/utils/tiffHyperstack';
+import type { StoredIntensityDataType } from '../../shared/utils/preprocessedDataset/types';
 import type { LayerSettings } from '../../state/layerSettings';
 import { useDatasetErrors } from '../useDatasetErrors';
 import { DEFAULT_VOXEL_RESOLUTION, useVoxelResolution, type VoxelResolutionHook } from '../useVoxelResolution';
@@ -14,7 +15,7 @@ import {
   type ChannelSource,
   type TrackSetSource
 } from './useChannelSources';
-import type { VolumeDataType } from '../../types/volume';
+import { detectVolumeDataTypeFromTypedArray, type VolumeDataType } from '../../types/volume';
 import {
   collectFilesFromDataTransfer,
   dedupeFiles,
@@ -29,12 +30,14 @@ export type LoadedDatasetLayer = {
   label: string;
   channelId: string;
   isSegmentation: boolean;
+  isBinaryLike?: boolean;
   volumeCount: number;
   width: number;
   height: number;
   depth: number;
   channels: number;
   dataType: VolumeDataType;
+  storedDataType?: StoredIntensityDataType;
   min: number;
   max: number;
 };
@@ -52,7 +55,7 @@ export type DatasetSetupParams = {
   computeLayerTimepointCount: (files: File[]) => Promise<number>;
   createChannelSource: (name: string, channelType?: ChannelSource['channelType']) => ChannelSource;
   createVolumeSource: (files: File[]) => { id: string; files: File[]; isSegmentation: boolean };
-  probeVolumeSourceChannels?: (files: File[]) => Promise<number>;
+  probeVolumeSourceMetadata?: (files: File[]) => Promise<{ channels: number; dataType: VolumeDataType }>;
 };
 
 export type DatasetSetupHook = {
@@ -71,8 +74,11 @@ export type DatasetSetupHook = {
   showInteractionWarning: (message: string) => void;
 };
 
-async function probeVolumeSourceChannelsDefault(files: File[]): Promise<number> {
+async function probeVolumeSourceMetadataDefault(
+  files: File[]
+): Promise<{ channels: number; dataType: VolumeDataType }> {
   let expectedChannels: number | null = null;
+  let expectedDataType: VolumeDataType | null = null;
 
   for (const file of files) {
     const tiff = await fromBlob(file);
@@ -91,12 +97,33 @@ async function probeVolumeSourceChannelsDefault(files: File[]): Promise<number> 
     if (!Number.isFinite(firstImageChannels) || firstImageChannels <= 0) {
       throw new Error(`File "${file.name}" has an invalid channel count.`);
     }
+    const firstRasterRaw = (await firstImage.readRasters({ interleave: true })) as unknown;
+    if (!ArrayBuffer.isView(firstRasterRaw)) {
+      throw new Error(`File "${file.name}" does not provide raster data as a typed array.`);
+    }
+    const firstRaster = firstRasterRaw as
+      | Uint8Array
+      | Int8Array
+      | Uint16Array
+      | Int16Array
+      | Uint32Array
+      | Int32Array
+      | Float32Array
+      | Float64Array;
+    const firstImageDataType = detectVolumeDataTypeFromTypedArray(firstRaster);
 
     if (expectedChannels === null) {
       expectedChannels = firstImageChannels;
     } else if (firstImageChannels !== expectedChannels) {
       throw new Error(
         `TIFF channel counts must match across the uploaded selection. File "${file.name}" has ${firstImageChannels} channels, expected ${expectedChannels}.`
+      );
+    }
+    if (expectedDataType === null) {
+      expectedDataType = firstImageDataType;
+    } else if (firstImageDataType !== expectedDataType) {
+      throw new Error(
+        `TIFF sample types must match across the uploaded selection. File "${file.name}" has ${firstImageDataType}, expected ${expectedDataType}.`
       );
     }
 
@@ -115,10 +142,32 @@ async function probeVolumeSourceChannelsDefault(files: File[]): Promise<number> 
           `TIFF channel counts must match across the uploaded selection. File "${file.name}" image ${imageIndex + 1} has ${channels} channels, expected ${firstImage.getSamplesPerPixel()}.`
         );
       }
+      const rasterRaw = (await image.readRasters({ interleave: true })) as unknown;
+      if (!ArrayBuffer.isView(rasterRaw)) {
+        throw new Error(`File "${file.name}" image ${imageIndex + 1} does not provide raster data as a typed array.`);
+      }
+      const raster = rasterRaw as
+        | Uint8Array
+        | Int8Array
+        | Uint16Array
+        | Int16Array
+        | Uint32Array
+        | Int32Array
+        | Float32Array
+        | Float64Array;
+      const sliceDataType = detectVolumeDataTypeFromTypedArray(raster);
+      if (sliceDataType !== firstImageDataType) {
+        throw new Error(
+          `TIFF sample types must match across the uploaded selection. File "${file.name}" image ${imageIndex + 1} has ${sliceDataType}, expected ${firstImageDataType}.`
+        );
+      }
     }
   }
 
-  return expectedChannels ?? 1;
+  return {
+    channels: expectedChannels ?? 1,
+    dataType: expectedDataType ?? 'uint8'
+  };
 }
 
 export function useDatasetSetup({
@@ -134,7 +183,7 @@ export function useDatasetSetup({
   computeLayerTimepointCount,
   createChannelSource,
   createVolumeSource,
-  probeVolumeSourceChannels = probeVolumeSourceChannelsDefault
+  probeVolumeSourceMetadata = probeVolumeSourceMetadataDefault
 }: DatasetSetupParams): DatasetSetupHook {
   const voxelResolution = useVoxelResolution(DEFAULT_VOXEL_RESOLUTION);
   const datasetErrors = useDatasetErrors();
@@ -339,8 +388,11 @@ export function useDatasetSetup({
 
       const targetIsSegmentation = isSegmentationChannelSource(targetChannel);
       let sourceChannels: number;
+      let sourceDataType: VolumeDataType;
       try {
-        sourceChannels = await probeVolumeSourceChannels(sorted);
+        const sourceMetadata = await probeVolumeSourceMetadata(sorted);
+        sourceChannels = sourceMetadata.channels;
+        sourceDataType = sourceMetadata.dataType;
       } catch (error) {
         const message = `Failed to inspect TIFF channels: ${
           error instanceof Error ? error.message : 'The dropped files could not be parsed as a TIFF sequence.'
@@ -385,6 +437,7 @@ export function useDatasetSetup({
           ...createVolumeSource(sorted),
           isSegmentation: targetIsSegmentation,
           sourceChannels,
+          sourceDataType,
           componentIndex: 0,
           multichannelOwnerChannelId: desiredLogicalChannelCount > 1 ? currentTarget.id : null
         };
@@ -402,6 +455,7 @@ export function useDatasetSetup({
             ...createVolumeSource(sorted),
             isSegmentation: false,
             sourceChannels,
+            sourceDataType,
             componentIndex,
             multichannelOwnerChannelId: currentTarget.id
           };
@@ -537,7 +591,7 @@ export function useDatasetSetup({
       setChannels,
       setLayerTimepointCounts,
       setLayerTimepointCountErrors,
-      probeVolumeSourceChannels,
+      probeVolumeSourceMetadata,
       showInteractionWarning
     ]
   );

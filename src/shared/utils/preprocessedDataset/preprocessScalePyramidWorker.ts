@@ -17,6 +17,7 @@ export type PreprocessScalePyramidWorkerResultScale = {
 
 type PendingScalePyramidRequest = {
   isSegmentation: boolean;
+  storedDataType?: 'uint8' | 'uint16';
   resolve: (scales: PreprocessScalePyramidWorkerResultScale[]) => void;
   reject: (error: Error) => void;
 };
@@ -110,7 +111,9 @@ function handleWorkerMessage(event: MessageEvent<PreprocessScalePyramidWorkerOut
       height: scale.height,
       depth: scale.depth,
       channels: scale.channels,
-      data: pending.isSegmentation ? new Uint16Array(scale.data) : new Uint8Array(scale.data)
+      data: pending.isSegmentation || pending.storedDataType === 'uint16'
+        ? new Uint16Array(scale.data)
+        : new Uint8Array(scale.data)
     }))
   );
 }
@@ -175,6 +178,7 @@ export async function buildPreprocessScalePyramidInWorker({
   scales,
   layerKey,
   isSegmentation,
+  storedDataType,
   normalization,
   signal
 }: {
@@ -182,6 +186,7 @@ export async function buildPreprocessScalePyramidInWorker({
   scales: PreprocessedLayerScaleManifestEntry[];
   layerKey: string;
   isSegmentation: boolean;
+  storedDataType?: 'uint8' | 'uint16';
   normalization: NormalizationParameters | null;
   signal?: AbortSignal;
 }): Promise<PreprocessScalePyramidWorkerResultScale[]> {
@@ -195,6 +200,7 @@ export async function buildPreprocessScalePyramidInWorker({
   return new Promise<PreprocessScalePyramidWorkerResultScale[]>((resolve, reject) => {
     pendingRequests.set(requestId, {
       isSegmentation,
+      storedDataType,
       resolve,
       reject
     });
@@ -231,11 +237,12 @@ export async function buildPreprocessScalePyramidInWorker({
 
     const message: BuildPreprocessScalePyramidMessage = {
       type: 'build-preprocess-scale-pyramid',
-      requestId,
-      layerKey,
-      isSegmentation,
-      normalization,
-      rawVolume: {
+        requestId,
+        layerKey,
+        isSegmentation,
+        storedDataType,
+        normalization,
+        rawVolume: {
         width: rawVolume.width,
         height: rawVolume.height,
         depth: rawVolume.depth,

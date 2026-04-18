@@ -1,4 +1,4 @@
-import type { NormalizedVolume } from './volumeProcessing';
+import type { NormalizedIntensityArray, NormalizedVolume } from './volumeProcessing';
 import type {
   PreprocessedLayerManifestEntry,
   PreprocessedManifest,
@@ -140,13 +140,13 @@ export type VolumeBrickPageTable = {
       level: number;
       gridShape: [number, number, number];
       occupancy: Uint8Array;
-      min: Uint8Array;
-      max: Uint8Array;
+      min: Uint8Array | Uint16Array;
+      max: Uint8Array | Uint16Array;
     }>;
   };
   brickAtlasIndices: Int32Array;
-  chunkMin: Uint8Array;
-  chunkMax: Uint8Array;
+  chunkMin: Uint8Array | Uint16Array;
+  chunkMax: Uint8Array | Uint16Array;
   chunkOccupancy: Float32Array;
   occupiedBrickCount: number;
   subcell?: {
@@ -154,7 +154,7 @@ export type VolumeBrickPageTable = {
     width: number;
     height: number;
     depth: number;
-    data: Uint8Array;
+    data: Uint8Array | Uint16Array;
   } | null;
 };
 
@@ -164,6 +164,7 @@ export type VolumeBrickAtlas = {
   layerKey: string;
   timepoint: number;
   scaleLevel: number;
+  kind: 'intensity' | 'segmentation';
   pageTable: VolumeBrickPageTable;
   histogram?: Uint32Array;
   width: number;
@@ -1589,8 +1590,10 @@ export function createVolumeProvider({
           `Unsupported segmentation data type for ${dataDescriptor.path}: expected uint16, got ${dataDescriptor.dataType}.`
         );
       }
-    } else if (dataDescriptor.dataType !== 'uint8') {
-      throw new Error(`Unsupported data type for ${dataDescriptor.path}: expected uint8, got ${dataDescriptor.dataType}.`);
+    } else if (dataDescriptor.dataType !== 'uint8' && dataDescriptor.dataType !== 'uint16') {
+      throw new Error(
+        `Unsupported data type for ${dataDescriptor.path}: expected uint8 or uint16, got ${dataDescriptor.dataType}.`
+      );
     }
     const dataReadStart = nowMs();
     const {
@@ -1680,10 +1683,18 @@ export function createVolumeProvider({
         })()
       : undefined;
 
-    const normalized =
+    const normalizedBytes =
       volumeBytes.byteOffset === 0 && volumeBytes.byteLength === volumeBytes.buffer.byteLength
         ? volumeBytes
         : volumeBytes.slice();
+    const normalized: NormalizedIntensityArray =
+      dataDescriptor.dataType === 'uint16'
+        ? new Uint16Array(
+            normalizedBytes.buffer,
+            normalizedBytes.byteOffset,
+            normalizedBytes.byteLength / getBytesPerValue(dataDescriptor.dataType)
+          )
+        : normalizedBytes;
 
     const loadMs = nowMs() - loadStart;
     stats.totalLoadMs += loadMs;
@@ -1697,6 +1708,7 @@ export function createVolumeProvider({
       depth: scale.depth,
       channels: scale.channels,
       dataType: layer.layer.dataType,
+      normalizedDataType: dataDescriptor.dataType,
       normalized,
       histogram,
       scaleLevel: scale.level,
@@ -1795,20 +1807,28 @@ export function createVolumeProvider({
       hierarchyBytesRead += minBytesRead + maxBytesRead + occupancyBytesRead;
       const expectedLevelVoxelCount = expectedLevelZ * expectedLevelY * expectedLevelX;
       if (
-        minBytes.length !== expectedLevelVoxelCount ||
-        maxBytes.length !== expectedLevelVoxelCount ||
+        minBytes.length !== expectedLevelVoxelCount * getBytesPerValue(hierarchy.min.dataType) ||
+        maxBytes.length !== expectedLevelVoxelCount * getBytesPerValue(hierarchy.max.dataType) ||
         occupancyBytes.length !== expectedLevelVoxelCount
       ) {
         throw new Error(
           `Skip hierarchy level size mismatch for layer ${layer.layerKey} at timepoint ${timepoint}, level ${hierarchy.level}.`
         );
       }
+      const minValues =
+        hierarchy.min.dataType === 'uint16'
+          ? new Uint16Array(minBytes.buffer, minBytes.byteOffset, expectedLevelVoxelCount)
+          : minBytes;
+      const maxValues =
+        hierarchy.max.dataType === 'uint16'
+          ? new Uint16Array(maxBytes.buffer, maxBytes.byteOffset, expectedLevelVoxelCount)
+          : maxBytes;
       skipHierarchyLevels.push({
         level: hierarchy.level,
         gridShape: [expectedLevelZ, expectedLevelY, expectedLevelX],
         occupancy: occupancyBytes,
-        min: minBytes,
-        max: maxBytes
+        min: minValues,
+        max: maxValues
       });
     }
     stats.bytesRead += hierarchyBytesRead;
@@ -1879,12 +1899,16 @@ export function createVolumeProvider({
       });
       throwIfAborted(signal);
       stats.bytesRead += subcellBytesRead;
+      const subcellValues =
+        subcellDescriptor.data.dataType === 'uint16'
+          ? new Uint16Array(subcellBytes.buffer, subcellBytes.byteOffset, subcellBytes.byteLength / 2)
+          : subcellBytes;
       subcell = {
         gridShape: subcellDescriptor.gridShape,
         width: expectedTextureSize.width,
         height: expectedTextureSize.height,
         depth: expectedTextureSize.depth,
-        data: subcellBytes
+        data: subcellValues
       };
     }
 
@@ -2167,6 +2191,7 @@ export function createVolumeProvider({
         layerKey: layer.layerKey,
         timepoint,
         scaleLevel: scale.level,
+        kind: layer.isSegmentation ? 'segmentation' : 'intensity',
         pageTable,
         histogram,
         width: 1,
@@ -2217,6 +2242,7 @@ export function createVolumeProvider({
         layerKey: layer.layerKey,
         timepoint,
         scaleLevel: scale.level,
+        kind: layer.isSegmentation ? 'segmentation' : 'intensity',
         pageTable,
         histogram,
         width: atlasWidth,
@@ -2397,6 +2423,7 @@ export function createVolumeProvider({
       layerKey: layer.layerKey,
       timepoint,
       scaleLevel: scale.level,
+      kind: layer.isSegmentation ? 'segmentation' : 'intensity',
       pageTable,
       histogram,
       width: atlasWidth,

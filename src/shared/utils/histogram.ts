@@ -1,31 +1,43 @@
 import { ensureArrayBuffer } from './buffer';
+import { getNormalizedIntensityDenominator, type NormalizedIntensityDataType } from '../../core/volumeProcessing';
 
 export const HISTOGRAM_BINS = 256;
 
-function computeIntensity(data: Uint8Array, offset: number, channels: number): number {
+function normalizeHistogramSample(value: number, normalizedDataType: NormalizedIntensityDataType): number {
+  const denominator = getNormalizedIntensityDenominator(normalizedDataType);
+  const scaled = Math.round((Math.max(0, Math.min(denominator, value)) * 255) / denominator);
+  return scaled < 0 ? 0 : scaled > 255 ? 255 : scaled;
+}
+
+function computeIntensity(
+  data: Uint8Array | Uint16Array,
+  offset: number,
+  channels: number,
+  normalizedDataType: NormalizedIntensityDataType
+): number {
   const sourceR = data[offset] ?? 0;
   if (channels <= 1) {
-    return sourceR;
+    return normalizeHistogramSample(sourceR, normalizedDataType);
   }
 
   const sourceG = data[offset + 1] ?? 0;
   if (channels === 2) {
-    return Math.round((sourceR + sourceG) * 0.5);
+    return normalizeHistogramSample(Math.round((sourceR + sourceG) * 0.5), normalizedDataType);
   }
 
   const sourceB = data[offset + 2] ?? 0;
-  const luminance = Math.round(sourceR * 0.2126 + sourceG * 0.7152 + sourceB * 0.0722);
-  return luminance;
+  return normalizeHistogramSample(Math.round(sourceR * 0.2126 + sourceG * 0.7152 + sourceB * 0.0722), normalizedDataType);
 }
 
-export function computeUint8VolumeHistogram(volume: {
-  normalized: Uint8Array;
+export function computeNormalizedVolumeHistogram(volume: {
+  normalized: Uint8Array | Uint16Array;
+  normalizedDataType: NormalizedIntensityDataType;
   width: number;
   height: number;
   depth: number;
   channels: number;
 }): Uint32Array {
-  const { normalized, width, height, depth } = volume;
+  const { normalized, normalizedDataType, width, height, depth } = volume;
   const channels = Math.max(1, volume.channels);
   const voxelCount = width * height * depth;
   const expectedLength = voxelCount * channels;
@@ -42,12 +54,23 @@ export function computeUint8VolumeHistogram(volume: {
   }
 
   for (let index = 0, offset = 0; index < voxelCount; index++, offset += channels) {
-    const intensity = computeIntensity(normalized, offset, channels);
-    const clamped = intensity < 0 ? 0 : intensity > 255 ? 255 : intensity;
-    histogram[clamped] += 1;
+    histogram[computeIntensity(normalized, offset, channels, normalizedDataType)] += 1;
   }
 
   return histogram;
+}
+
+export function computeUint8VolumeHistogram(volume: {
+  normalized: Uint8Array;
+  width: number;
+  height: number;
+  depth: number;
+  channels: number;
+}): Uint32Array {
+  return computeNormalizedVolumeHistogram({
+    ...volume,
+    normalizedDataType: 'uint8'
+  });
 }
 
 export function encodeUint32ArrayLE(values: Uint32Array): Uint8Array {
@@ -73,4 +96,3 @@ export function decodeUint32ArrayLE(bytes: Uint8Array, length: number): Uint32Ar
   }
   return values;
 }
-

@@ -16,20 +16,14 @@ test('@smoke channels panel controls work after launch', async ({ page }) => {
 
   const invertButton = channelsWindow.getByRole('button', { name: 'Invert' });
   await expect(invertButton).toHaveAttribute('aria-pressed', 'false');
-  await invertButton.evaluate((element) => {
-    (element as HTMLButtonElement).click();
-  });
+  await invertButton.click({ force: true });
   await expect(invertButton).toHaveAttribute('aria-pressed', 'true');
-  await invertButton.evaluate((element) => {
-    (element as HTMLButtonElement).click();
-  });
+  await invertButton.click({ force: true });
   await expect(invertButton).toHaveAttribute('aria-pressed', 'false');
 
   const autoButton = channelsWindow.getByRole('button', { name: 'Auto' });
   await expect(autoButton).toBeEnabled();
-  await autoButton.evaluate((element) => {
-    (element as HTMLButtonElement).click();
-  });
+  await autoButton.click({ force: true });
 
   const brightnessSlider = channelsWindow.getByLabel('Brightness');
   await expect(brightnessSlider).toBeVisible();
@@ -42,18 +36,14 @@ test('@smoke channels panel controls work after launch', async ({ page }) => {
   });
 
   const blueTintButton = channelsWindow.getByRole('button', { name: 'Blue' });
-  await blueTintButton.evaluate((element) => {
-    (element as HTMLButtonElement).click();
-  });
+  await blueTintButton.click({ force: true });
   await expect(blueTintButton).toHaveAttribute('aria-pressed', 'true');
 
-  const customTintInput = channelsWindow.getByLabel('Choose custom tint color');
+  const customTintInput = channelsWindow.getByLabel('Choose custom color');
   await customTintInput.fill('#00ff00');
   await expect(customTintInput).toHaveValue('#00ff00');
 
-  await channelsWindow.getByRole('button', { name: 'Reset' }).evaluate((element) => {
-    (element as HTMLButtonElement).click();
-  });
+  await channelsWindow.getByRole('button', { name: 'Reset' }).click({ force: true });
   await expect(invertButton).toHaveAttribute('aria-pressed', 'false');
   await expect(brightnessSlider).toBeVisible();
 });
