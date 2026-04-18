@@ -19,6 +19,7 @@ type TrackCameraPresenterProps = {
   followTargetOffsetRef: MutableRefObject<THREE.Vector3 | null>;
   previousFollowTargetKeyRef: MutableRefObject<string | null>;
   endPointerLookRef: MutableRefObject<(() => void) | null>;
+  rotationLocked?: boolean;
 };
 
 export function TrackCameraPresenter({
@@ -34,6 +35,7 @@ export function TrackCameraPresenter({
   followTargetOffsetRef,
   previousFollowTargetKeyRef,
   endPointerLookRef,
+  rotationLocked = false,
 }: TrackCameraPresenterProps) {
   const followTargetKey = useMemo(
     () =>
@@ -51,7 +53,7 @@ export function TrackCameraPresenter({
 
   useEffect(() => {
     if (controls) {
-      controls.enableRotate = followTargetKey !== null;
+      controls.enableRotate = followTargetKey !== null && !rotationLocked;
     }
 
     const wasFollowingTarget = previousFollowTargetKeyRef.current !== null;
@@ -70,6 +72,7 @@ export function TrackCameraPresenter({
     followTargetKey,
     followTargetOffsetRef,
     previousFollowTargetKeyRef,
+    rotationLocked,
   ]);
 
   useEffect(() => {

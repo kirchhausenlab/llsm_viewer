@@ -1,4 +1,5 @@
 import { GRAYSCALE_COLOR_SWATCHES, normalizeHexColor } from '../shared/colorMaps/layerColors';
+import { toUserFacingVoxelIndex } from '../shared/utils/voxelIndex';
 
 export type RoiTool = 'line' | 'rectangle' | 'ellipse';
 export type RoiDimensionMode = '2d' | '3d';
@@ -79,8 +80,8 @@ export function formatRoiCentroidName(
   const centerZ = clampInteger((roi.start.z + roi.end.z) / 2, 0, depth - 1);
 
   return [
-    padCoordinate(centerZ, paddingWidth),
-    padCoordinate(centerY, paddingWidth),
-    padCoordinate(centerX, paddingWidth),
+    padCoordinate(toUserFacingVoxelIndex(centerZ), paddingWidth),
+    padCoordinate(toUserFacingVoxelIndex(centerY), paddingWidth),
+    padCoordinate(toUserFacingVoxelIndex(centerX), paddingWidth),
   ].join('-');
 }

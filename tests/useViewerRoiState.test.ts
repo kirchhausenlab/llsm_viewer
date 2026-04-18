@@ -17,6 +17,8 @@ console.log('Starting useViewerRoiState tests');
   assert.equal(hook.result.dimensionMode, '2d');
   assert.equal(hook.result.defaultColor, '#FACC15');
   assert.equal(hook.result.workingRoi, null);
+  assert.equal(hook.result.twoDCurrentZEnabled, false);
+  assert.equal(hook.result.twoDStartZIndex, 0);
   assert.equal(hook.result.savedRois.length, 0);
   assert.deepEqual(hook.result.selectedSavedRoiIds, []);
 
@@ -52,7 +54,7 @@ console.log('Starting useViewerRoiState tests');
   assert.equal(hook.result.activeSavedRoiId, hook.result.savedRois[0]!.id);
   assert.equal(hook.result.editingSavedRoiId, hook.result.savedRois[0]!.id);
   assert.deepEqual(hook.result.selectedSavedRoiIds, [hook.result.savedRois[0]!.id]);
-  assert.equal(hook.result.savedRois[0]!.name, '009-012-003');
+  assert.equal(hook.result.savedRois[0]!.name, '010-013-004');
 
   hook.act(() => {
     hook.result.updateWorkingRoi((current) => ({
@@ -64,7 +66,7 @@ console.log('Starting useViewerRoiState tests');
 
   assert.deepEqual(hook.result.savedRois[0], {
     id: hook.result.savedRois[0]!.id,
-    name: '009-012-003',
+    name: '010-013-004',
     shape: 'line',
     mode: '3d',
     start: { x: 3, y: 12, z: 9 },
@@ -78,7 +80,7 @@ console.log('Starting useViewerRoiState tests');
 
   assert.deepEqual(hook.result.savedRois[0], {
     id: hook.result.savedRois[0]!.id,
-    name: '009-012-003',
+    name: '010-013-004',
     shape: 'line',
     mode: '3d',
     start: { x: 3, y: 12, z: 9 },
@@ -102,6 +104,10 @@ console.log('Starting useViewerRoiState tests');
     });
   });
 
+  assert.equal(hook.result.tool, 'rectangle');
+  assert.equal(hook.result.dimensionMode, '2d');
+  assert.equal(hook.result.twoDStartZIndex, 3);
+
   let secondSaved = null;
   hook.act(() => {
     secondSaved = hook.result.addWorkingRoi();
@@ -121,6 +127,10 @@ console.log('Starting useViewerRoiState tests');
       color: '#00ffaa',
     });
   });
+
+  assert.equal(hook.result.tool, 'ellipse');
+  assert.equal(hook.result.dimensionMode, '2d');
+  assert.equal(hook.result.twoDStartZIndex, 7);
 
   let thirdSaved = null;
   hook.act(() => {
@@ -178,6 +188,35 @@ console.log('Starting useViewerRoiState tests');
   });
 
   hook.act(() => {
+    hook.result.clearWorkingRoiAttachment();
+  });
+
+  assert.equal(hook.result.activeSavedRoiId, null);
+  assert.equal(hook.result.editingSavedRoiId, null);
+  assert.equal(hook.result.workingRoi, null);
+  assert.deepEqual(hook.result.selectedSavedRoiIds, [hook.result.savedRois[1]!.id]);
+
+  hook.act(() => {
+    hook.result.selectSavedRoi(hook.result.savedRois[2]!.id, true);
+  });
+
+  assert.deepEqual(hook.result.selectedSavedRoiIds, [
+    hook.result.savedRois[1]!.id,
+    hook.result.savedRois[2]!.id,
+  ]);
+
+  hook.act(() => {
+    hook.result.selectSavedRoi(hook.result.savedRois[1]!.id);
+  });
+
+  assert.equal(hook.result.activeSavedRoiId, hook.result.savedRois[1]!.id);
+  assert.equal(hook.result.editingSavedRoiId, hook.result.savedRois[1]!.id);
+  assert.deepEqual(hook.result.selectedSavedRoiIds, [
+    hook.result.savedRois[1]!.id,
+    hook.result.savedRois[2]!.id,
+  ]);
+
+  hook.act(() => {
     hook.result.selectSavedRoi(hook.result.savedRois[0]!.id);
     hook.result.selectSavedRoi(hook.result.savedRois[1]!.id, true);
     hook.result.selectSavedRoi(hook.result.savedRois[2]!.id, true);
@@ -216,7 +255,7 @@ console.log('Starting useViewerRoiState tests');
     { width: 10, height: 20, depth: 500 }
   );
 
-  assert.equal(name, '250-010-005');
+  assert.equal(name, '251-011-006');
 })();
 
 console.log('useViewerRoiState tests passed');

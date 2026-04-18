@@ -54,7 +54,6 @@ function createTrackHook(options?: {
       rendererRef: { current: null },
       cameraRef: { current: null },
       hoverRaycasterRef: { current: null },
-      currentDimensionsRef: { current: null },
       hasActive3DLayer: options?.hasActive3DLayer ?? true
     })
   );
@@ -195,7 +194,9 @@ function createTrackHook(options?: {
   });
 
   hook.act(() => hook.result.refreshTrackOverlay());
-  assert.strictEqual(trackLinesRef.current.size, 0);
+  const batchResource = trackLinesRef.current.get('batch:track-set-0');
+  assert.ok(batchResource && batchResource.kind === 'batch', 'tracks should remain visible in slice mode');
+  assert.strictEqual(batchResource.line.visible, true);
 })();
 
 (() => {

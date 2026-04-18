@@ -273,7 +273,6 @@ export type UseTrackRenderingParams = {
   rendererRef: MutableRefObject<THREE.WebGLRenderer | null>;
   cameraRef: MutableRefObject<DesktopViewerCamera | null>;
   hoverRaycasterRef: MutableRefObject<THREE.Raycaster | null>;
-  currentDimensionsRef: MutableRefObject<{ width: number; height: number; depth: number } | null>;
   hasActive3DLayer: boolean;
 };
 
@@ -298,8 +297,7 @@ export function useTrackRendering({
   rendererRef,
   cameraRef,
   hoverRaycasterRef,
-  currentDimensionsRef,
-  hasActive3DLayer
+  hasActive3DLayer: _hasActive3DLayer
 }: UseTrackRenderingParams) {
   const [trackOverlayRevision, setTrackOverlayRevision] = useState(0);
   const {
@@ -309,7 +307,6 @@ export function useTrackRendering({
     updateHoverState,
     clearHoverState
   } = useTrackHoverState();
-  const previouslyHad3DLayerRef = useRef(false);
   const overlayGeometryCacheRef = useRef<Map<string, OverlayGeometryCacheEntry>>(new Map());
   const pendingAppearanceUpdateRef = useRef(false);
   const animatedTrackIdsRef = useRef<Set<string>>(new Set());
@@ -508,89 +505,87 @@ export function useTrackRendering({
     }
 
     const nextBatchKeys = new Set<string>();
-    if (hasActive3DLayer) {
-      for (const [trackSetId, tracksForSet] of batchTracksByTrackSet) {
-        const payload = compiledTrackPayloadByTrackSet.get(trackSetId);
-        if (!payload || tracksForSet.length === 0) {
-          continue;
-        }
-
-        const trackOffset = resolveTrackOffset(tracksForSet[0]!, channelTrackOffsets);
-        const colorMode = trackColorModesByTrackSet[trackSetId] ?? { type: 'random' };
-        const { positions, colors, times, segmentTrackIds } = buildBatchSegmentBuffers(
-          tracksForSet,
-          payload,
-          trackOffset.x,
-          trackOffset.y,
-          colorMode
-        );
-        if (segmentTrackIds.length === 0) {
-          continue;
-        }
-
-        const key = getTrackBatchKey(trackSetId);
-        nextBatchKeys.add(key);
-        const existingResource = trackLinesRef.current.get(key);
-        const lineWidth = sanitizeTrackLineWidth(trackLineWidthByTrackSet[trackSetId]);
-        const opacity = sanitizeTrackOpacity(trackOpacityByTrackSet[trackSetId]);
-        let resource: TrackBatchResource;
-
-        if (!existingResource || existingResource.kind !== 'batch') {
-          const geometry = new LineSegmentsGeometry() as InstancedLineSegmentsGeometry;
-          geometry.setPositions(positions);
-          geometry.setColors(colors);
-          geometry.setAttribute('instanceTimeRange', new THREE.InstancedBufferAttribute(times, 2));
-          geometry.instanceCount = segmentTrackIds.length;
-
-          const material = new LineMaterial({
-            color: new THREE.Color(0xffffff),
-            linewidth: lineWidth,
-            transparent: true,
-            opacity,
-            depthTest: false,
-            depthWrite: false
-          });
-          setLineMaterialResolution(material, containerRef.current);
-          ensureTrackBatchShader(material);
-
-          const line = new Line2(geometry as unknown as LineGeometry, material);
-          line.computeLineDistances();
-          line.renderOrder = 995;
-          line.frustumCulled = false;
-          line.visible = true;
-          line.userData.resourceKey = key;
-
-          resource = {
-            kind: 'batch',
-            key,
-            trackSetId,
-            line,
-            geometry,
-            material,
-            segmentTrackIds,
-            segmentTimes: times,
-            visibleTimeMin: MIN_TRACK_VISIBLE_TIME,
-            visibleTimeMax: MAX_TRACK_VISIBLE_TIME
-          };
-          trackGroup.add(line);
-          trackLinesRef.current.set(key, resource);
-        } else {
-          resource = existingResource;
-          resource.geometry.setPositions(positions);
-          resource.geometry.setColors(colors);
-          resource.geometry.setAttribute('instanceTimeRange', new THREE.InstancedBufferAttribute(times, 2));
-          resource.geometry.instanceCount = segmentTrackIds.length;
-          resource.line.computeLineDistances();
-          resource.segmentTrackIds = segmentTrackIds;
-          resource.segmentTimes = times;
-          resource.material.linewidth = lineWidth;
-          resource.material.opacity = opacity;
-          resource.material.needsUpdate = true;
-          resource.line.visible = true;
-        }
-
-        updateTrackBatchTimeWindow(resource, clampedTimeIndex, isFullTrackTrailEnabled, trackTrailLength);
+    for (const [trackSetId, tracksForSet] of batchTracksByTrackSet) {
+      const payload = compiledTrackPayloadByTrackSet.get(trackSetId);
+      if (!payload || tracksForSet.length === 0) {
+        continue;
       }
+
+      const trackOffset = resolveTrackOffset(tracksForSet[0]!, channelTrackOffsets);
+      const colorMode = trackColorModesByTrackSet[trackSetId] ?? { type: 'random' };
+      const { positions, colors, times, segmentTrackIds } = buildBatchSegmentBuffers(
+        tracksForSet,
+        payload,
+        trackOffset.x,
+        trackOffset.y,
+        colorMode
+      );
+      if (segmentTrackIds.length === 0) {
+        continue;
+      }
+
+      const key = getTrackBatchKey(trackSetId);
+      nextBatchKeys.add(key);
+      const existingResource = trackLinesRef.current.get(key);
+      const lineWidth = sanitizeTrackLineWidth(trackLineWidthByTrackSet[trackSetId]);
+      const opacity = sanitizeTrackOpacity(trackOpacityByTrackSet[trackSetId]);
+      let resource: TrackBatchResource;
+
+      if (!existingResource || existingResource.kind !== 'batch') {
+        const geometry = new LineSegmentsGeometry() as InstancedLineSegmentsGeometry;
+        geometry.setPositions(positions);
+        geometry.setColors(colors);
+        geometry.setAttribute('instanceTimeRange', new THREE.InstancedBufferAttribute(times, 2));
+        geometry.instanceCount = segmentTrackIds.length;
+
+        const material = new LineMaterial({
+          color: new THREE.Color(0xffffff),
+          linewidth: lineWidth,
+          transparent: true,
+          opacity,
+          depthTest: false,
+          depthWrite: false
+        });
+        setLineMaterialResolution(material, containerRef.current);
+        ensureTrackBatchShader(material);
+
+        const line = new Line2(geometry as unknown as LineGeometry, material);
+        line.computeLineDistances();
+        line.renderOrder = 995;
+        line.frustumCulled = false;
+        line.visible = true;
+        line.userData.resourceKey = key;
+
+        resource = {
+          kind: 'batch',
+          key,
+          trackSetId,
+          line,
+          geometry,
+          material,
+          segmentTrackIds,
+          segmentTimes: times,
+          visibleTimeMin: MIN_TRACK_VISIBLE_TIME,
+          visibleTimeMax: MAX_TRACK_VISIBLE_TIME
+        };
+        trackGroup.add(line);
+        trackLinesRef.current.set(key, resource);
+      } else {
+        resource = existingResource;
+        resource.geometry.setPositions(positions);
+        resource.geometry.setColors(colors);
+        resource.geometry.setAttribute('instanceTimeRange', new THREE.InstancedBufferAttribute(times, 2));
+        resource.geometry.instanceCount = segmentTrackIds.length;
+        resource.line.computeLineDistances();
+        resource.segmentTrackIds = segmentTrackIds;
+        resource.segmentTimes = times;
+        resource.material.linewidth = lineWidth;
+        resource.material.opacity = opacity;
+        resource.material.needsUpdate = true;
+        resource.line.visible = true;
+      }
+
+      updateTrackBatchTimeWindow(resource, clampedTimeIndex, isFullTrackTrailEnabled, trackTrailLength);
     }
 
     for (const [key, resource] of Array.from(trackLinesRef.current.entries())) {
@@ -607,7 +602,6 @@ export function useTrackRendering({
     channelTrackOffsets,
     compiledTrackPayloadByTrackSet,
     containerRef,
-    hasActive3DLayer,
     trackColorModesByTrackSet,
     trackGroupRef,
     trackLineWidthByTrackSet,
@@ -630,201 +624,199 @@ export function useTrackRendering({
     const animatedTrackIds = new Set<string>();
     let didUpdateAppearance = false;
 
-    if (hasActive3DLayer) {
-      for (const trackId of highlightedTrackIds) {
-        const track = trackLookup.get(trackId);
-        const payload = track ? compiledTrackPayloadByTrackSet.get(track.trackSetId) : null;
-        if (!track || !payload || track.pointCount < 2) {
-          continue;
-        }
-
-        const key = getTrackResourceKey(track.id);
-        nextOverlayKeys.add(key);
-        const geometryData = getOverlayTrackGeometry(track, payload);
-        const baseColor = (() => {
-          const mode = trackColorModesByTrackSet[track.trackSetId];
-          if (mode && mode.type === 'uniform') {
-            return new THREE.Color(mode.color);
-          }
-          return createTrackColor(track.trackNumber);
-        })();
-        const highlightColor = baseColor.clone().lerp(TRACK_HIGHLIGHT_BLEND_TARGET, 0.4);
-
-        let resource = trackLinesRef.current.get(key);
-        if (!resource || resource.kind !== 'overlay') {
-          const geometry = new LineGeometry() as InstancedLineGeometry;
-          geometry.setPositions(geometryData.positions);
-          geometry.instanceCount = 0;
-
-          const material = new LineMaterial({
-            color: baseColor.clone(),
-            linewidth: 1,
-            transparent: true,
-            opacity: DEFAULT_TRACK_OPACITY,
-            depthTest: false,
-            depthWrite: false
-          });
-          const outlineMaterial = new LineMaterial({
-            color: new THREE.Color(0xffffff),
-            linewidth: 1,
-            transparent: true,
-            opacity: 0,
-            depthTest: false,
-            depthWrite: false
-          });
-          setLineMaterialResolution(material, containerRef.current);
-          setLineMaterialResolution(outlineMaterial, containerRef.current);
-
-          const outline = new Line2(geometry, outlineMaterial);
-          outline.computeLineDistances();
-          outline.renderOrder = 999;
-          outline.frustumCulled = false;
-          outline.visible = false;
-          outline.userData.resourceKey = key;
-          outline.userData.trackId = track.id;
-
-          const line = new Line2(geometry, material);
-          line.computeLineDistances();
-          line.renderOrder = 1000;
-          line.frustumCulled = false;
-          line.visible = false;
-          line.userData.resourceKey = key;
-          line.userData.trackId = track.id;
-
-          const endCapMaterial = new THREE.MeshBasicMaterial({
-            color: baseColor.clone(),
-            transparent: true,
-            opacity: DEFAULT_TRACK_OPACITY,
-            depthTest: false,
-            depthWrite: false
-          });
-          const endCap = new THREE.Mesh(SHARED_TRACK_END_CAP_GEOMETRY, endCapMaterial);
-          endCap.renderOrder = 1001;
-          endCap.frustumCulled = false;
-          endCap.visible = false;
-          endCap.userData.resourceKey = key;
-          endCap.userData.trackId = track.id;
-
-          trackGroup.add(outline);
-          trackGroup.add(line);
-          trackGroup.add(endCap);
-
-          resource = {
-            kind: 'overlay',
-            key,
-            trackId: track.id,
-            line,
-            outline,
-            geometry,
-            material,
-            outlineMaterial,
-            endCap,
-            endCapMaterial,
-            times: geometryData.times,
-            positions: geometryData.positions,
-            geometryPointStartIndex: 0,
-            geometryPointEndIndex: Math.max(track.pointCount - 1, 0),
-            baseColor: baseColor.clone(),
-            highlightColor: highlightColor.clone(),
-            channelId: track.channelId,
-            baseLineWidth: DEFAULT_TRACK_LINE_WIDTH,
-            targetLineWidth: DEFAULT_TRACK_LINE_WIDTH,
-            outlineExtraWidth: Math.max(DEFAULT_TRACK_LINE_WIDTH * 0.75, 0.4),
-            targetOpacity: DEFAULT_TRACK_OPACITY,
-            outlineBaseOpacity: 0,
-            endCapRadius: computeTrackEndCapRadius(DEFAULT_TRACK_LINE_WIDTH),
-            hasVisiblePoints: false,
-            isFollowed: false,
-            isSelected: false,
-            isHovered: false,
-            shouldShow: true,
-            needsAppearanceUpdate: true
-          };
-          trackLinesRef.current.set(key, resource);
-          didUpdateAppearance = true;
-        } else {
-          const positionsChanged = resource.positions !== geometryData.positions;
-          const timesChanged = resource.times !== geometryData.times;
-          const baseColorChanged = !resource.baseColor.equals(baseColor);
-          const highlightColorChanged = !resource.highlightColor.equals(highlightColor);
-
-          if (positionsChanged) {
-            resource.geometry.setPositions(geometryData.positions);
-            resource.line.computeLineDistances();
-            resource.outline.computeLineDistances();
-            resource.positions = geometryData.positions;
-            resource.geometryPointStartIndex = 0;
-            resource.geometryPointEndIndex = Math.max(track.pointCount - 1, 0);
-          }
-          if (timesChanged) {
-            resource.times = geometryData.times;
-          }
-          if (baseColorChanged) {
-            resource.baseColor.copy(baseColor);
-          }
-          if (highlightColorChanged) {
-            resource.highlightColor.copy(highlightColor);
-          }
-
-          resource.needsAppearanceUpdate ||= positionsChanged || timesChanged || baseColorChanged || highlightColorChanged;
-          didUpdateAppearance ||= resource.needsAppearanceUpdate;
-        }
-
-        const isFollowed = followedTrackId === track.id;
-        const isHovered = hoveredTrackId === track.id;
-        const isSelected = selectedTrackIds.has(track.id);
-        const channelOpacity = sanitizeTrackOpacity(trackOpacityByTrackSet[track.trackSetId]);
-        const effectiveOpacity =
-          channelOpacity <= 0 && (isFollowed || isSelected || isHovered) ? DEFAULT_TRACK_OPACITY : channelOpacity;
-        const opacityBoost = isFollowed || isSelected ? 0.15 : isHovered ? 0.12 : 0;
-        const nextTargetOpacity = Math.min(1, effectiveOpacity + opacityBoost);
-        const baseLineWidth = sanitizeTrackLineWidth(trackLineWidthByTrackSet[track.trackSetId]);
-        let widthMultiplier = 1;
-        if (isHovered) {
-          widthMultiplier = Math.max(widthMultiplier, HOVERED_TRACK_LINE_WIDTH_MULTIPLIER);
-        }
-        if (isFollowed) {
-          widthMultiplier = Math.max(widthMultiplier, FOLLOWED_TRACK_LINE_WIDTH_MULTIPLIER);
-        }
-        if (isSelected) {
-          widthMultiplier = Math.max(widthMultiplier, SELECTED_TRACK_LINE_WIDTH_MULTIPLIER);
-          animatedTrackIds.add(track.id);
-        }
-
-        const nextTargetLineWidth = baseLineWidth * widthMultiplier;
-        const nextOutlineExtraWidth = Math.max(baseLineWidth * 0.75, 0.4);
-        const nextEndCapRadius = computeTrackEndCapRadius(nextTargetLineWidth);
-        const nextOutlineBaseOpacity = isFollowed || isSelected ? 0.75 : isHovered ? 0.9 : 0;
-
-        const didResourceChange =
-          resource.isFollowed !== isFollowed ||
-          resource.isHovered !== isHovered ||
-          resource.isSelected !== isSelected ||
-          resource.targetOpacity !== nextTargetOpacity ||
-          resource.baseLineWidth !== baseLineWidth ||
-          resource.targetLineWidth !== nextTargetLineWidth ||
-          resource.outlineExtraWidth !== nextOutlineExtraWidth ||
-          resource.endCapRadius !== nextEndCapRadius ||
-          resource.outlineBaseOpacity !== nextOutlineBaseOpacity ||
-          resource.line.visible !== true ||
-          resource.outline.visible !== true;
-
-        resource.channelId = track.channelId;
-        resource.isFollowed = isFollowed;
-        resource.isHovered = isHovered;
-        resource.isSelected = isSelected;
-        resource.shouldShow = true;
-        resource.targetOpacity = nextTargetOpacity;
-        resource.baseLineWidth = baseLineWidth;
-        resource.targetLineWidth = nextTargetLineWidth;
-        resource.outlineExtraWidth = nextOutlineExtraWidth;
-        resource.endCapRadius = nextEndCapRadius;
-        resource.outlineBaseOpacity = nextOutlineBaseOpacity;
-        resource.line.visible = true;
-        resource.outline.visible = true;
-        resource.needsAppearanceUpdate ||= didResourceChange;
-        didUpdateAppearance ||= didResourceChange;
+    for (const trackId of highlightedTrackIds) {
+      const track = trackLookup.get(trackId);
+      const payload = track ? compiledTrackPayloadByTrackSet.get(track.trackSetId) : null;
+      if (!track || !payload || track.pointCount < 2) {
+        continue;
       }
+
+      const key = getTrackResourceKey(track.id);
+      nextOverlayKeys.add(key);
+      const geometryData = getOverlayTrackGeometry(track, payload);
+      const baseColor = (() => {
+        const mode = trackColorModesByTrackSet[track.trackSetId];
+        if (mode && mode.type === 'uniform') {
+          return new THREE.Color(mode.color);
+        }
+        return createTrackColor(track.trackNumber);
+      })();
+      const highlightColor = baseColor.clone().lerp(TRACK_HIGHLIGHT_BLEND_TARGET, 0.4);
+
+      let resource = trackLinesRef.current.get(key);
+      if (!resource || resource.kind !== 'overlay') {
+        const geometry = new LineGeometry() as InstancedLineGeometry;
+        geometry.setPositions(geometryData.positions);
+        geometry.instanceCount = 0;
+
+        const material = new LineMaterial({
+          color: baseColor.clone(),
+          linewidth: 1,
+          transparent: true,
+          opacity: DEFAULT_TRACK_OPACITY,
+          depthTest: false,
+          depthWrite: false
+        });
+        const outlineMaterial = new LineMaterial({
+          color: new THREE.Color(0xffffff),
+          linewidth: 1,
+          transparent: true,
+          opacity: 0,
+          depthTest: false,
+          depthWrite: false
+        });
+        setLineMaterialResolution(material, containerRef.current);
+        setLineMaterialResolution(outlineMaterial, containerRef.current);
+
+        const outline = new Line2(geometry, outlineMaterial);
+        outline.computeLineDistances();
+        outline.renderOrder = 999;
+        outline.frustumCulled = false;
+        outline.visible = false;
+        outline.userData.resourceKey = key;
+        outline.userData.trackId = track.id;
+
+        const line = new Line2(geometry, material);
+        line.computeLineDistances();
+        line.renderOrder = 1000;
+        line.frustumCulled = false;
+        line.visible = false;
+        line.userData.resourceKey = key;
+        line.userData.trackId = track.id;
+
+        const endCapMaterial = new THREE.MeshBasicMaterial({
+          color: baseColor.clone(),
+          transparent: true,
+          opacity: DEFAULT_TRACK_OPACITY,
+          depthTest: false,
+          depthWrite: false
+        });
+        const endCap = new THREE.Mesh(SHARED_TRACK_END_CAP_GEOMETRY, endCapMaterial);
+        endCap.renderOrder = 1001;
+        endCap.frustumCulled = false;
+        endCap.visible = false;
+        endCap.userData.resourceKey = key;
+        endCap.userData.trackId = track.id;
+
+        trackGroup.add(outline);
+        trackGroup.add(line);
+        trackGroup.add(endCap);
+
+        resource = {
+          kind: 'overlay',
+          key,
+          trackId: track.id,
+          line,
+          outline,
+          geometry,
+          material,
+          outlineMaterial,
+          endCap,
+          endCapMaterial,
+          times: geometryData.times,
+          positions: geometryData.positions,
+          geometryPointStartIndex: 0,
+          geometryPointEndIndex: Math.max(track.pointCount - 1, 0),
+          baseColor: baseColor.clone(),
+          highlightColor: highlightColor.clone(),
+          channelId: track.channelId,
+          baseLineWidth: DEFAULT_TRACK_LINE_WIDTH,
+          targetLineWidth: DEFAULT_TRACK_LINE_WIDTH,
+          outlineExtraWidth: Math.max(DEFAULT_TRACK_LINE_WIDTH * 0.75, 0.4),
+          targetOpacity: DEFAULT_TRACK_OPACITY,
+          outlineBaseOpacity: 0,
+          endCapRadius: computeTrackEndCapRadius(DEFAULT_TRACK_LINE_WIDTH),
+          hasVisiblePoints: false,
+          isFollowed: false,
+          isSelected: false,
+          isHovered: false,
+          shouldShow: true,
+          needsAppearanceUpdate: true
+        };
+        trackLinesRef.current.set(key, resource);
+        didUpdateAppearance = true;
+      } else {
+        const positionsChanged = resource.positions !== geometryData.positions;
+        const timesChanged = resource.times !== geometryData.times;
+        const baseColorChanged = !resource.baseColor.equals(baseColor);
+        const highlightColorChanged = !resource.highlightColor.equals(highlightColor);
+
+        if (positionsChanged) {
+          resource.geometry.setPositions(geometryData.positions);
+          resource.line.computeLineDistances();
+          resource.outline.computeLineDistances();
+          resource.positions = geometryData.positions;
+          resource.geometryPointStartIndex = 0;
+          resource.geometryPointEndIndex = Math.max(track.pointCount - 1, 0);
+        }
+        if (timesChanged) {
+          resource.times = geometryData.times;
+        }
+        if (baseColorChanged) {
+          resource.baseColor.copy(baseColor);
+        }
+        if (highlightColorChanged) {
+          resource.highlightColor.copy(highlightColor);
+        }
+
+        resource.needsAppearanceUpdate ||= positionsChanged || timesChanged || baseColorChanged || highlightColorChanged;
+        didUpdateAppearance ||= resource.needsAppearanceUpdate;
+      }
+
+      const isFollowed = followedTrackId === track.id;
+      const isHovered = hoveredTrackId === track.id;
+      const isSelected = selectedTrackIds.has(track.id);
+      const channelOpacity = sanitizeTrackOpacity(trackOpacityByTrackSet[track.trackSetId]);
+      const effectiveOpacity =
+        channelOpacity <= 0 && (isFollowed || isSelected || isHovered) ? DEFAULT_TRACK_OPACITY : channelOpacity;
+      const opacityBoost = isFollowed || isSelected ? 0.15 : isHovered ? 0.12 : 0;
+      const nextTargetOpacity = Math.min(1, effectiveOpacity + opacityBoost);
+      const baseLineWidth = sanitizeTrackLineWidth(trackLineWidthByTrackSet[track.trackSetId]);
+      let widthMultiplier = 1;
+      if (isHovered) {
+        widthMultiplier = Math.max(widthMultiplier, HOVERED_TRACK_LINE_WIDTH_MULTIPLIER);
+      }
+      if (isFollowed) {
+        widthMultiplier = Math.max(widthMultiplier, FOLLOWED_TRACK_LINE_WIDTH_MULTIPLIER);
+      }
+      if (isSelected) {
+        widthMultiplier = Math.max(widthMultiplier, SELECTED_TRACK_LINE_WIDTH_MULTIPLIER);
+        animatedTrackIds.add(track.id);
+      }
+
+      const nextTargetLineWidth = baseLineWidth * widthMultiplier;
+      const nextOutlineExtraWidth = Math.max(baseLineWidth * 0.75, 0.4);
+      const nextEndCapRadius = computeTrackEndCapRadius(nextTargetLineWidth);
+      const nextOutlineBaseOpacity = isFollowed || isSelected ? 0.75 : isHovered ? 0.9 : 0;
+
+      const didResourceChange =
+        resource.isFollowed !== isFollowed ||
+        resource.isHovered !== isHovered ||
+        resource.isSelected !== isSelected ||
+        resource.targetOpacity !== nextTargetOpacity ||
+        resource.baseLineWidth !== baseLineWidth ||
+        resource.targetLineWidth !== nextTargetLineWidth ||
+        resource.outlineExtraWidth !== nextOutlineExtraWidth ||
+        resource.endCapRadius !== nextEndCapRadius ||
+        resource.outlineBaseOpacity !== nextOutlineBaseOpacity ||
+        resource.line.visible !== true ||
+        resource.outline.visible !== true;
+
+      resource.channelId = track.channelId;
+      resource.isFollowed = isFollowed;
+      resource.isHovered = isHovered;
+      resource.isSelected = isSelected;
+      resource.shouldShow = true;
+      resource.targetOpacity = nextTargetOpacity;
+      resource.baseLineWidth = baseLineWidth;
+      resource.targetLineWidth = nextTargetLineWidth;
+      resource.outlineExtraWidth = nextOutlineExtraWidth;
+      resource.endCapRadius = nextEndCapRadius;
+      resource.outlineBaseOpacity = nextOutlineBaseOpacity;
+      resource.line.visible = true;
+      resource.outline.visible = true;
+      resource.needsAppearanceUpdate ||= didResourceChange;
+      didUpdateAppearance ||= didResourceChange;
     }
 
     for (const [key, resource] of Array.from(trackLinesRef.current.entries())) {
@@ -850,7 +842,6 @@ export function useTrackRendering({
     containerRef,
     followedTrackId,
     getOverlayTrackGeometry,
-    hasActive3DLayer,
     highlightedTrackIds,
     hoveredTrackId,
     hoveredTrackIdRef,
@@ -886,34 +877,16 @@ export function useTrackRendering({
       }
       return resource.line.visible || resource.outline.visible || resource.endCap.visible;
     });
-    trackGroup.visible = hasActive3DLayer && hasVisibleTrackResources;
+    trackGroup.visible = hasVisibleTrackResources;
   }, [
     batchTracksByTrackSet,
     compiledTrackPayloadByTrackSet,
-    hasActive3DLayer,
     highlightedTrackIds,
     trackGroupRef,
     trackLinesRef,
     trackOverlayRevision,
     tracks.length
   ]);
-
-  useEffect(() => {
-    const previouslyHad3DLayer = previouslyHad3DLayerRef.current;
-    previouslyHad3DLayerRef.current = hasActive3DLayer;
-
-    if (!hasActive3DLayer || previouslyHad3DLayer === hasActive3DLayer) {
-      return;
-    }
-
-    applyTrackGroupTransform(currentDimensionsRef.current);
-    const trackGroup = trackGroupRef.current;
-    if (trackGroup) {
-      trackGroup.updateMatrixWorld(true);
-    }
-
-    setTrackOverlayRevision((revision) => revision + 1);
-  }, [applyTrackGroupTransform, currentDimensionsRef, hasActive3DLayer, trackGroupRef]);
 
   const computeTrackCentroid = useCallback(
     (trackId: string, targetTimeIndex: number) => {

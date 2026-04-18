@@ -31,13 +31,20 @@ function createProps(overrides: Partial<React.ComponentProps<typeof DrawRoiWindo
     },
     tool: 'line' as const,
     dimensionMode: '3d' as const,
+    selectedZIndex: 6,
     currentRoiName: 'Unsaved ROI',
+    roiAttachmentState: 'unsaved' as const,
     currentColor: '#FACC15',
     workingRoi: createWorkingRoi(),
+    twoDCurrentZEnabled: false,
+    twoDStartZIndex: 6,
     onToolChange: () => {},
     onDimensionModeChange: () => {},
     onColorChange: () => {},
+    onTwoDCurrentZEnabledChange: () => {},
+    onTwoDStartZIndexChange: () => {},
     onUpdateWorkingRoi: () => {},
+    onClearOrDetach: () => {},
     onClose: () => {},
     ...overrides,
   };
@@ -60,31 +67,58 @@ function findNodeByClassName(renderer: TestRenderer.ReactTestRenderer, className
   );
   const nameRow = findNodeByClassName(renderer, 'draw-roi-name-row');
   assert.ok(nameRow);
-  assert.equal(nameRow.children[1]?.children.join(''), 'Unsaved ROI');
+  const nameRowSpans = nameRow?.findAllByType('span') ?? [];
+  const nameRowButtons = nameRow?.findAllByType('button') ?? [];
+  assert.equal(nameRowSpans[0]?.children.join(''), 'Unsaved ROI');
+  assert.equal(nameRowButtons[0]?.children.join(''), 'Clear');
 
   const toolButtons = renderer.root.findAll(
     (node) => node.type === 'button' && node.props.className?.includes?.('draw-roi-tool-button'),
   );
   assert.deepEqual(toolButtons.map((button) => button.props.title), ['Line', 'Rectangle', 'Ellipse']);
+  assert.ok(toolButtons.every((button) => button.props.disabled === true));
 
   const sliderRows = renderer.root.findAll((node) => node.props.className === 'control-row draw-roi-slider-row');
   assert.equal(sliderRows.length, 3);
   sliderRows.forEach((row) => {
     const sliderGroups = row.findAll(
-      (node) => node.props.className === 'control-group control-group--slider draw-roi-slider-group',
+      (node) => typeof node.props.className === 'string' && node.props.className.includes('draw-roi-slider-group'),
     );
     assert.equal(sliderGroups.length, 2);
   });
 
-  assert.equal(findNodeByClassName(renderer, 'draw-roi-current-label'), null);
-  assert.equal(
-    renderer.root.findAll((node) => Array.isArray(node.children) && node.children.join('') === 'Picker').length,
-    0,
-  );
-
   const colorPickerTrigger = findNodeByClassName(renderer, 'color-picker-trigger draw-roi-color-picker');
   assert.ok(colorPickerTrigger);
   assert.ok(colorPickerTrigger.findByProps({ className: 'color-picker-indicator' }));
+
+  renderer.unmount();
+})();
+
+(() => {
+  const renderer = TestRenderer.create(
+    <DrawRoiWindow
+      {...createProps({
+        dimensionMode: '2d',
+        selectedZIndex: 7,
+        currentRoiName: 'No ROI',
+        roiAttachmentState: 'none',
+        workingRoi: null,
+        twoDCurrentZEnabled: false,
+        twoDStartZIndex: 4,
+      })}
+    />,
+  );
+
+  const actionButton = renderer.root.findAll(
+    (node) => node.type === 'button' && node.props.className === 'draw-roi-action-button'
+  )[0];
+  const startZSlider = renderer.root.findByProps({ id: 'draw-roi-start-z-slider' });
+  const currentZToggle = renderer.root.findByProps({ id: 'draw-roi-current-z-toggle' });
+
+  assert.equal(actionButton.props.disabled, true);
+  assert.equal(startZSlider.props.disabled, false);
+  assert.equal(startZSlider.props.value, 5);
+  assert.equal(currentZToggle.props.checked, false);
 
   renderer.unmount();
 })();
@@ -110,12 +144,14 @@ function findNodeByClassName(renderer: TestRenderer.ReactTestRenderer, className
   );
 
   const startZSlider = renderer.root.findByProps({ id: 'draw-roi-start-z-slider' });
-  const endZSlider = renderer.root.findByProps({ id: 'draw-roi-end-z-slider' });
+  const currentZToggle = renderer.root.findByProps({ id: 'draw-roi-current-z-toggle' });
 
-  assert.equal(endZSlider.props.disabled, true);
+  assert.equal(startZSlider.props.disabled, false);
+  assert.equal(startZSlider.props.value, 4);
+  assert.equal(currentZToggle.props.checked, false);
 
   act(() => {
-    startZSlider.props.onChange({ target: { value: '9' } });
+    startZSlider.props.onChange({ target: { value: '10' } });
   });
 
   assert.ok(updatedRoi);

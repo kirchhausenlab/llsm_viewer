@@ -92,6 +92,12 @@
   color: #ffffff;
 }
 
+.viewer-top-menu-button[aria-pressed='true'] {
+  border: 1px solid rgba(91, 140, 255, 0.4);
+  background: rgba(91, 140, 255, 0.18);
+  color: #ffffff;
+}
+
 .viewer-top-menu-button:focus-visible {
   outline: none;
   text-decoration: underline;
@@ -101,6 +107,11 @@
 
 .viewer-top-menu-button:active {
   transform: translateY(0);
+}
+
+.viewer-top-menu-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 .viewer-top-menu-button--danger {

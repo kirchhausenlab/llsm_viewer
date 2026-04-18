@@ -41,6 +41,7 @@ export default function ChannelsPanel({
   layerBrickAtlasesByKey,
   layerSettings,
   getLayerDefaultSettings,
+  renderModeLocked = false,
   onLayerWindowMinChange,
   onLayerWindowMaxChange,
   onLayerBrightnessChange,
@@ -54,6 +55,9 @@ export default function ChannelsPanel({
   const { windowMargin, controlWindowWidth, layersWindowInitialPosition, resetToken } = layout;
   const activeChannelLabel = activeChannelId ? channelNameMap.get(activeChannelId) ?? 'Untitled channel' : null;
   const activeChannelVisible = activeChannelId ? (channelVisibility[activeChannelId] ?? true) : true;
+  const renderModeLockTitle = renderModeLocked
+    ? 'Render mode is locked while 2D view is active.'
+    : undefined;
 
   if (!isOpen) {
     return null;
@@ -146,7 +150,8 @@ export default function ChannelsPanel({
                                     type="button"
                                     className="channel-action-button"
                                     onClick={() => onLayerRenderStyleChange(selectedLayer.key, RENDER_STYLE_MIP)}
-                                    disabled={renderStyleDisabled}
+                                    disabled={renderStyleDisabled || renderModeLocked}
+                                    title={renderModeLockTitle}
                                     aria-pressed={segmentation3dActive}
                                   >
                                     3D
@@ -155,7 +160,8 @@ export default function ChannelsPanel({
                                     type="button"
                                     className="channel-action-button"
                                     onClick={() => onLayerRenderStyleChange(selectedLayer.key, RENDER_STYLE_SLICE)}
-                                    disabled={renderStyleDisabled}
+                                    disabled={renderStyleDisabled || renderModeLocked}
+                                    title={renderModeLockTitle}
                                     aria-pressed={settings.renderStyle === RENDER_STYLE_SLICE}
                                   >
                                     Slice
@@ -176,7 +182,8 @@ export default function ChannelsPanel({
                                         nextConfig.samplingMode
                                       );
                                     }}
-                                    disabled={renderStyleDisabled}
+                                    disabled={renderStyleDisabled || renderModeLocked}
+                                    title={renderModeLockTitle}
                                     aria-label="Render mode"
                                   >
                                     <option value="mip">Max Int Projection (MIP)</option>

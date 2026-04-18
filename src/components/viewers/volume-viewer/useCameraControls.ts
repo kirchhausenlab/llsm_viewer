@@ -57,6 +57,7 @@ type UseCameraControlsParams = {
   translationSpeedMultiplier?: number;
   rotationSpeedMultiplier?: number;
   enableKeyboardNavigation?: boolean;
+  rotationLocked?: boolean;
 };
 
 export function useCameraControls({
@@ -71,6 +72,7 @@ export function useCameraControls({
   translationSpeedMultiplier = 1,
   rotationSpeedMultiplier = 1,
   enableKeyboardNavigation = true,
+  rotationLocked = false,
 }: UseCameraControlsParams) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
@@ -149,6 +151,8 @@ export function useCameraControls({
   translationSpeedMultiplierRef.current = translationSpeedMultiplier;
   const rotationSpeedMultiplierRef = useRef(rotationSpeedMultiplier);
   rotationSpeedMultiplierRef.current = rotationSpeedMultiplier;
+  const rotationLockedRef = useRef(rotationLocked);
+  rotationLockedRef.current = rotationLocked;
 
   const PERSPECTIVE_TRANSLATION_BASE_SPEED = 0.0125;
   const ROLL_SPEED = 0.02;
@@ -347,7 +351,9 @@ export function useCameraControls({
       const forwardVector = forwardVectorRef.current;
       camera.getWorldDirection(forwardVector).normalize();
 
-      const rollInput = (movementState.rollLeft ? 1 : 0) - (movementState.rollRight ? 1 : 0);
+      const rollInput = rotationLockedRef.current
+        ? 0
+        : (movementState.rollLeft ? 1 : 0) - (movementState.rollRight ? 1 : 0);
       if (rollInput !== 0) {
         const rollAxis = rollAxisRef.current.copy(forwardVector).normalize();
         const rollQuaternion = rollQuaternionRef.current;
@@ -418,6 +424,9 @@ export function useCameraControls({
       if (renderer.xr.isPresenting) {
         return;
       }
+      if (rotationLockedRef.current) {
+        return;
+      }
 
       const lookState = keyboardLookStateRef.current;
       const yawInput = (lookState.rotateRight ? 1 : 0) - (lookState.rotateLeft ? 1 : 0);
@@ -478,6 +487,9 @@ export function useCameraControls({
         if (renderer.xr.isPresenting) {
           return;
         }
+        if (rotationLockedRef.current) {
+          return;
+        }
 
         const context = resolvePointerLookContext();
         if (!context) {
@@ -499,6 +511,10 @@ export function useCameraControls({
 
       const updatePointerLook = (event: PointerEvent) => {
         if (pointerLookState.activePointerId !== event.pointerId) {
+          return;
+        }
+        if (rotationLockedRef.current) {
+          endPointerLook(event);
           return;
         }
 
@@ -626,6 +642,24 @@ export function useCameraControls({
     applyDesktopViewState(nextCamera, nextControls, nextViewState, width, height);
     rotationTargetRef.current.copy(nextControls.target);
   }, [createWeaklyCanonicalOrthographicState, projectionMode]);
+
+  useEffect(() => {
+    if (!rotationLocked) {
+      return;
+    }
+
+    const movementState = movementStateRef.current;
+    if (movementState) {
+      movementState.rollLeft = false;
+      movementState.rollRight = false;
+    }
+    const lookState = keyboardLookStateRef.current;
+    lookState.rotateLeft = false;
+    lookState.rotateRight = false;
+    lookState.rotateUp = false;
+    lookState.rotateDown = false;
+    endPointerLookRef.current?.();
+  }, [rotationLocked]);
 
   useEffect(() => {
     if (!enableKeyboardNavigation) {

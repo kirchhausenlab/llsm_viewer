@@ -123,9 +123,9 @@ async function setFollowVoxelDraft(page: Page, coordinate: { x: number; y: numbe
     await input.fill(String(value));
     await expect(input).toHaveValue(String(value));
   };
-  await assign('#camera-follow-x', coordinate.x);
-  await assign('#camera-follow-y', coordinate.y);
-  await assign('#camera-follow-z', coordinate.z);
+  await assign('#camera-follow-x', coordinate.x + 1);
+  await assign('#camera-follow-y', coordinate.y + 1);
+  await assign('#camera-follow-z', coordinate.z + 1);
 }
 
 async function clickCameraButton(page: Page, label: string) {

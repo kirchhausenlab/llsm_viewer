@@ -95,6 +95,10 @@ export type TopMenuProps = TopMenuChromeProps &
     zSliderValue?: number;
     zSliderMax?: number;
     onZSliderChange?: (value: number) => void;
+    is2dViewActive?: boolean;
+    onToggle2dView?: () => void;
+    twoDViewButtonDisabled?: boolean;
+    twoDViewButtonTitle?: string;
   };
 
 export type ModeControlsProps = {
@@ -159,6 +163,7 @@ export type ChannelsPanelProps = VolumeChannelTabsProps & {
   layerBrickAtlasesByKey: Record<string, VolumeBrickAtlas | null>;
   layerSettings: Record<string, LayerSettings>;
   getLayerDefaultSettings: (layerKey: string) => LayerSettings;
+  renderModeLocked?: boolean;
   onChannelReset: (channelId: string) => void;
   onLayerWindowMinChange: (layerKey: string, value: number) => void;
   onLayerWindowMaxChange: (layerKey: string, value: number) => void;

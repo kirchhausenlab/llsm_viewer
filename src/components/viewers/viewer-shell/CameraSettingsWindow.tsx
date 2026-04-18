@@ -11,6 +11,7 @@ type CameraSettingsWindowProps = {
   rotationSpeedMultiplier: number;
   onTranslationSpeedMultiplierChange: (value: number) => void;
   onRotationSpeedMultiplierChange: (value: number) => void;
+  projectionLocked?: boolean;
 };
 
 const formatMultiplier = (value: number) => `${value.toFixed(1)}x`;
@@ -24,6 +25,7 @@ export default function CameraSettingsWindow({
   rotationSpeedMultiplier,
   onTranslationSpeedMultiplierChange,
   onRotationSpeedMultiplierChange,
+  projectionLocked = false,
 }: CameraSettingsWindowProps) {
   if (!isOpen) {
     return null;
@@ -31,6 +33,15 @@ export default function CameraSettingsWindow({
 
   const { windowMargin, controlWindowWidth, cameraSettingsWindowInitialPosition, resetToken } = layout;
   const { projectionMode, onProjectionModeChange, is3dModeAvailable } = modeToggle;
+  const projectionLockTitle = projectionLocked
+    ? 'Projection mode is locked while 2D view is active.'
+    : undefined;
+  const isometricDisabled = projectionLocked || modeToggle.isVrActive;
+  const isometricTitle = projectionLocked
+    ? projectionLockTitle
+    : modeToggle.isVrActive
+      ? 'Isometric view is unavailable while VR is active.'
+      : undefined;
 
   return (
     <FloatingWindow
@@ -81,6 +92,8 @@ export default function CameraSettingsWindow({
                   type="button"
                   className="viewer-mode-button"
                   onClick={() => onProjectionModeChange('perspective')}
+                  disabled={projectionLocked}
+                  title={projectionLockTitle}
                   aria-pressed={projectionMode === 'perspective'}
                 >
                   Perspective
@@ -89,14 +102,16 @@ export default function CameraSettingsWindow({
                   type="button"
                   className="viewer-mode-button"
                   onClick={() => onProjectionModeChange('orthographic')}
-                  disabled={modeToggle.isVrActive}
-                  title={modeToggle.isVrActive ? 'Isometric view is unavailable while VR is active.' : undefined}
+                  disabled={isometricDisabled}
+                  title={isometricTitle}
                   aria-pressed={projectionMode === 'orthographic'}
                 >
                   Isometric
                 </button>
               </div>
-              {modeToggle.isVrActive ? (
+              {projectionLocked ? (
+                <div className="control-hint">Projection mode is locked while 2D view is active.</div>
+              ) : modeToggle.isVrActive ? (
                 <div className="control-hint">Isometric view is unavailable while VR is active.</div>
               ) : null}
             </div>

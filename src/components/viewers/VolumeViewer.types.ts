@@ -145,6 +145,8 @@ export type ViewerRoiConfig = {
   tool: RoiTool;
   dimensionMode: RoiDimensionMode;
   selectedZIndex: number;
+  twoDCurrentZEnabled: boolean;
+  twoDStartZIndex: number;
   defaultColor: string;
   workingRoi: RoiDefinition | null;
   savedRois: SavedRoi[];
@@ -188,6 +190,7 @@ export type VolumeViewerProps = {
   onCameraNavigationSample?: (sample: ViewerCameraNavigationSample) => void;
   translationSpeedMultiplier?: number;
   rotationSpeedMultiplier?: number;
+  rotationLocked?: boolean;
   onCameraWindowStateChange?: (state: CameraWindowState | null) => void;
   onRegisterCameraWindowController?: (controller: CameraWindowController | null) => void;
   onRegisterReset: (handler: (() => void) | null) => void;

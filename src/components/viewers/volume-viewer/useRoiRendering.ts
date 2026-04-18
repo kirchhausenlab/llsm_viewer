@@ -737,7 +737,8 @@ export function useRoiRendering({
         if (!localRay || !bounds) {
           return true;
         }
-        const preview = resolve2dPreviewPoint(localRay, bounds, config.selectedZIndex);
+        const zIndex = config.twoDCurrentZEnabled ? config.selectedZIndex : config.twoDStartZIndex;
+        const preview = resolve2dPreviewPoint(localRay, bounds, zIndex);
         if (!preview.isValid) {
           return true;
         }
@@ -969,6 +970,10 @@ export function useRoiRendering({
       const hitRoiId = performHoverHitTest(event);
       if (hitRoiId) {
         return beginMoveInteraction(event, domElement, hitRoiId);
+      }
+
+      if (roiConfigRef.current?.workingRoi) {
+        return false;
       }
 
       return beginDrawing(event, domElement);

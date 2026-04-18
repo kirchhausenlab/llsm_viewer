@@ -750,9 +750,16 @@
 
 .draw-roi-name-row {
   display: flex;
+  align-items: center;
   justify-content: space-between;
   gap: 0.75rem;
   color: rgba(255, 255, 255, 0.75);
+}
+
+.draw-roi-action-button {
+  flex: 0 0 auto;
+  min-width: 4.8rem;
+  text-align: center;
 }
 
 .draw-roi-slider-row {
@@ -766,6 +773,23 @@
 
 .draw-roi-slider-group label {
   gap: 0.35rem;
+}
+
+.draw-roi-window .draw-roi-slider-group--toggle label.draw-roi-checkbox-row {
+  display: flex;
+  align-items: center;
+  align-self: flex-start;
+  justify-content: flex-start;
+  gap: 0.25rem;
+  min-height: 2rem;
+  width: fit-content;
+  max-width: 100%;
+}
+
+.draw-roi-checkbox-row input[type='checkbox'] {
+  flex: 0 0 auto;
+  width: 1rem;
+  height: 1rem;
 }
 
 .draw-roi-color-section {
