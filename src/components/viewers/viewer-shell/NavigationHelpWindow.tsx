@@ -82,7 +82,7 @@ const HELP_TABS: HelpTab[] = [
       {
         title: 'Basic workflow',
         items: [
-          'Open View > Channels window to adjust the active channel.',
+          'Open View > Channels to adjust the active channel.',
           'Use Hide/Show to compare channels quickly without unloading them.',
           'Use Reset to restore the current channel to its default display settings.'
         ]

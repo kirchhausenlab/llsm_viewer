@@ -235,6 +235,12 @@ test('front page preprocessed mode renders launch action', () => {
           sourceName: 'Fixture',
           sourceSize: 1024,
           totalVolumeCount: 5,
+          manifest: {
+            dataset: {
+              voxelResolution: { x: 0.2, y: 0.2, z: 0.8, unit: 'μm', correctAnisotropy: false },
+              temporalResolution: { interval: 2, unit: 's' }
+            }
+          },
           channelSummaries: [
             {
               id: 'channel-1',
@@ -243,7 +249,7 @@ test('front page preprocessed mode renders launch action', () => {
                 {
                   key: 'layer-1',
                   label: 'Layer 1',
-                  isSegmentation: false,
+                  isSegmentation: true,
                   volumeCount: 5,
                   width: 16,
                   height: 16,
@@ -255,9 +261,18 @@ test('front page preprocessed mode renders launch action', () => {
               ],
               trackSets: []
             }
+          ],
+          trackSummaries: [
+            {
+              id: 'track-set-1',
+              name: 'Tracks A',
+              fileName: 'tracks-a.csv',
+              boundChannelId: 'channel-1',
+              header: null
+            }
           ]
         },
-        computeTrackSummary: () => ({ totalPoints: 0, totalTracks: 0 })
+        computeTrackSummary: () => ({ totalPoints: 24, totalTracks: 3 })
       }}
       launchActions={{
         ...props.launchActions,
@@ -275,8 +290,19 @@ test('front page preprocessed mode renders launch action', () => {
   const performanceButton = renderer.root
     .findAllByType('button')
     .find((button: any) => button.props.children === 'Launch in Performance Mode');
+  const text = collectText(renderer);
   assert.ok(launchButton);
   assert.ok(performanceButton);
+  assert.match(text, /Shape \(XYZ\)/);
+  assert.match(text, /16 × 16 × 4/);
+  assert.match(text, /Voxel size/);
+  assert.match(text, /0\.2 × 0\.2 × 0\.8 μm/);
+  assert.match(text, /Frame interval/);
+  assert.match(text, /2 s/);
+  assert.match(text, /Segmentation/);
+  assert.match(text, /Tracks:\s+Tracks A/);
+  assert.doesNotMatch(text, /Layer 1/);
+  assert.doesNotMatch(text, /Range:/);
 
   renderer.unmount();
 });
@@ -357,6 +383,29 @@ test('front page configuring mode hides tracks section for single 3D volume', ()
   const text = collectText(renderer);
   assert.match(text, /Upload single 3D file or sequence of 2D files \(\.tif\/\.tiff\)/);
   assert.doesNotMatch(text, /\bTracks\b/);
+  renderer.unmount();
+});
+
+test('front page configuring mode keeps insert channel name copy without name required title', () => {
+  const props = buildBaseProps();
+  const renderer = TestRenderer.create(
+    <FrontPage
+      {...(props as any)}
+      frontPageMode="configuring"
+      channelListPanel={{
+        ...props.channelListPanel,
+        channels: [{ id: 'channel-1', name: '', volume: null, channelType: 'channel' }],
+        channelValidationMap: new Map([
+          ['channel-1', { errors: ['Name this channel.'], warnings: [] }]
+        ])
+      }}
+    />
+  );
+
+  const text = collectText(renderer);
+  assert.match(text, /Insert channel name/);
+  assert.doesNotMatch(text, /Name required/);
+
   renderer.unmount();
 });
 

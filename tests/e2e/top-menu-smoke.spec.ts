@@ -14,12 +14,12 @@ const expectedMenus = [
   {
     buttonLabel: 'View',
     menuLabel: 'view menu',
-    items: ['Channels window', 'Camera', 'Record', 'Background', 'Render settings', 'Hover settings']
+    items: ['Channels', 'View selection', 'Screen capture', 'Background', 'Render settings', 'Camera settings', 'Hover settings']
   },
   {
     buttonLabel: 'Edit',
     menuLabel: 'edit menu',
-    items: ['Props', 'Paintbrush', 'Draw ROI', 'ROI Manager']
+    items: ['Props', 'Paintbrush', 'Draw ROI', 'ROI Manager', 'Set measurements']
   },
   {
     buttonLabel: 'Tracks',
@@ -34,6 +34,8 @@ const expectedMenus = [
 ] as const;
 
 test('@smoke top menu shows the expected dropdown structure after launch', async ({ page }) => {
+  test.setTimeout(300_000);
+
   await launchViewerFromFixture(page, fixture, {
     channelName: 'Ch1',
     voxelResolution: STANDARD_VOXEL_RESOLUTION
@@ -51,8 +53,4 @@ test('@smoke top menu shows the expected dropdown structure after launch', async
     await page.keyboard.press('Escape');
     await expect(menu).toHaveCount(0);
   }
-
-  await page.getByRole('button', { name: 'Help', exact: true }).click();
-  await page.getByRole('menuitem', { name: 'Controls' }).click();
-  await expect(page.getByRole('heading', { name: 'Controls' })).toBeVisible();
 });

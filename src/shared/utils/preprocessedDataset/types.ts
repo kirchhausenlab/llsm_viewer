@@ -6,7 +6,12 @@ import type {
 } from '../../../types/voxelResolution';
 import type { CompiledTrackSet, CompiledTrackSetHeader } from '../../../types/tracks';
 
-export const PREPROCESSED_DATASET_FORMAT = 'llsm-viewer-preprocessed-vnext-hes1' as const;
+export const LEGACY_PREPROCESSED_DATASET_FORMAT = 'llsm-viewer-preprocessed-vnext-hes1' as const;
+export const PREPROCESSED_DATASET_FORMAT = 'llsm-viewer-preprocessed-vnext-hes2' as const;
+export type PreprocessedDatasetFormat =
+  | typeof LEGACY_PREPROCESSED_DATASET_FORMAT
+  | typeof PREPROCESSED_DATASET_FORMAT;
+export type StoredIntensityDataType = 'uint8' | 'uint16';
 
 export type AnisotropyCorrectionMetadata = {
   scale: AnisotropyScaleFactors;
@@ -134,12 +139,14 @@ export type PreprocessedLayerManifestEntry = {
   label: string;
   channelId: string;
   isSegmentation: boolean;
+  isBinaryLike?: boolean;
   volumeCount: number;
   width: number;
   height: number;
   depth: number;
   channels: number;
   dataType: VolumeDataType;
+  storedDataType?: StoredIntensityDataType;
   normalization: NormalizationMetadata | null;
   zarr: {
     scales: PreprocessedLayerScaleManifestEntry[];
@@ -187,7 +194,7 @@ export type PreprocessedTrackSetManifestEntry = {
 };
 
 export type PreprocessedManifest = {
-  format: typeof PREPROCESSED_DATASET_FORMAT;
+  format: PreprocessedDatasetFormat;
   generatedAt: string;
   dataset: {
     movieMode: PreprocessedMovieMode;
@@ -205,12 +212,14 @@ export type PreprocessedLayerSummary = {
   key: string;
   label: string;
   isSegmentation: boolean;
+  isBinaryLike?: boolean;
   volumeCount: number;
   width: number;
   height: number;
   depth: number;
   channels: number;
   dataType: VolumeDataType;
+  storedDataType?: StoredIntensityDataType;
   min: number;
   max: number;
 };

@@ -68,12 +68,14 @@ test('hover settings window renders the expected controls', () => {
   const renderer = TestRenderer.create(
     <HoverSettingsWindow {...(createProps(true) as any)} />
   );
+  const title = renderer.root.findAllByType('h2')[0];
 
   const toggleButton = renderer.root.findByProps({ id: 'hover-enabled-toggle' });
   const typeSelect = renderer.root.findByProps({ id: 'hover-type-select' });
   const strengthSlider = renderer.root.findByProps({ id: 'hover-strength-slider' });
   const radiusSlider = renderer.root.findByProps({ id: 'hover-radius-slider' });
 
+  assert.equal(title?.children.join(''), 'Hover settings');
   assert.equal(toggleButton.props['aria-pressed'], true);
   assert.equal(toggleButton.children.join(''), 'Enabled');
   assert.equal(typeSelect.props.value, 'default');

@@ -32,6 +32,7 @@ import type {
   PreprocessedScaleSubcellZarrDescriptor,
   PreprocessedShardedBlobDescriptor,
   PreprocessedTrackSetSummary,
+  StoredIntensityDataType,
   TrackSetExportMetadata,
   ZarrArrayShardingPlan,
   ZarrArrayDescriptor,
@@ -103,6 +104,7 @@ export type PreprocessLayerSource = {
   label: string;
   files: File[];
   isSegmentation: boolean;
+  sourceDataType?: VolumePayload['dataType'];
   sourceChannelCount?: number;
   sourceChannelIndex?: number | null;
 };
@@ -185,6 +187,7 @@ export type PreprocessDatasetToStorageOptions = {
   backgroundMask?: {
     values: number[];
   } | null;
+  renderIn16Bit?: boolean;
   signal?: AbortSignal;
   onProgress?: (progress: PreprocessDatasetProgress) => void;
 };
@@ -666,7 +669,8 @@ function buildLayerScaleDescriptors({
     const currentWidth = geometryLevel.width;
     const level = geometryLevel.level;
     const downsampleFactor = geometryLevel.downsampleFactor;
-    const storedDataType: 'uint8' | 'uint16' = layer.isSegmentation ? 'uint16' : 'uint8';
+    const storedDataType: StoredIntensityDataType = layerMetadata.storedDataType ?? (layer.isSegmentation ? 'uint16' : 'uint8');
+    const hierarchyMinMaxDataType: StoredIntensityDataType = layer.isSegmentation ? 'uint8' : storedDataType;
 
     const [dataChunkDepth, dataChunkHeight, dataChunkWidth] = chooseSpatialChunkDimensions({
       depth: currentDepth,
@@ -723,12 +727,12 @@ function buildLayerScaleDescriptors({
             path: createZarrScaleSkipHierarchyArrayPath(layer.channelId, layer.key, level, hierarchyLevel, 'min'),
             shape,
             chunkShape,
-            dataType: 'uint8',
+            dataType: hierarchyMinMaxDataType,
             sharding: createShardingPlan({
               arrayKind: 'skipHierarchy',
               shape,
               chunkShape,
-              dataType: 'uint8',
+              dataType: hierarchyMinMaxDataType,
               strategy: shardingStrategy,
               temporalAxisIndex: 0
             })
@@ -737,12 +741,12 @@ function buildLayerScaleDescriptors({
             path: createZarrScaleSkipHierarchyArrayPath(layer.channelId, layer.key, level, hierarchyLevel, 'max'),
             shape,
             chunkShape,
-            dataType: 'uint8',
+            dataType: hierarchyMinMaxDataType,
             sharding: createShardingPlan({
               arrayKind: 'skipHierarchy',
               shape,
               chunkShape,
-              dataType: 'uint8',
+              dataType: hierarchyMinMaxDataType,
               strategy: shardingStrategy,
               temporalAxisIndex: 0
             })
@@ -780,7 +784,7 @@ function buildLayerScaleDescriptors({
                 subcellTextureSize.width,
                 4
               ],
-              dataType: 'uint8',
+              dataType: storedDataType,
               sharding: createShardingPlan({
                 arrayKind: 'subcell',
                 shape: [
@@ -797,7 +801,7 @@ function buildLayerScaleDescriptors({
                   subcellTextureSize.width,
                   4
                 ],
-                dataType: 'uint8',
+                dataType: storedDataType,
                 strategy: shardingStrategy,
                 temporalAxisIndex: 0
               })
@@ -1843,15 +1847,20 @@ async function forEachSliceInStreamingTimepointSource({
 
 function computeNormalizationParametersFromScannedMinMax({
   dataType,
+  storedDataType,
   min,
   max
 }: {
   dataType: VolumePayload['dataType'];
+  storedDataType: StoredIntensityDataType;
   min: number;
   max: number;
 }): NormalizationParameters {
-  if (dataType === 'uint8') {
+  if (storedDataType === 'uint8' && dataType === 'uint8') {
     return { min: 0, max: 255 };
+  }
+  if (storedDataType === 'uint16' && dataType === 'uint16') {
+    return { min: 0, max: 65535 };
   }
   let normalizedMin = Number.isFinite(min) ? min : 0;
   let normalizedMax = Number.isFinite(max) ? max : normalizedMin + 1;
@@ -1868,25 +1877,45 @@ function computeNormalizationParametersFromScannedMinMax({
   return { min: normalizedMin, max: normalizedMax };
 }
 
-function normalizeSliceToUint8({
+function normalizeSliceToStoredDataType({
   source,
   dataType,
+  storedDataType,
   parameters
 }: {
   source: SupportedTypedArray;
   dataType: VolumePayload['dataType'];
+  storedDataType: StoredIntensityDataType;
   parameters: NormalizationParameters;
-}): Uint8Array {
-  if (dataType === 'uint8' && parameters.min === 0 && parameters.max === 255 && source instanceof Uint8Array) {
+}): Uint8Array | Uint16Array {
+  if (
+    storedDataType === 'uint8' &&
+    dataType === 'uint8' &&
+    parameters.min === 0 &&
+    parameters.max === 255 &&
+    source instanceof Uint8Array
+  ) {
+    return source;
+  }
+  if (
+    storedDataType === 'uint16' &&
+    dataType === 'uint16' &&
+    parameters.min === 0 &&
+    parameters.max === 65535 &&
+    source instanceof Uint16Array
+  ) {
     return source;
   }
 
   const range = parameters.max - parameters.min || 1;
-  const normalized = new Uint8Array(source.length);
+  const denominator = storedDataType === 'uint16' ? 65535 : 255;
+  const normalized = storedDataType === 'uint16'
+    ? new Uint16Array(source.length)
+    : new Uint8Array(source.length);
   for (let i = 0; i < source.length; i += 1) {
     const normalizedValue = ((source[i] as number) - parameters.min) / range;
     const clamped = Math.max(0, Math.min(1, normalizedValue));
-    normalized[i] = Math.round(clamped * 255);
+    normalized[i] = Math.round(clamped * denominator);
   }
   return normalized;
 }
@@ -1905,14 +1934,16 @@ function downsampleDataSliceXYByMax({
   height,
   channels
 }: {
-  source: Uint8Array;
+  source: Uint8Array | Uint16Array;
   width: number;
   height: number;
   channels: number;
-}): Uint8Array {
+}): Uint8Array | Uint16Array {
   const nextWidth = Math.max(1, Math.ceil(width / 2));
   const nextHeight = Math.max(1, Math.ceil(height / 2));
-  const downsampled = new Uint8Array(nextWidth * nextHeight * channels);
+  const downsampled = source instanceof Uint16Array
+    ? new Uint16Array(nextWidth * nextHeight * channels)
+    : new Uint8Array(nextWidth * nextHeight * channels);
 
   for (let y = 0; y < nextHeight; y += 1) {
     const sourceYStart = y * 2;
@@ -1940,9 +1971,12 @@ function downsampleDataSliceXYByMax({
   return downsampled;
 }
 
-function mergeDataSlicesByMaxInPlace(target: Uint8Array, candidate: Uint8Array): void {
+function mergeDataSlicesByMaxInPlace(target: Uint8Array | Uint16Array, candidate: Uint8Array | Uint16Array): void {
   if (target.length !== candidate.length) {
     throw new Error(`Cannot merge slices with different lengths (${target.length} vs ${candidate.length}).`);
+  }
+  if (target.constructor !== candidate.constructor) {
+    throw new Error('Cannot merge slices with different element types.');
   }
   for (let i = 0; i < target.length; i += 1) {
     if ((candidate[i] ?? 0) > (target[i] ?? 0)) {
@@ -2209,7 +2243,59 @@ type LayerMetadata = {
   depth: number;
   channels: number;
   dataType: VolumePayload['dataType'];
+  storedDataType?: StoredIntensityDataType;
+  isBinaryLike?: boolean;
 };
+
+function detectBinaryLikeVolume(volume: VolumePayload): boolean {
+  const values = createVolumeTypedArray(volume.dataType, volume.data);
+  if (values.length === 0) {
+    return false;
+  }
+
+  let firstValue: number | null = null;
+  let secondValue: number | null = null;
+  for (let index = 0; index < values.length; index += 1) {
+    const value = values[index] as number;
+    if (!Number.isFinite(value)) {
+      return false;
+    }
+    if (firstValue === null) {
+      firstValue = value;
+      continue;
+    }
+    if (value === firstValue) {
+      continue;
+    }
+    if (secondValue === null) {
+      secondValue = value;
+      continue;
+    }
+    if (value !== secondValue) {
+      return false;
+    }
+  }
+
+  return secondValue !== null;
+}
+
+function resolveStoredIntensityDataType({
+  isSegmentation,
+  sourceDataType,
+  renderIn16Bit,
+}: {
+  isSegmentation: boolean;
+  sourceDataType: VolumePayload['dataType'];
+  renderIn16Bit: boolean;
+}): StoredIntensityDataType {
+  if (isSegmentation) {
+    return 'uint16';
+  }
+  if (!renderIn16Bit) {
+    return 'uint8';
+  }
+  return getBytesPerValue(sourceDataType) > 1 ? 'uint16' : 'uint8';
+}
 
 async function computeLayerTimepointMetadata({
   preparedLayerSources,
@@ -2255,10 +2341,16 @@ function selectFirstNonSegmentationPreparedLayer<T extends { layer: PreprocessLa
 
 function computeRepresentativeNormalization(
   volume: VolumePayload,
-  backgroundMask: BackgroundMaskVolume | null
+  backgroundMask: BackgroundMaskVolume | null,
+  storedDataType: StoredIntensityDataType
 ): NormalizationParameters {
   if (!backgroundMask) {
-    return computeNormalizationParameters([volume]);
+    return computeNormalizationParametersFromScannedMinMax({
+      dataType: volume.dataType,
+      storedDataType,
+      min: volume.min,
+      max: volume.max
+    });
   }
   const source = createVolumeTypedArray(volume.dataType, volume.data);
   const { min, max } = findMinMaxExcludingBackgroundMask({
@@ -2268,6 +2360,7 @@ function computeRepresentativeNormalization(
   });
   return computeNormalizationParametersFromScannedMinMax({
     dataType: volume.dataType,
+    storedDataType,
     min,
     max
   });
@@ -2380,12 +2473,14 @@ async function computeLayerRepresentativeNormalization({
   preparedLayerSources,
   representativeTimepoint,
   backgroundMask,
+  renderIn16Bit,
   signal,
   onProgress
 }: {
   preparedLayerSources: PreparedLayerSource[];
   representativeTimepoint: number;
   backgroundMask: SharedBackgroundMask | null;
+  renderIn16Bit: boolean;
   signal?: AbortSignal;
   onProgress?: (progress: PreprocessDatasetProgress) => void;
 }): Promise<Map<string, NormalizationParameters>> {
@@ -2403,7 +2498,15 @@ async function computeLayerRepresentativeNormalization({
     const volume = await preparedLayer.getTimepointVolume(representativeTimepoint, signal);
     normalizationByLayerKey.set(
       layer.key,
-      computeRepresentativeNormalization(volume, backgroundMask?.scales[0] ?? null)
+      computeRepresentativeNormalization(
+        volume,
+        backgroundMask?.scales[0] ?? null,
+        resolveStoredIntensityDataType({
+          isSegmentation: false,
+          sourceDataType: layer.sourceDataType ?? volume.dataType,
+          renderIn16Bit
+        })
+      )
     );
   }
 
@@ -2414,6 +2517,7 @@ async function computeLayerRepresentativeNormalizationForStreaming({
   preparedLayerSources,
   representativeTimepoint,
   backgroundMask,
+  renderIn16Bit,
   tiffByFileCache,
   signal,
   onProgress
@@ -2421,6 +2525,7 @@ async function computeLayerRepresentativeNormalizationForStreaming({
   preparedLayerSources: StreamingPreparedLayerSource[];
   representativeTimepoint: number;
   backgroundMask: SharedBackgroundMask | null;
+  renderIn16Bit: boolean;
   tiffByFileCache: TiffByFileCache;
   signal?: AbortSignal;
   onProgress?: (progress: PreprocessDatasetProgress) => void;
@@ -2480,6 +2585,11 @@ async function computeLayerRepresentativeNormalizationForStreaming({
       layer.key,
       computeNormalizationParametersFromScannedMinMax({
         dataType: preparedLayer.sourceMetadata.dataType,
+        storedDataType: resolveStoredIntensityDataType({
+          isSegmentation: false,
+          sourceDataType: layer.sourceDataType ?? preparedLayer.sourceMetadata.dataType,
+          renderIn16Bit
+        }),
         min: scannedMin,
         max: scannedMax
       })
@@ -2491,9 +2601,11 @@ async function computeLayerRepresentativeNormalizationForStreaming({
 
 async function collectLayerMetadata({
   preparedLayerSources,
+  renderIn16Bit,
   signal
 }: {
   preparedLayerSources: PreparedLayerSource[];
+  renderIn16Bit: boolean;
   signal?: AbortSignal;
 }): Promise<{
   sourceMetadataByLayerKey: Map<string, LayerMetadata>;
@@ -2514,14 +2626,22 @@ async function collectLayerMetadata({
       height: firstVolume.height,
       depth: firstVolume.depth,
       channels: firstVolume.channels,
-      dataType: firstVolume.dataType
+      dataType: firstVolume.dataType,
+      isBinaryLike: !layer.isSegmentation && detectBinaryLikeVolume(firstVolume)
+    });
+    const storedDataType = resolveStoredIntensityDataType({
+      isSegmentation: layer.isSegmentation,
+      sourceDataType: layer.sourceDataType ?? firstVolume.dataType,
+      renderIn16Bit
     });
     layerMetadataByKey.set(layer.key, {
       width: firstVolume.width,
       height: firstVolume.height,
       depth: firstVolume.depth,
       channels: layer.isSegmentation ? 1 : firstVolume.channels,
-      dataType: layer.isSegmentation ? 'uint16' : firstVolume.dataType
+      dataType: layer.isSegmentation ? 'uint16' : firstVolume.dataType,
+      storedDataType,
+      isBinaryLike: !layer.isSegmentation && detectBinaryLikeVolume(firstVolume)
     });
     if (!referenceShape3d) {
       referenceShape3d = {
@@ -2547,9 +2667,11 @@ async function collectLayerMetadata({
 }
 
 function collectLayerMetadataFromStreamingSources({
-  preparedLayerSources
+  preparedLayerSources,
+  renderIn16Bit
 }: {
   preparedLayerSources: StreamingPreparedLayerSource[];
+  renderIn16Bit: boolean;
 }): {
   sourceMetadataByLayerKey: Map<string, LayerMetadata>;
   layerMetadataByKey: Map<string, LayerMetadata>;
@@ -2568,12 +2690,18 @@ function collectLayerMetadataFromStreamingSources({
       channels: source.channels,
       dataType: source.dataType
     });
+    const storedDataType = resolveStoredIntensityDataType({
+      isSegmentation: layer.isSegmentation,
+      sourceDataType: layer.sourceDataType ?? source.dataType,
+      renderIn16Bit
+    });
     layerMetadataByKey.set(layer.key, {
       width: source.width,
       height: source.height,
       depth: source.depth,
       channels: layer.isSegmentation ? 1 : source.channels,
-      dataType: layer.isSegmentation ? 'uint16' : source.dataType
+      dataType: layer.isSegmentation ? 'uint16' : source.dataType,
+      storedDataType
     });
 
     if (!referenceShape3d) {
@@ -2710,12 +2838,14 @@ function buildManifestFromLayerMetadata({
         label: layer.label,
         channelId: layer.channelId,
         isSegmentation: layer.isSegmentation,
+        isBinaryLike: layerMetadata.isBinaryLike,
         volumeCount: expectedTimepoints,
         width: layerMetadata.width,
         height: layerMetadata.height,
         depth: layerMetadata.depth,
         channels: layerMetadata.channels,
         dataType: layerMetadata.dataType,
+        storedDataType: layerMetadata.storedDataType ?? (layer.isSegmentation ? 'uint16' : 'uint8'),
         normalization: layer.isSegmentation
           ? null
           : (normalizationByLayerKey.get(layer.key) ?? null),
@@ -2902,6 +3032,7 @@ async function createManifestZarrArrays({
 }
 
 type StreamingScaleWriteState = {
+  isSegmentation: boolean;
   scale: PreprocessedLayerScaleManifestEntry;
   backgroundMaskScale: BackgroundMaskVolume | null;
   dataDescriptor: ZarrArrayDescriptor;
@@ -2917,10 +3048,10 @@ type StreamingScaleWriteState = {
   xChunks: number;
   zChunks: number;
   nextSliceIndex: number;
-  leafMinValues: Uint8Array | null;
-  leafMaxValues: Uint8Array | null;
+  leafMinValues: Uint8Array | Uint16Array | null;
+  leafMaxValues: Uint8Array | Uint16Array | null;
   leafOccupancyValues: Uint8Array | null;
-  subcellTextureBytes: Uint8Array | null;
+  subcellTextureBytes: Uint8Array | Uint16Array | null;
   subcellTextureSize: { width: number; height: number; depth: number } | null;
   playbackAtlasIndices: Int32Array | null;
   playbackAtlasOccupiedBrickCount: number;
@@ -2930,7 +3061,7 @@ type StreamingScaleWriteState = {
 
 type StreamingIntensityScaleTransition = {
   isSegmentation: false;
-  pendingSlice: Uint8Array | null;
+  pendingSlice: Uint8Array | Uint16Array | null;
   sourceWidth: number;
   sourceHeight: number;
   sourceChannels: number;
@@ -2945,13 +3076,19 @@ type StreamingSegmentationScaleTransition = {
 
 type StreamingScaleTransition = StreamingIntensityScaleTransition | StreamingSegmentationScaleTransition;
 
+function toByteView(view: Uint8Array | Uint16Array): Uint8Array {
+  return new Uint8Array(view.buffer, view.byteOffset, view.byteLength);
+}
+
 function createStreamingScaleWriteState({
   scale,
+  isSegmentation,
   backgroundMaskScale,
   skipHierarchyDescriptor,
   subcellDescriptor
 }: {
   scale: PreprocessedLayerScaleManifestEntry;
+  isSegmentation: boolean;
   backgroundMaskScale: BackgroundMaskVolume | null;
   skipHierarchyDescriptor?: PreprocessedScaleSkipHierarchyZarrDescriptor;
   subcellDescriptor?: PreprocessedScaleSubcellZarrDescriptor;
@@ -2977,8 +3114,8 @@ function createStreamingScaleWriteState({
   const chunkCount = zChunks * yChunks * xChunks;
   const leafGridShape: [number, number, number] = [zChunks, yChunks, xChunks];
 
-  let leafMinValues: Uint8Array | null = null;
-  let leafMaxValues: Uint8Array | null = null;
+  let leafMinValues: Uint8Array | Uint16Array | null = null;
+  let leafMaxValues: Uint8Array | Uint16Array | null = null;
   let leafOccupancyValues: Uint8Array | null = null;
   if (skipHierarchyDescriptor) {
     const leafLevel = skipHierarchyDescriptor.levels[0];
@@ -2989,14 +3126,14 @@ function createStreamingScaleWriteState({
       descriptor: leafLevel.min,
       expectedTimepoints: dataDescriptor.shape[0] ?? 0,
       expectedGridShape: leafGridShape,
-      expectedDataType: 'uint8',
+      expectedDataType: leafLevel.min.dataType,
       label: 'min'
     });
     assertSkipHierarchyDescriptorMatchesGrid({
       descriptor: leafLevel.max,
       expectedTimepoints: dataDescriptor.shape[0] ?? 0,
       expectedGridShape: leafGridShape,
-      expectedDataType: 'uint8',
+      expectedDataType: leafLevel.max.dataType,
       label: 'max'
     });
     assertSkipHierarchyDescriptorMatchesGrid({
@@ -3006,12 +3143,12 @@ function createStreamingScaleWriteState({
       expectedDataType: 'uint8',
       label: 'occupancy'
     });
-    leafMinValues = new Uint8Array(chunkCount);
-    leafMaxValues = new Uint8Array(chunkCount);
+    leafMinValues = leafLevel.min.dataType === 'uint16' ? new Uint16Array(chunkCount) : new Uint8Array(chunkCount);
+    leafMaxValues = leafLevel.max.dataType === 'uint16' ? new Uint16Array(chunkCount) : new Uint8Array(chunkCount);
     leafOccupancyValues = new Uint8Array(chunkCount);
   }
 
-  let subcellTextureBytes: Uint8Array | null = null;
+  let subcellTextureBytes: Uint8Array | Uint16Array | null = null;
   let subcellTextureSize: { width: number; height: number; depth: number } | null = null;
   if (subcellDescriptor) {
     const subcellGrid = {
@@ -3037,7 +3174,9 @@ function createStreamingScaleWriteState({
     ) {
       throw new Error(`Subcell descriptor shape mismatch for ${dataDescriptor.path}.`);
     }
-    subcellTextureBytes = new Uint8Array(expectedTextureLength);
+    subcellTextureBytes = subcellDescriptor.data.dataType === 'uint16'
+      ? new Uint16Array(expectedTextureLength)
+      : new Uint8Array(expectedTextureLength);
   }
 
   const playbackAtlasDescriptor = scale.zarr.playbackAtlas;
@@ -3051,6 +3190,7 @@ function createStreamingScaleWriteState({
     : 0;
 
   return {
+    isSegmentation,
     scale,
     backgroundMaskScale,
     dataDescriptor,
@@ -3128,6 +3268,7 @@ async function writeStreamingScaleSlice({
       const { chunk, stats } = extractDataChunkBytesAndComputeStatistics({
         source: dataSlice,
         dataType: dataDescriptor.dataType as 'uint8' | 'uint16',
+        isSegmentation: state.isSegmentation,
         width: scale.width,
         height: scale.height,
         channels: scale.channels,
@@ -3172,10 +3313,11 @@ async function writeStreamingScaleSlice({
         );
       }
       if (state.subcellDescriptor && state.subcellTextureBytes && state.subcellTextureSize) {
-        const subcellChunk = buildBrickSubcellChunkData({
-          chunkShape: [state.chunkDepth, state.chunkHeight, state.chunkWidth],
-          components: scale.channels,
-          readVoxelComponent: (localZ, localY, localX, component) => {
+          const subcellChunk = buildBrickSubcellChunkData({
+            chunkShape: [state.chunkDepth, state.chunkHeight, state.chunkWidth],
+            components: scale.channels,
+            outputDataType: state.subcellDescriptor.data.dataType === 'uint16' ? 'uint16' : 'uint8',
+            readVoxelComponent: (localZ, localY, localX, component) => {
             if (localZ !== 0 || localY < 0 || localY >= yLength || localX < 0 || localX >= xLength) {
               return 0;
             }
@@ -3244,13 +3386,13 @@ async function finalizeStreamingScaleWriteState({
       await chunkWriter.writeChunk({
         descriptor: hierarchyDescriptor.min,
         chunkCoords: [timepoint, 0, 0, 0],
-        bytes: hierarchyData.min,
+        bytes: toByteView(hierarchyData.min),
         signal
       });
       await chunkWriter.writeChunk({
         descriptor: hierarchyDescriptor.max,
         chunkCoords: [timepoint, 0, 0, 0],
-        bytes: hierarchyData.max,
+        bytes: toByteView(hierarchyData.max),
         signal
       });
       await chunkWriter.writeChunk({
@@ -3266,7 +3408,7 @@ async function finalizeStreamingScaleWriteState({
     await chunkWriter.writeChunk({
       descriptor: state.subcellDescriptor.data,
       chunkCoords: [timepoint, 0, 0, 0, 0],
-      bytes: state.subcellTextureBytes,
+      bytes: toByteView(state.subcellTextureBytes),
       signal
     });
   }
@@ -3353,8 +3495,8 @@ function pushStreamingScaleTransitionSlice({
     return { data: outputLabels };
   }
 
-  if (!(dataSlice instanceof Uint8Array)) {
-    throw new Error('Intensity streaming transition expects uint8 slices.');
+  if (!(dataSlice instanceof Uint8Array) && !(dataSlice instanceof Uint16Array)) {
+    throw new Error('Intensity streaming transition expects uint8 or uint16 slices.');
   }
   const xyDownsampledData = downsampleDataSliceXYByMax({
     source: dataSlice,
@@ -3429,6 +3571,7 @@ async function writeStreamingLayerTimepoint({
   const scaleStates = sortedScales.map((scale) =>
     createStreamingScaleWriteState({
       scale,
+      isSegmentation: preparedLayer.layer.isSegmentation,
       backgroundMaskScale: backgroundMaskByLevel.get(scale.level)
         ? {
             width: backgroundMaskByLevel.get(scale.level)!.width,
@@ -3503,8 +3646,10 @@ async function writeStreamingLayerTimepoint({
       }
     });
   } else {
+    const storedDataType = manifestLayer.storedDataType ?? 'uint8';
     const resolvedNormalization = normalization ?? computeNormalizationParametersFromScannedMinMax({
       dataType: sourceMetadata.dataType,
+      storedDataType,
       min: 0,
       max: 1
     });
@@ -3519,9 +3664,10 @@ async function writeStreamingLayerTimepoint({
       tiffByFileCache,
       signal,
       onSlice: async (slice, z) => {
-        const normalizedSlice = normalizeSliceToUint8({
+        const normalizedSlice = normalizeSliceToStoredDataType({
           source: slice,
           dataType: sourceMetadata.dataType,
+          storedDataType,
           parameters: resolvedNormalization
         });
         const maskScale = backgroundMask?.scales[0] ?? null;
@@ -3564,18 +3710,20 @@ function downsampleDataByMaxPooling(volume: {
   height: number;
   depth: number;
   channels: number;
-  data: Uint8Array;
+  data: Uint8Array | Uint16Array;
 }): {
   width: number;
   height: number;
   depth: number;
   channels: number;
-  data: Uint8Array;
+  data: Uint8Array | Uint16Array;
 } {
   const nextDepth = Math.max(1, Math.ceil(volume.depth / 2));
   const nextHeight = Math.max(1, Math.ceil(volume.height / 2));
   const nextWidth = Math.max(1, Math.ceil(volume.width / 2));
-  const downsampled = new Uint8Array(nextDepth * nextHeight * nextWidth * volume.channels);
+  const downsampled = volume.data instanceof Uint16Array
+    ? new Uint16Array(nextDepth * nextHeight * nextWidth * volume.channels)
+    : new Uint8Array(nextDepth * nextHeight * nextWidth * volume.channels);
 
   for (let z = 0; z < nextDepth; z += 1) {
     const sourceZStart = z * 2;
@@ -3749,6 +3897,8 @@ async function writeNormalizedLayerTimepoint({
       playbackAtlasDescriptor: scale.zarr.playbackAtlas,
       timepoint,
       volume: volumeForScale,
+      isSegmentation: volumeForScale.isSegmentation,
+      emitHistogram: Boolean(scale.zarr.histogram),
       backgroundMask: backgroundMaskByLevel.get(scale.level) ?? null,
       signal
     });
@@ -3845,6 +3995,8 @@ async function writePrecomputedLayerTimepointScales({
         channels: prepared.channels,
         data: prepared.data
       },
+      isSegmentation: layer.isSegmentation,
+      emitHistogram: Boolean(scale.zarr.histogram),
       signal
     });
     if (scale.zarr.histogram && histogram) {
@@ -3884,11 +4036,13 @@ async function writeLayerVolumesFor3dStreaming({
   progressState: { processedVolumes: number };
 }): Promise<void> {
   const layer = preparedLayer.layer;
+  const storedDataType = manifestLayer.storedDataType ?? 'uint8';
   const normalization = layer.isSegmentation
     ? null
     : normalizationByLayerKey.get(layer.key) ??
       computeNormalizationParametersFromScannedMinMax({
         dataType: sourceMetadata.dataType,
+        storedDataType,
         min: 0,
         max: 1
       });
@@ -3946,12 +4100,14 @@ async function writeLayerVolumesFor3d({
   progressState: { processedVolumes: number };
 }): Promise<void> {
   const layer = preparedLayer.layer;
+  const storedDataType = manifestLayer.storedDataType ?? 'uint8';
   const normalization = layer.isSegmentation
     ? null
     : normalizationByLayerKey.get(layer.key) ??
       computeRepresentativeNormalization(
         await preparedLayer.getTimepointVolume(representativeTimepoint, signal),
-        backgroundMask?.scales[0] ?? null
+        backgroundMask?.scales[0] ?? null,
+        storedDataType
       );
   let useWorkerizedNormalizationDownsample =
     workerizeNormalizationDownsample && supportsPreprocessScalePyramidWorker();
@@ -3969,6 +4125,7 @@ async function writeLayerVolumesFor3d({
           scales: manifestLayer.zarr.scales,
           layerKey: layer.key,
           isSegmentation: layer.isSegmentation,
+          storedDataType,
           normalization,
           signal
         });
@@ -3998,7 +4155,8 @@ async function writeLayerVolumesFor3d({
         ? canonicalizeSegmentationVolume(raw)
         : normalizeVolume(
             raw,
-            normalization ?? computeRepresentativeNormalization(raw, backgroundMask?.scales[0] ?? null)
+            normalization ?? computeRepresentativeNormalization(raw, backgroundMask?.scales[0] ?? null, storedDataType),
+            storedDataType
           );
 
       if (normalized.kind === 'intensity' && backgroundMask && backgroundMask.maskedVoxelCount > 0) {
@@ -4057,6 +4215,7 @@ export async function preprocessDatasetToStorage({
   processingStrategy,
   inputInterpretation,
   backgroundMask: backgroundMaskConfig,
+  renderIn16Bit = false,
   signal,
   onProgress
 }: PreprocessDatasetToStorageOptions): Promise<{
@@ -4127,6 +4286,7 @@ export async function preprocessDatasetToStorage({
     representativeTimepoint = Math.floor(expectedTimepoints / 2);
     ({ sourceMetadataByLayerKey, layerMetadataByKey } = await collectLayerMetadata({
       preparedLayerSources,
+      renderIn16Bit,
       signal
     }));
     backgroundMask = await buildBackgroundMaskForPreparedLayers({
@@ -4139,6 +4299,7 @@ export async function preprocessDatasetToStorage({
       preparedLayerSources,
       representativeTimepoint,
       backgroundMask,
+      renderIn16Bit,
       signal,
       onProgress
     });
@@ -4154,7 +4315,8 @@ export async function preprocessDatasetToStorage({
     representativeTimepoint = Math.floor(expectedTimepoints / 2);
     tiffByFileCache = new Map<File, Promise<any>>();
     ({ sourceMetadataByLayerKey, layerMetadataByKey } = collectLayerMetadataFromStreamingSources({
-      preparedLayerSources: streamingPreparedLayerSources
+      preparedLayerSources: streamingPreparedLayerSources,
+      renderIn16Bit
     }));
     backgroundMask = await buildBackgroundMaskForStreamingPreparedLayers({
       preparedLayerSources: streamingPreparedLayerSources,
@@ -4167,6 +4329,7 @@ export async function preprocessDatasetToStorage({
       preparedLayerSources: streamingPreparedLayerSources,
       representativeTimepoint,
       backgroundMask,
+      renderIn16Bit,
       tiffByFileCache,
       signal,
       onProgress

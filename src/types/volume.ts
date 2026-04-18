@@ -33,6 +33,34 @@ export type VolumePayload = VolumeMetadata & {
   data: ArrayBufferLike;
 };
 
+export function detectVolumeDataTypeFromTypedArray(array: VolumeTypedArray): VolumeDataType {
+  if (array instanceof Uint8Array) {
+    return 'uint8';
+  }
+  if (array instanceof Int8Array) {
+    return 'int8';
+  }
+  if (array instanceof Uint16Array) {
+    return 'uint16';
+  }
+  if (array instanceof Int16Array) {
+    return 'int16';
+  }
+  if (array instanceof Uint32Array) {
+    return 'uint32';
+  }
+  if (array instanceof Int32Array) {
+    return 'int32';
+  }
+  if (array instanceof Float32Array) {
+    return 'float32';
+  }
+  if (array instanceof Float64Array) {
+    return 'float64';
+  }
+  throw new Error('Unsupported volume data type.');
+}
+
 export function getBytesPerValue(type: VolumeDataType): number {
   switch (type) {
     case 'uint8':

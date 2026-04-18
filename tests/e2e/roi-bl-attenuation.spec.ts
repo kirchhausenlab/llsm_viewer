@@ -6,7 +6,7 @@ import { launchViewerFromChannelFixtures, STANDARD_VOXEL_RESOLUTION } from './he
 
 async function openChannelsWindow(page: Page) {
   await page.getByRole('button', { name: 'View', exact: true }).click();
-  await page.getByRole('menuitem', { name: 'Channels window' }).click();
+  await page.getByRole('menuitem', { name: 'Channels' }).click();
   const channelsWindow = page.locator('.floating-window--channels');
   await expect(channelsWindow.getByRole('heading', { name: 'Channels' })).toBeVisible();
   return channelsWindow;

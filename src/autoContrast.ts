@@ -1,6 +1,6 @@
 import { isIntensityVolume, type NormalizedVolume } from './core/volumeProcessing';
 import { MIN_WINDOW_WIDTH } from './state/layerSettings';
-import { computeUint8VolumeHistogram, HISTOGRAM_BINS } from './shared/utils/histogram';
+import { computeNormalizedVolumeHistogram, HISTOGRAM_BINS } from './shared/utils/histogram';
 
 export const HISTOGRAM_FIRST_VALID_BIN = 1;
 const DEFAULT_AUTO_THRESHOLD_DENOMINATOR = 10000;
@@ -40,7 +40,7 @@ function computeHistogram(volume: NormalizedVolume): CachedHistogram {
   }
   const { width, height, depth } = volume;
   const channels = Math.max(1, volume.channels);
-  const histogram = computeUint8VolumeHistogram(volume);
+  const histogram = computeNormalizedVolumeHistogram(volume);
   return { histogram, width, height, depth, channels, length: volume.normalized.length };
 }
 

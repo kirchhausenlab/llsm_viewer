@@ -7,6 +7,7 @@ import {
   clampWindowBounds,
   createDefaultLayerSettings,
   DEFAULT_RENDER_STYLE,
+  RENDER_STYLE_ISO,
   resolveLayerSamplingMode,
   type BrightnessContrastState,
   type LayerSettings,
@@ -86,13 +87,17 @@ export function createLayerDefaultSettingsFromLayer({
     layer?.isSegmentation === true
       ? DEFAULT_LAYER_COLOR
       : getChannelDefaultColor(layer?.channelId ?? '');
+  const defaultRenderStyle =
+    layer?.isBinaryLike && layer.isSegmentation !== true
+      ? RENDER_STYLE_ISO
+      : DEFAULT_RENDER_STYLE;
 
   return {
     ...createDefaultLayerSettings(),
     color: defaultColor,
-    renderStyle: DEFAULT_RENDER_STYLE,
+    renderStyle: defaultRenderStyle,
     samplingMode: resolveLayerSamplingMode(
-      DEFAULT_RENDER_STYLE,
+      defaultRenderStyle,
       globalSamplingMode,
       layer?.isSegmentation === true
     ),

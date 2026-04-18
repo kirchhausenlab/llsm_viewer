@@ -37,7 +37,7 @@ export default function PlotSettingsPanel({
   const { amplitudeExtent, timeExtent, smoothing: plotSmoothing, smoothingExtent, onAmplitudeLimitsChange, onTimeLimitsChange, onSmoothingChange, onAutoRange, onClearSelection } =
     plotSettings;
 
-  if (isVrActive || !shouldRender) {
+  if (isVrActive || (!shouldRender && !isPlotWindowOpen)) {
     return null;
   }
 

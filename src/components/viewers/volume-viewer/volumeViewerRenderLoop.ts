@@ -3,6 +3,7 @@ import * as THREE from 'three';
 import type { OrbitControls } from 'three/examples/jsm/controls/OrbitControls';
 
 import type { VolumeResources } from '../VolumeViewer.types';
+import type { CameraWindowState } from '../../../types/camera';
 import {
   computeProjectedPixelsPerUnit,
   getProjectionModeForCamera,
@@ -38,6 +39,8 @@ type CreateVolumeViewerRenderLoopOptions = {
   resourcesRef: MutableRefObject<Map<string, VolumeResources>>;
   currentDimensionsRef?: MutableRefObject<{ width: number; height: number; depth: number } | null>;
   onCameraNavigationSample?: (sample: ViewerCameraNavigationSample) => void;
+  emitCameraWindowState?: () => CameraWindowState | null;
+  onCameraWindowStateChange?: (state: CameraWindowState | null) => void;
   advancePlaybackFrame: (timestamp: number) => void;
   refreshVrHudPlacements: () => void;
   updateControllerRays: () => void;
@@ -64,6 +67,8 @@ export function createVolumeViewerRenderLoop({
   resourcesRef,
   currentDimensionsRef,
   onCameraNavigationSample,
+  emitCameraWindowState,
+  onCameraWindowStateChange,
   advancePlaybackFrame,
   refreshVrHudPlacements,
   updateControllerRays,
@@ -72,10 +77,12 @@ export function createVolumeViewerRenderLoop({
 }: CreateVolumeViewerRenderLoopOptions): (timestamp: number) => void {
   let lastRenderTickSummary: { presenting: boolean; hoveredByController: string | null } | null = null;
   const cameraWorldPosition = new THREE.Vector3();
+  const fallbackProjectionTarget = new THREE.Vector3();
   const previousCameraPosition = new THREE.Vector3(Number.NaN, Number.NaN, Number.NaN);
   const previousTarget = new THREE.Vector3(Number.NaN, Number.NaN, Number.NaN);
   const worldBoundsSphere = new THREE.Sphere();
   let lastCameraSampleSentAtMs = Number.NEGATIVE_INFINITY;
+  let lastCameraWindowStateSentAtMs = Number.NEGATIVE_INFINITY;
   let lastMovementState = false;
 
   const CAMERA_MOVEMENT_EPSILON_SQ = 1e-8;
@@ -111,12 +118,14 @@ export function createVolumeViewerRenderLoop({
       !hasPreviousCameraPose ||
       camera.position.distanceToSquared(previousCameraPosition) > CAMERA_MOVEMENT_EPSILON_SQ ||
       controls.target.distanceToSquared(previousTarget) > CAMERA_MOVEMENT_EPSILON_SQ;
+    const movementStateChanged = cameraMoved !== lastMovementState;
     previousCameraPosition.copy(camera.position);
     previousTarget.copy(controls.target);
 
     const resources = resourcesRef.current;
     cameraWorldPosition.setFromMatrixPosition(camera.matrixWorld);
     let nearestVisibleVolumeDistance = Number.POSITIVE_INFINITY;
+    let nearestVisibleVolumeTarget: THREE.Vector3 | null = null;
     for (const resource of resources.values()) {
       const { mesh } = resource;
       mesh.updateMatrixWorld();
@@ -137,31 +146,38 @@ export function createVolumeViewerRenderLoop({
           );
           if (distanceToBounds < nearestVisibleVolumeDistance) {
             nearestVisibleVolumeDistance = distanceToBounds;
+            nearestVisibleVolumeTarget = worldBoundsSphere.center.clone();
           }
         }
       }
     }
 
+    const currentDimensions = currentDimensionsRef?.current ?? null;
+    const referenceDimension = currentDimensions
+      ? Math.max(currentDimensions.width, currentDimensions.height, currentDimensions.depth, 1)
+      : 1;
+    const projectionTarget =
+      nearestVisibleVolumeTarget ??
+      fallbackProjectionTarget.copy(camera.position).add(
+        camera.getWorldDirection(new THREE.Vector3()).multiplyScalar(Math.max(referenceDimension * 0.5, 1)),
+      );
+
+    const shouldEmitCameraSample =
+      !Number.isFinite(lastCameraSampleSentAtMs) ||
+      timestamp - lastCameraSampleSentAtMs >= CAMERA_SAMPLE_INTERVAL_MS ||
+      movementStateChanged;
+
     if (onCameraNavigationSample) {
-      const shouldEmitCameraSample =
-        !Number.isFinite(lastCameraSampleSentAtMs) ||
-        timestamp - lastCameraSampleSentAtMs >= CAMERA_SAMPLE_INTERVAL_MS ||
-        cameraMoved !== lastMovementState;
       if (shouldEmitCameraSample) {
         lastCameraSampleSentAtMs = timestamp;
-        lastMovementState = cameraMoved;
         const sampledCameraDistance = Number.isFinite(nearestVisibleVolumeDistance)
           ? nearestVisibleVolumeDistance
-          : camera.position.distanceTo(controls.target);
+          : Math.max(referenceDimension * 0.5, 1);
         const projectedPixelsPerUnit = computeProjectedPixelsPerUnit(
           camera,
           renderer,
-          controls.target,
+          projectionTarget,
         );
-        const currentDimensions = currentDimensionsRef?.current ?? null;
-        const referenceDimension = currentDimensions
-          ? Math.max(currentDimensions.width, currentDimensions.height, currentDimensions.depth, 1)
-          : 1;
         onCameraNavigationSample({
           projectionMode: getProjectionModeForCamera(camera),
           distanceToTarget: sampledCameraDistance,
@@ -170,6 +186,21 @@ export function createVolumeViewerRenderLoop({
           capturedAtMs: Date.now()
         });
       }
+    }
+
+    if (onCameraWindowStateChange && emitCameraWindowState) {
+      const shouldEmitCameraWindowState =
+        !Number.isFinite(lastCameraWindowStateSentAtMs) ||
+        timestamp - lastCameraWindowStateSentAtMs >= CAMERA_SAMPLE_INTERVAL_MS ||
+        movementStateChanged;
+      if (shouldEmitCameraWindowState) {
+        lastCameraWindowStateSentAtMs = timestamp;
+        onCameraWindowStateChange(emitCameraWindowState());
+      }
+    }
+
+    if (shouldEmitCameraSample || (onCameraWindowStateChange && emitCameraWindowState)) {
+      lastMovementState = cameraMoved;
     }
 
     const hoverPulse = 0.5 + 0.5 * Math.sin(timestamp * HOVER_PULSE_SPEED);

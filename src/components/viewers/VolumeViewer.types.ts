@@ -26,6 +26,10 @@ import type { RenderStyle, SamplingMode } from '../../state/layerSettings';
 import type { TrackSetState } from '../../types/channelTracks';
 import type { PlaybackIndexWindow } from '../../shared/utils';
 import type {
+  CameraWindowController,
+  CameraWindowState,
+} from '../../types/camera';
+import type {
   DesktopViewState,
   DesktopViewStateMap,
   DesktopViewerCamera,
@@ -131,6 +135,11 @@ export type ViewerPropsConfig = {
   onUpdateWorldPosition: (propId: string, nextPosition: { x: number; y: number }) => void;
 };
 
+export type VolumeViewerCaptureTarget = {
+  canvas: HTMLCanvasElement | null;
+  captureImage?: () => Promise<Blob | null>;
+};
+
 export type ViewerRoiConfig = {
   isDrawWindowOpen: boolean;
   tool: RoiTool;
@@ -177,9 +186,17 @@ export type VolumeViewerProps = {
   onVolumeStepScaleChange?: (value: number) => void;
   onRegisterVolumeStepScaleChange?: (handler: ((value: number) => void) | null) => void;
   onCameraNavigationSample?: (sample: ViewerCameraNavigationSample) => void;
+  translationSpeedMultiplier?: number;
+  rotationSpeedMultiplier?: number;
+  onCameraWindowStateChange?: (state: CameraWindowState | null) => void;
+  onRegisterCameraWindowController?: (controller: CameraWindowController | null) => void;
   onRegisterReset: (handler: (() => void) | null) => void;
   onRegisterCaptureTarget?: (
-    target: HTMLCanvasElement | (() => HTMLCanvasElement | null) | null,
+    target:
+      | VolumeViewerCaptureTarget
+      | HTMLCanvasElement
+      | (() => VolumeViewerCaptureTarget | HTMLCanvasElement | null)
+      | null,
   ) => void;
   trackScale: { x: number; y: number; z: number };
   tracks: CompiledTrackSummary[];
@@ -225,7 +242,7 @@ export type VolumeResources = {
   renderStyle?: RenderStyle;
   projectionMode?: ViewerProjectionMode;
   samplingMode: 'linear' | 'nearest';
-  sliceBuffer?: Uint8Array | null;
+  sliceBuffer?: Uint8Array | Float32Array | null;
   brickPageTable?: VolumeBrickPageTable | null;
   brickOccupancyTexture?: THREE.Data3DTexture | null;
   brickMinTexture?: THREE.Data3DTexture | null;
@@ -246,7 +263,7 @@ export type VolumeResources = {
   brickSubcellSourceToken?: object | Uint8Array | null;
   brickSubcellGrid?: { x: number; y: number; z: number } | null;
   brickAtlasSourceToken?: object | null;
-  brickAtlasSourceData?: Uint8Array | Uint16Array | null;
+  brickAtlasSourceData?: Uint8Array | Uint16Array | Float32Array | null;
   brickAtlasSourceFormat?: THREE.Data3DTexture['format'] | null;
   brickAtlasSourcePageTable?: VolumeBrickPageTable | null;
   brickAtlasSlotGrid?: { x: number; y: number; z: number } | null;

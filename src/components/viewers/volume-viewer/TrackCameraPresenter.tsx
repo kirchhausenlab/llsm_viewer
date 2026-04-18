@@ -40,7 +40,7 @@ export function TrackCameraPresenter({
       followedTrackId !== null
         ? `track:${followedTrackId}`
         : followedVoxel
-          ? `voxel:${followedVoxel.layerKey}:${followedVoxel.coordinates.x},${followedVoxel.coordinates.y},${followedVoxel.coordinates.z}`
+          ? `voxel:${followedVoxel.coordinates.x},${followedVoxel.coordinates.y},${followedVoxel.coordinates.z}`
           : null,
     [followedTrackId, followedVoxel],
   );

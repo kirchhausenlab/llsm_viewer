@@ -9,6 +9,8 @@ import {
 } from '../../shared/storage/preprocessedStorage';
 import type { PreprocessedStorageHandle } from '../../shared/storage/preprocessedStorage';
 import { parseBackgroundMaskValues } from '../../shared/utils/backgroundMask';
+import { detectVolumeDataTypeFromTypedArray, getBytesPerValue } from '../../types/volume';
+import { fromBlob } from 'geotiff';
 import {
   getDirectoryPickerUnavailableMessage,
   inspectDirectoryPickerSupport
@@ -142,12 +144,13 @@ export default function FrontPageContainer({
   const [selectedExperimentType, setSelectedExperimentType] = useState<ExperimentType>('single-3d-volume');
   const [backgroundMaskEnabled, setBackgroundMaskEnabled] = useState(false);
   const [backgroundMaskValuesInput, setBackgroundMaskValuesInput] = useState('');
+  const [renderIn16Bit, setRenderIn16Bit] = useState(false);
 
   const createDefaultExportName = useCallback((): string => {
     const now = new Date();
     const stamp = now.toISOString().replace(/[:.]/g, '-');
     const random = Math.random().toString(16).slice(2, 6);
-    return `llsm-viewer-preprocessed-vnext-hes1-${stamp}-${random}`;
+    return `llsm-viewer-preprocessed-vnext-hes2-${stamp}-${random}`;
   }, []);
 
   const ensureZarrDirectoryName = useCallback((name: string): string => {
@@ -232,6 +235,7 @@ export default function FrontPageContainer({
     setSelectedExperimentType('single-3d-volume');
     setBackgroundMaskEnabled(false);
     setBackgroundMaskValuesInput('');
+    setRenderIn16Bit(false);
     onReturnToStart();
   }, [onReturnToStart]);
 
@@ -242,6 +246,55 @@ export default function FrontPageContainer({
   const handleBackgroundMaskValuesInputChange = useCallback((value: string) => {
     setBackgroundMaskValuesInput(value);
   }, []);
+
+  const handleRenderIn16BitToggle = useCallback((value: boolean) => {
+    setRenderIn16Bit(value);
+  }, []);
+
+  const hasAnyHighPrecisionNonSegmentationLayer = useCallback(async (): Promise<boolean> => {
+    const nonSegmentationLayers = channels
+      .map((channel) => channel.volume)
+      .filter((layer): layer is NonNullable<(typeof channels)[number]['volume']> => layer !== null && !layer.isSegmentation);
+
+    if (nonSegmentationLayers.length === 0) {
+      return false;
+    }
+
+    for (const layer of nonSegmentationLayers) {
+      if (layer.sourceDataType && getBytesPerValue(layer.sourceDataType) > 1) {
+        return true;
+      }
+    }
+
+    for (const layer of nonSegmentationLayers) {
+      const firstFile = layer.files[0] ?? null;
+      if (!firstFile) {
+        continue;
+      }
+      const tiff = await fromBlob(firstFile);
+      const image = await tiff.getImage(0);
+      const rasterRaw = (await image.readRasters({ interleave: true })) as unknown;
+      if (!ArrayBuffer.isView(rasterRaw)) {
+        continue;
+      }
+      const sourceDataType = detectVolumeDataTypeFromTypedArray(
+        rasterRaw as
+          | Uint8Array
+          | Int8Array
+          | Uint16Array
+          | Int16Array
+          | Uint32Array
+          | Int32Array
+          | Float32Array
+          | Float64Array
+      );
+      if (getBytesPerValue(sourceDataType) > 1) {
+        return true;
+      }
+    }
+
+    return false;
+  }, [channels]);
 
   const backgroundMaskParseResult = useMemo(() => {
     if (!backgroundMaskEnabled) {
@@ -274,8 +327,18 @@ export default function FrontPageContainer({
       return;
     }
 
-      setPreprocessSuccessMessage(null);
-      setIsPreprocessingExperiment(true);
+    if (renderIn16Bit) {
+      const hasHighPrecisionLayer = await hasAnyHighPrecisionNonSegmentationLayer();
+      if (!hasHighPrecisionLayer) {
+        showInteractionWarning(
+          'Render in 16bit is only useful when at least one non-segmentation layer has source precision above 8 bits. Uncheck "Render in 16bit" to continue.'
+        );
+        return;
+      }
+    }
+
+    setPreprocessSuccessMessage(null);
+    setIsPreprocessingExperiment(true);
     try {
       setIsExperimentSetupStarted(true);
       const channelsMetadata = channels.map((channel) => ({
@@ -331,6 +394,7 @@ export default function FrontPageContainer({
             label: 'Volume',
             files: layer.files,
             isSegmentation: layer.isSegmentation,
+            sourceDataType: layer.sourceDataType,
             sourceChannelCount: layer.sourceChannels,
             sourceChannelIndex:
               typeof layer.componentIndex === 'number' && (layer.sourceChannels ?? 1) > 1 ? layer.componentIndex : null
@@ -417,6 +481,7 @@ export default function FrontPageContainer({
               values: backgroundMaskParseResult.values
             }
           : null,
+        renderIn16Bit,
         storage: selectedStorageHandle.storage,
         storageStrategy: PREPROCESS_STORAGE_STRATEGY
       });
@@ -450,9 +515,11 @@ export default function FrontPageContainer({
     backgroundMaskEnabled,
     backgroundMaskParseResult.error,
     backgroundMaskParseResult.values,
+    hasAnyHighPrecisionNonSegmentationLayer,
     isLaunchingViewer,
     isPreprocessingExperiment,
     isPreprocessedImporting,
+    renderIn16Bit,
     setIsExperimentSetupStarted,
     setPreprocessedExperiment,
     showInteractionWarning,
@@ -512,7 +579,9 @@ export default function FrontPageContainer({
     backgroundMaskValuesInput,
     backgroundMaskError: backgroundMaskEnabled ? backgroundMaskParseResult.error : null,
     onBackgroundMaskToggle: handleBackgroundMaskToggle,
-    onBackgroundMaskValuesInputChange: handleBackgroundMaskValuesInputChange
+    onBackgroundMaskValuesInputChange: handleBackgroundMaskValuesInputChange,
+    renderIn16Bit,
+    onRenderIn16BitToggle: handleRenderIn16BitToggle
   };
 
   const preprocessedLoaderProps = {

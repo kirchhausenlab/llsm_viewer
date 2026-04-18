@@ -241,6 +241,7 @@ export function usePaintbrush({
       depth: dimensions.depth,
       channels: 4,
       dataType: 'uint8',
+      normalizedDataType: 'uint8',
       normalized: rgba,
       min: 0,
       max: 255,

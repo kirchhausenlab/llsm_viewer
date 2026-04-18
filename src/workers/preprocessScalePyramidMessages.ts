@@ -1,5 +1,6 @@
 import type { NormalizationParameters } from '../core/volumeProcessing';
 import type { VolumeDataType } from '../types/volume';
+import type { StoredIntensityDataType } from '../shared/utils/preprocessedDataset/types';
 
 export type PreprocessScaleSpecMessage = {
   level: number;
@@ -14,6 +15,7 @@ export type BuildPreprocessScalePyramidMessage = {
   requestId: number;
   layerKey: string;
   isSegmentation: boolean;
+  storedDataType?: StoredIntensityDataType;
   normalization: NormalizationParameters | null;
   rawVolume: {
     width: number;
@@ -32,6 +34,7 @@ export type BuildPreprocessScalePyramidMessage = {
 export type PreprocessScalePyramidReadyMessage = {
   type: 'preprocess-scale-pyramid-ready';
   requestId: number;
+  storedDataType?: StoredIntensityDataType;
   scales: Array<{
     level: number;
     width: number;

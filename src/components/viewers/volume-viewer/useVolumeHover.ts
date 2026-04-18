@@ -228,7 +228,7 @@ export function useVolumeHover({
         return;
       }
       if (!hoverSettings.enabled) {
-        reportVoxelHoverAbort('Hover disabled in Hover Settings.');
+        reportVoxelHoverAbort('Hover disabled in Hover settings.');
         return;
       }
 
@@ -277,15 +277,17 @@ export function useVolumeHover({
       const targetMax = targetVolume?.max ?? targetLayer?.max ?? 255;
       const targetAtlasSource =
         !targetVolume &&
+        targetLayer &&
         targetAtlasPageTable &&
         targetAtlasData &&
         targetAtlasTextureFormat
           ? {
+              kind: (targetLayer.isSegmentation ? 'segmentation' : 'intensity') as 'segmentation' | 'intensity',
               pageTable: targetAtlasPageTable,
               atlasData: targetAtlasData,
               textureFormat: targetAtlasTextureFormat,
               sourceChannels: targetSourceChannels,
-              dataType: targetDataType,
+              dataType: targetLayer?.storedDataType ?? (targetLayer?.isSegmentation ? 'uint16' : 'uint8'),
               min: targetMin,
               max: targetMax,
             }
@@ -608,11 +610,12 @@ export function useVolumeHover({
                     return layerAtlasPageTable && layerAtlasData && layerAtlasTextureFormat
                       ? sampleBrickAtlasLabelAtNormalizedPosition(
                           {
+                            kind: (layer.isSegmentation ? 'segmentation' : 'intensity') as 'segmentation' | 'intensity',
                             pageTable: layerAtlasPageTable,
                             atlasData: layerAtlasData,
                             textureFormat: layerAtlasTextureFormat,
                             sourceChannels: layer.channels ?? layer.brickAtlas?.sourceChannels ?? 1,
-                            dataType: (layer.dataType ?? 'uint16') as NormalizedVolume['dataType'],
+                            dataType: layer.storedDataType ?? (layer.isSegmentation ? 'uint16' : 'uint8'),
                             min: layer.min ?? 0,
                             max: layer.max ?? 0,
                           },
@@ -648,6 +651,7 @@ export function useVolumeHover({
             if (layerAtlasPageTable && layerAtlasData && layerAtlasTextureFormat) {
               const atlasSample = sampleBrickAtlasAtNormalizedPosition(
                 {
+                  kind: (layer.isSegmentation ? 'segmentation' : 'intensity') as 'segmentation' | 'intensity',
                   pageTable: layerAtlasPageTable,
                   atlasData: layerAtlasData,
                   textureFormat: layerAtlasTextureFormat,
@@ -655,7 +659,7 @@ export function useVolumeHover({
                     layer.channels ??
                     layer.brickAtlas?.sourceChannels ??
                     targetSourceChannels,
-                  dataType: (layer.dataType ?? targetDataType) as NormalizedVolume['dataType'],
+                  dataType: layer.storedDataType ?? (layer.isSegmentation ? 'uint16' : 'uint8'),
                   min: layer.min ?? targetMin,
                   max: layer.max ?? targetMax,
                 },

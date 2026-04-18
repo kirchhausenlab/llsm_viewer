@@ -143,10 +143,13 @@ function createProps(overrides: Partial<React.ComponentProps<typeof TopMenu>> = 
     hoverCoordinateDigits: { x: 1, y: 1, z: 1 },
     hoverIntensityValueDigits: 1,
     onOpenChannelsWindow: () => {},
+    onOpenCameraWindow: () => {},
+    onOpenCameraSettingsWindow: () => {},
     onOpenPropsWindow: () => {},
     onOpenPaintbrush: () => {},
     onOpenDrawRoiWindow: () => {},
     onOpenRoiManagerWindow: () => {},
+    onOpenSetMeasurementsWindow: () => {},
     onOpenRecordWindow: () => {},
     onOpenRenderSettingsWindow: () => {},
     onOpenHoverSettingsWindow: () => {},
@@ -235,8 +238,8 @@ test('top menu renders the requested dropdown order and items', () => {
 
     const expectedMenus = new Map<string, string[]>([
       ['File', ['Save changes', 'Reset changes', 'Recenter windows', 'Diagnostics', 'Exit']],
-      ['View', ['Channels window', 'Camera', 'Record', 'Background', 'Render settings', 'Hover Settings']],
-      ['Edit', ['Props', 'Paintbrush', 'Draw ROI', 'ROI Manager']],
+      ['View', ['Channels', 'View selection', 'Screen capture', 'Background', 'Render settings', 'Camera settings', 'Hover settings']],
+      ['Edit', ['Props', 'Paintbrush', 'Draw ROI', 'ROI Manager', 'Set measurements']],
       ['Tracks', ['Tracks window', 'Amplitude plot', 'Plot settings', 'Tracks settings']],
       ['Help', ['About', 'Controls']]
     ]);
@@ -296,10 +299,13 @@ test('wired dropdown items invoke the expected handlers', () => {
     let exitCalls = 0;
     let resetCalls = 0;
     let channelsCalls = 0;
+    let cameraCalls = 0;
+    let cameraSettingsCalls = 0;
     let propsCalls = 0;
     let paintbrushCalls = 0;
     let drawRoiCalls = 0;
     let roiManagerCalls = 0;
+    let setMeasurementsCalls = 0;
     let recordCalls = 0;
     let renderSettingsCalls = 0;
     let hoverSettingsCalls = 0;
@@ -320,6 +326,12 @@ test('wired dropdown items invoke the expected handlers', () => {
       onOpenChannelsWindow: () => {
         channelsCalls += 1;
       },
+      onOpenCameraWindow: () => {
+        cameraCalls += 1;
+      },
+      onOpenCameraSettingsWindow: () => {
+        cameraSettingsCalls += 1;
+      },
       onOpenPropsWindow: () => {
         propsCalls += 1;
       },
@@ -331,6 +343,9 @@ test('wired dropdown items invoke the expected handlers', () => {
       },
       onOpenRoiManagerWindow: () => {
         roiManagerCalls += 1;
+      },
+      onOpenSetMeasurementsWindow: () => {
+        setMeasurementsCalls += 1;
       },
       onOpenRecordWindow: () => {
         recordCalls += 1;
@@ -379,14 +394,28 @@ test('wired dropdown items invoke the expected handlers', () => {
       findDropdownTrigger(renderer, 'View').props.onClick();
     });
     act(() => {
-      findMenuItem(renderer, 'Channels window').props.onClick();
+      findMenuItem(renderer, 'Channels').props.onClick();
     });
 
     act(() => {
       findDropdownTrigger(renderer, 'View').props.onClick();
     });
     act(() => {
-      findMenuItem(renderer, 'Record').props.onClick();
+      findMenuItem(renderer, 'View selection').props.onClick();
+    });
+
+    act(() => {
+      findDropdownTrigger(renderer, 'View').props.onClick();
+    });
+    act(() => {
+      findMenuItem(renderer, 'Camera settings').props.onClick();
+    });
+
+    act(() => {
+      findDropdownTrigger(renderer, 'View').props.onClick();
+    });
+    act(() => {
+      findMenuItem(renderer, 'Screen capture').props.onClick();
     });
 
     act(() => {
@@ -425,6 +454,13 @@ test('wired dropdown items invoke the expected handlers', () => {
     });
 
     act(() => {
+      findDropdownTrigger(renderer, 'Edit').props.onClick();
+    });
+    act(() => {
+      findMenuItem(renderer, 'Set measurements').props.onClick();
+    });
+
+    act(() => {
       findDropdownTrigger(renderer, 'View').props.onClick();
     });
     act(() => {
@@ -435,7 +471,7 @@ test('wired dropdown items invoke the expected handlers', () => {
       findDropdownTrigger(renderer, 'View').props.onClick();
     });
     act(() => {
-      findMenuItem(renderer, 'Hover Settings').props.onClick();
+      findMenuItem(renderer, 'Hover settings').props.onClick();
     });
 
     act(() => {
@@ -476,10 +512,13 @@ test('wired dropdown items invoke the expected handlers', () => {
     assert.equal(resetCalls, 1);
     assert.equal(exitCalls, 1);
     assert.equal(channelsCalls, 1);
+    assert.equal(cameraCalls, 1);
+    assert.equal(cameraSettingsCalls, 1);
     assert.equal(propsCalls, 1);
     assert.equal(paintbrushCalls, 1);
     assert.equal(drawRoiCalls, 1);
     assert.equal(roiManagerCalls, 1);
+    assert.equal(setMeasurementsCalls, 1);
     assert.equal(recordCalls, 1);
     assert.equal(renderSettingsCalls, 1);
     assert.equal(hoverSettingsCalls, 1);
@@ -500,14 +539,13 @@ test('top menu placeholder actions render as inactive buttons', () => {
     const inactiveItems = [
       'Save changes',
       'Reset changes',
-      'Camera',
       'Background',
       'About'
     ];
 
     for (const [menuLabel, itemLabel] of [
       ['File', 'Save changes'],
-      ['View', 'Camera'],
+      ['View', 'Background'],
       ['Help', 'About']
     ] as const) {
       act(() => {
@@ -518,7 +556,7 @@ test('top menu placeholder actions render as inactive buttons', () => {
         menuLabel === 'File'
           ? value === 'Save changes' || value === 'Reset changes'
           : menuLabel === 'View'
-            ? value === 'Camera' || value === 'Background'
+            ? value === 'Background'
             : value === 'About'
       )) {
         assert.equal(findMenuItem(renderer, label).props.disabled, true);
@@ -554,12 +592,13 @@ test('top menu does not close the controls window when another menu opens', () =
       .map((node) => extractText(node));
 
     assert.deepEqual(renderedItems, [
-      'Channels window',
-      'Camera',
-      'Record',
+      'Channels',
+      'View selection',
+      'Screen capture',
       'Background',
       'Render settings',
-      'Hover Settings'
+      'Camera settings',
+      'Hover settings'
     ]);
     assert.equal(closeHelpCalls, 0);
 
@@ -685,6 +724,7 @@ test('top menu places scale, hover, and follow status in their updated columns',
     const renderer = renderTopMenu({
       currentScaleLabel: '1.25x',
       isPerformanceMode: true,
+      trackSets: [{ id: 'set-a', name: 'Tracks A' }],
       followedTrackSetId: 'set-a',
       followedTrackId: 'track-1',
       hoveredVoxel: {
@@ -732,7 +772,21 @@ test('top menu places scale, hover, and follow status in their updated columns',
       bottomThirdColumn.findAll((node) => hasClassName(node, 'viewer-top-menu-hover-column')).length > 0
     );
     assert.equal(
-      bottomFourthColumn.findAll((node) => node.type === 'button' && extractText(node) === 'Stop following').length,
+      bottomFourthColumn.findAll((node) => hasClassName(node, 'viewer-top-menu-follow-target')).length,
+      1
+    );
+    assert.equal(
+      bottomFourthColumn.findAll(
+        (node) => node.type === 'button' && extractText(node) === 'Stop'
+      ).length,
+      1
+    );
+    assert.equal(
+      bottomFourthColumn.findAll(
+        (node) =>
+          hasClassName(node, 'viewer-top-menu-follow-target') &&
+          extractText(node) === 'Following Tracks A track #1'
+      ).length,
       1
     );
     assert.equal(
@@ -772,6 +826,28 @@ test('top menu keeps all three shared column dividers even when track tabs are a
     assert.ok(bottomFirstColumn.findByProps({ id: 'channel-tab-channel-a' }));
     assert.equal(bottomSecondColumn.findAll((node) => node.props.role === 'tab').length, 0);
     assert.equal(columnDividers.length, 3);
+
+    renderer.unmount();
+  });
+});
+
+test('top menu reports followed voxel coordinates next to the stop control', () => {
+  withEnvironmentMocks(() => {
+    const renderer = renderTopMenu({
+      followedVoxel: {
+        coordinates: { x: 12, y: 34, z: 56 }
+      }
+    });
+
+    const followTargets = renderer.root.findAll(
+      (node) => hasClassName(node, 'viewer-top-menu-follow-target') && extractText(node) === 'Following voxel (12, 34, 56)'
+    );
+    const stopButtons = renderer.root.findAll(
+      (node) => node.type === 'button' && extractText(node) === 'Stop'
+    );
+
+    assert.equal(followTargets.length, 1);
+    assert.equal(stopButtons.length, 1);
 
     renderer.unmount();
   });

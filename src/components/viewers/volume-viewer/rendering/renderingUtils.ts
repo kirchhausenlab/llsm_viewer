@@ -1,5 +1,9 @@
 import * as THREE from 'three';
-import { isSegmentationVolume, type NormalizedVolume } from '../../../../core/volumeProcessing';
+import {
+  getNormalizedIntensityDenominator,
+  isSegmentationVolume,
+  type NormalizedVolume
+} from '../../../../core/volumeProcessing';
 import type { VolumeBrickAtlasTextureFormat, VolumeBrickPageTable } from '../../../../core/volumeProvider';
 
 export function disposeMaterial(material: THREE.Material | THREE.Material[] | null | undefined) {
@@ -18,7 +22,7 @@ export function getExpectedSliceBufferLength(volume: NormalizedVolume) {
 export function prepareSliceTexture(
   volume: NormalizedVolume,
   sliceIndex: number,
-  existingBuffer: Uint8Array | null,
+  existingBuffer: Uint8Array | Float32Array | null,
   segmentationColorTable: Uint8Array | null = null,
 ) {
   const { width, height, depth } = volume;
@@ -27,7 +31,9 @@ export function prepareSliceTexture(
 
   let buffer = existingBuffer ?? null;
   if (!buffer || buffer.length !== targetLength) {
-    buffer = new Uint8Array(targetLength);
+    buffer = isSegmentationVolume(volume) || volume.normalizedDataType === 'uint8'
+      ? new Uint8Array(targetLength)
+      : new Float32Array(targetLength);
   }
 
   const maxIndex = Math.max(0, depth - 1);
@@ -54,7 +60,9 @@ export function prepareSliceTexture(
     return { data: buffer, format: THREE.RGBAFormat } as const;
   }
 
-  const { channels, normalized } = volume;
+  const { channels, normalized, normalizedDataType } = volume;
+  const denominator = getNormalizedIntensityDenominator(normalizedDataType);
+  const alphaOpaque = normalizedDataType === 'uint16' ? 1 : denominator;
   const sliceStride = pixelCount * channels;
   const sliceOffset = clampedIndex * sliceStride;
 
@@ -62,26 +70,30 @@ export function prepareSliceTexture(
     const sourceOffset = sliceOffset + i * channels;
     const targetOffset = i * 4;
 
-    const red = normalized[sourceOffset] ?? 0;
-    const green = channels > 1 ? normalized[sourceOffset + 1] ?? 0 : red;
-    const blue = channels > 2 ? normalized[sourceOffset + 2] ?? 0 : green;
-    const alpha = channels > 3 ? normalized[sourceOffset + 3] ?? 255 : 255;
+    const redSource = normalized[sourceOffset] ?? 0;
+    const greenSource = channels > 1 ? normalized[sourceOffset + 1] ?? 0 : redSource;
+    const blueSource = channels > 2 ? normalized[sourceOffset + 2] ?? 0 : greenSource;
+    const alphaSource = channels > 3 ? normalized[sourceOffset + 3] ?? denominator : denominator;
+    const red = normalizedDataType === 'uint16' ? redSource / denominator : redSource;
+    const green = normalizedDataType === 'uint16' ? greenSource / denominator : greenSource;
+    const blue = normalizedDataType === 'uint16' ? blueSource / denominator : blueSource;
+    const alpha = normalizedDataType === 'uint16' ? alphaSource / denominator : alphaSource;
 
     if (channels === 1) {
       buffer[targetOffset] = red;
       buffer[targetOffset + 1] = red;
       buffer[targetOffset + 2] = red;
-      buffer[targetOffset + 3] = 255;
+      buffer[targetOffset + 3] = alphaOpaque;
     } else if (channels === 2) {
       buffer[targetOffset] = red;
       buffer[targetOffset + 1] = green;
       buffer[targetOffset + 2] = 0;
-      buffer[targetOffset + 3] = 255;
+      buffer[targetOffset + 3] = alphaOpaque;
     } else if (channels === 3) {
       buffer[targetOffset] = red;
       buffer[targetOffset + 1] = green;
       buffer[targetOffset + 2] = blue;
-      buffer[targetOffset + 3] = 255;
+      buffer[targetOffset + 3] = alphaOpaque;
     } else {
       buffer[targetOffset] = red;
       buffer[targetOffset + 1] = green;
@@ -94,6 +106,7 @@ export function prepareSliceTexture(
 }
 
 type BrickAtlasSliceSource = {
+  kind: 'intensity' | 'segmentation';
   pageTable: Pick<VolumeBrickPageTable, 'gridShape' | 'chunkShape' | 'volumeShape' | 'brickAtlasIndices'>;
   atlasData: Uint8Array | Uint16Array;
   textureFormat: VolumeBrickAtlasTextureFormat;
@@ -188,7 +201,7 @@ function sampleBrickAtlasVoxelValue(
 export function prepareSliceTextureFromBrickAtlas(
   source: BrickAtlasSliceSource,
   sliceIndex: number,
-  existingBuffer: Uint8Array | null,
+  existingBuffer: Uint8Array | Float32Array | null,
   segmentationColorTable: Uint8Array | null = null,
 ) {
   const depth = Math.max(1, source.pageTable.volumeShape[0]);
@@ -200,13 +213,15 @@ export function prepareSliceTextureFromBrickAtlas(
 
   let buffer = existingBuffer ?? null;
   if (!buffer || buffer.length !== targetLength) {
-    buffer = new Uint8Array(targetLength);
+    buffer = source.kind === 'segmentation' || source.dataType === 'uint8'
+      ? new Uint8Array(targetLength)
+      : new Float32Array(targetLength);
   }
 
   const maxIndex = Math.max(0, depth - 1);
   const clampedIndex = Math.min(Math.max(sliceIndex, 0), maxIndex);
 
-  if (source.dataType === 'uint16') {
+  if (source.kind === 'segmentation') {
     for (let y = 0; y < height; y += 1) {
       for (let x = 0; x < width; x += 1) {
         const targetOffset = (y * width + x) * 4;
@@ -235,29 +250,35 @@ export function prepareSliceTextureFromBrickAtlas(
     } as const;
   }
 
+  const denominator = getNormalizedIntensityDenominator(source.dataType);
+  const alphaOpaque = source.dataType === 'uint16' ? 1 : denominator;
   for (let y = 0; y < height; y += 1) {
     for (let x = 0; x < width; x += 1) {
       const targetOffset = (y * width + x) * 4;
-      const red = sampleBrickAtlasVoxelValue(source, x, y, clampedIndex, 0);
-      const green = channels > 1 ? sampleBrickAtlasVoxelValue(source, x, y, clampedIndex, 1) : red;
-      const blue = channels > 2 ? sampleBrickAtlasVoxelValue(source, x, y, clampedIndex, 2) : green;
-      const alpha = channels > 3 ? sampleBrickAtlasVoxelValue(source, x, y, clampedIndex, 3) : 255;
+      const redSource = sampleBrickAtlasVoxelValue(source, x, y, clampedIndex, 0);
+      const greenSource = channels > 1 ? sampleBrickAtlasVoxelValue(source, x, y, clampedIndex, 1) : redSource;
+      const blueSource = channels > 2 ? sampleBrickAtlasVoxelValue(source, x, y, clampedIndex, 2) : greenSource;
+      const alphaSource = channels > 3 ? sampleBrickAtlasVoxelValue(source, x, y, clampedIndex, 3) : denominator;
+      const red = source.dataType === 'uint16' ? redSource / denominator : redSource;
+      const green = source.dataType === 'uint16' ? greenSource / denominator : greenSource;
+      const blue = source.dataType === 'uint16' ? blueSource / denominator : blueSource;
+      const alpha = source.dataType === 'uint16' ? alphaSource / denominator : alphaSource;
 
       if (channels === 1) {
         buffer[targetOffset] = red;
         buffer[targetOffset + 1] = red;
         buffer[targetOffset + 2] = red;
-        buffer[targetOffset + 3] = 255;
+        buffer[targetOffset + 3] = alphaOpaque;
       } else if (channels === 2) {
         buffer[targetOffset] = red;
         buffer[targetOffset + 1] = green;
         buffer[targetOffset + 2] = 0;
-        buffer[targetOffset + 3] = 255;
+        buffer[targetOffset + 3] = alphaOpaque;
       } else if (channels === 3) {
         buffer[targetOffset] = red;
         buffer[targetOffset + 1] = green;
         buffer[targetOffset + 2] = blue;
-        buffer[targetOffset + 3] = 255;
+        buffer[targetOffset + 3] = alphaOpaque;
       } else {
         buffer[targetOffset] = red;
         buffer[targetOffset + 1] = green;

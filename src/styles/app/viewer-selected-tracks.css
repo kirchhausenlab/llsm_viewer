@@ -73,7 +73,6 @@
 
 .selected-tracks-hover text {
   fill: rgba(255, 255, 255, 0.88);
-  font-size: 0.78rem;
   font-weight: 700;
   font-variant-numeric: tabular-nums;
 }
@@ -89,7 +88,6 @@
 
 .selected-tracks-chart-axis-labels text {
   fill: rgba(255, 255, 255, 0.78);
-  font-size: 0.8rem;
   font-weight: 600;
   font-family: inherit;
   font-variant-numeric: tabular-nums;
@@ -97,7 +95,6 @@
 
 .selected-tracks-axis-caption {
   fill: rgba(255, 255, 255, 0.7);
-  font-size: 0.82rem;
   letter-spacing: 0.02em;
   text-transform: none;
   font-weight: 700;
@@ -116,7 +113,6 @@
   align-items: center;
   justify-content: center;
   margin: 0;
-  font-size: 0.9rem;
   color: rgba(255, 255, 255, 0.6);
   pointer-events: none;
   text-align: center;
@@ -160,14 +156,12 @@
 }
 
 .selected-tracks-slider__label {
-  font-size: 0.85rem;
   font-weight: 700;
   letter-spacing: 0.02em;
   color: rgba(255, 255, 255, 0.9);
 }
 
 .selected-tracks-slider__value {
-  font-size: 0.85rem;
   color: rgba(255, 255, 255, 0.7);
   white-space: nowrap;
 }
@@ -382,11 +376,9 @@
 }
 
 .selected-tracks-legend-label {
-  font-size: 0.85rem;
   color: rgba(255, 255, 255, 0.82);
   white-space: normal;
   word-break: break-word;
-  line-height: 1.25;
 }
 
 .selected-tracks-legend-channel {
@@ -405,4 +397,3 @@
 .selected-tracks-legend-value {
   color: rgba(255, 255, 255, 0.75);
 }
-

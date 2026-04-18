@@ -120,7 +120,7 @@ type UseVolumeResourcesParams = {
 
 type ShaderUniformMap = Record<string, { value: unknown }>;
 type TextureFormat = THREE.Data3DTexture['format'];
-type TextureSourceArray = Uint8Array | Uint16Array;
+type TextureSourceArray = Uint8Array | Uint16Array | Float32Array;
 type ByteTextureFilterMode = 'nearest' | 'linear';
 type BrickAtlasBuildResult = {
   data: TextureSourceArray;
@@ -132,7 +132,7 @@ type BrickAtlasBuildResult = {
 };
 
 type BrickSubcellTextureBuildResult = {
-  data: Uint8Array;
+  data: Uint8Array | Uint16Array;
   width: number;
   height: number;
   depth: number;
@@ -190,8 +190,30 @@ const sharedBackgroundMaskTextureCache = new WeakMap<object, {
   refCount: number;
 }>();
 const brickAtlasIndexDataCache = new WeakMap<VolumeBrickPageTable, Float32Array>();
+const normalizedUint16TextureDataCache = new WeakMap<Uint16Array, Float32Array>();
 const segmentationPaletteTextureCache = new Map<string, THREE.DataTexture>();
 const packedSegmentationTextureDataCache = new WeakMap<Uint16Array, Uint8Array>();
+
+function normalizeUint16TextureData(source: Uint16Array): Float32Array {
+  const cached = normalizedUint16TextureDataCache.get(source);
+  if (cached) {
+    return cached;
+  }
+  const normalized = new Float32Array(source.length);
+  const scale = 1 / 65535;
+  for (let index = 0; index < source.length; index += 1) {
+    normalized[index] = (source[index] ?? 0) * scale;
+  }
+  normalizedUint16TextureDataCache.set(source, normalized);
+  return normalized;
+}
+
+function resolveGpuTextureSource(source: TextureSourceArray): Uint8Array | Float32Array {
+  if (source instanceof Uint16Array) {
+    return normalizeUint16TextureData(source);
+  }
+  return source;
+}
 
 function resolveRendererSurfaceSize(
   rendererRef?: MutableRefObject<THREE.WebGLRenderer | null>,
@@ -436,9 +458,11 @@ function createByte3dTexture(
   format: TextureFormat = THREE.RedFormat,
   filterMode: ByteTextureFilterMode = 'nearest',
 ): THREE.Data3DTexture {
-  const texture = new THREE.Data3DTexture(data, width, height, depth);
+  const gpuData = resolveGpuTextureSource(data);
+  const texture = new THREE.Data3DTexture(gpuData, width, height, depth);
   texture.format = format;
-  texture.type = data instanceof Uint16Array ? THREE.UnsignedShortType : THREE.UnsignedByteType;
+  texture.type = gpuData instanceof Float32Array ? THREE.FloatType : THREE.UnsignedByteType;
+  texture.internalFormat = null;
   applyByteTextureFilter(texture, filterMode);
   texture.unpackAlignment = 1;
   texture.needsUpdate = true;
@@ -736,6 +760,7 @@ function updateOrCreateByte3dTexture(
   filterMode: ByteTextureFilterMode = 'nearest',
   forceNeedsUpdate = true,
 ): THREE.Data3DTexture {
+  const gpuSource = resolveGpuTextureSource(source);
   if (existing) {
     const { width: currentWidth, height: currentHeight, depth: currentDepth, data } =
       getTextureDimensions(existing);
@@ -743,21 +768,24 @@ function updateOrCreateByte3dTexture(
       currentWidth === width &&
       currentHeight === height &&
       currentDepth === depth &&
-      ((data instanceof Uint8Array && source instanceof Uint8Array) ||
-        (data instanceof Uint16Array && source instanceof Uint16Array)) &&
-      data.length === source.length
+      ((data instanceof Uint8Array && gpuSource instanceof Uint8Array) ||
+        (data instanceof Float32Array && gpuSource instanceof Float32Array)) &&
+      data.length === gpuSource.length
     ) {
-      const hasSharedBuffer = data === source;
+      const hasSharedBuffer = data === gpuSource;
       if (!hasSharedBuffer) {
-        data.set(source);
+        data.set(gpuSource);
       }
       const formatChanged = existing.format !== format;
-      const nextType = source instanceof Uint16Array ? THREE.UnsignedShortType : THREE.UnsignedByteType;
+      const nextType = gpuSource instanceof Float32Array ? THREE.FloatType : THREE.UnsignedByteType;
       const typeChanged = existing.type !== nextType;
+      const nextInternalFormat = null;
+      const internalFormatChanged = existing.internalFormat !== nextInternalFormat;
       existing.format = format;
       existing.type = nextType;
+      existing.internalFormat = nextInternalFormat;
       applyByteTextureFilter(existing, filterMode);
-      if (!hasSharedBuffer || formatChanged || typeChanged || forceNeedsUpdate) {
+      if (!hasSharedBuffer || formatChanged || typeChanged || internalFormatChanged || forceNeedsUpdate) {
         existing.needsUpdate = true;
       }
       return existing;
@@ -854,11 +882,13 @@ function buildBrickAtlasBaseTextureData({
 function buildBrickSubcellTextureData({
   pageTable,
   components,
+  outputDataType = 'uint8',
   max3DTextureSize,
   readVoxelComponent,
 }: {
   pageTable: VolumeBrickPageTable;
   components: number;
+  outputDataType?: 'uint8' | 'uint16';
   max3DTextureSize: number | null | undefined;
   readVoxelComponent: (
     flatBrickIndex: number,
@@ -889,7 +919,9 @@ function buildBrickSubcellTextureData({
     return null;
   }
 
-  const data = new Uint8Array(width * height * depth * 4);
+  const data = outputDataType === 'uint16'
+    ? new Uint16Array(width * height * depth * 4)
+    : new Uint8Array(width * height * depth * 4);
   const gridX = Math.max(1, pageTable.gridShape[2]);
   const gridY = Math.max(1, pageTable.gridShape[1]);
   const planeSize = gridX * gridY;
@@ -901,6 +933,7 @@ function buildBrickSubcellTextureData({
     const brickSubcellData = buildBrickSubcellChunkData({
       chunkShape: [chunkDepth, chunkHeight, chunkWidth],
       components,
+      outputDataType,
       readVoxelComponent: (localZ, localY, localX, component) =>
         readVoxelComponent(flatBrickIndex, localZ, localY, localX, component)
     });
@@ -963,6 +996,7 @@ function buildBrickSubcellTextureDataFromVolume({
   return buildBrickSubcellTextureData({
     pageTable,
     components,
+    outputDataType: textureData instanceof Uint16Array ? 'uint16' : 'uint8',
     max3DTextureSize,
     readVoxelComponent: (flatBrickIndex, localZ, localY, localX, component) => {
       const gridX = Math.max(1, pageTable.gridShape[2]);
@@ -1394,7 +1428,7 @@ function atlasIndexTextureDataFromPageTable(pageTable: VolumeBrickPageTable): Fl
 }
 
 type SkipHierarchyTextureBuildResult = {
-  data: Uint8Array;
+  data: Uint8Array | Float32Array;
   width: number;
   height: number;
   depth: number;
@@ -1440,7 +1474,10 @@ function buildSkipHierarchyTextureDataFromPageTable(
   const width = maxGridX;
   const height = maxGridY;
   const depth = totalGridZ;
-  const data = new Uint8Array(width * height * depth * 4);
+  const needsHighPrecision = hierarchyLevels.some((level) => level.min instanceof Uint16Array || level.max instanceof Uint16Array);
+  const data = needsHighPrecision
+    ? new Float32Array(width * height * depth * 4)
+    : new Uint8Array(width * height * depth * 4);
   const levelMeta: THREE.Vector4[] = Array.from({ length: MAX_SKIP_HIERARCHY_LEVELS }, () => new THREE.Vector4(1, 1, 1, 0));
 
   let zBase = 0;
@@ -1458,10 +1495,17 @@ function buildSkipHierarchyTextureDataFromPageTable(
         for (let x = 0; x < gridX; x += 1) {
           const sourceIndex = (z * planeSize) + (y * gridX) + x;
           const targetIndex = ((((zBase + z) * height) + y) * width + x) * 4;
-          data[targetIndex] = hierarchy.occupancy[sourceIndex] ?? 0;
-          data[targetIndex + 1] = hierarchy.min[sourceIndex] ?? 0;
-          data[targetIndex + 2] = hierarchy.max[sourceIndex] ?? 0;
-          data[targetIndex + 3] = 255;
+          if (data instanceof Float32Array) {
+            data[targetIndex] = (hierarchy.occupancy[sourceIndex] ?? 0) / 255;
+            data[targetIndex + 1] = (hierarchy.min[sourceIndex] ?? 0) / 65535;
+            data[targetIndex + 2] = (hierarchy.max[sourceIndex] ?? 0) / 65535;
+            data[targetIndex + 3] = 1;
+          } else {
+            data[targetIndex] = hierarchy.occupancy[sourceIndex] ?? 0;
+            data[targetIndex + 1] = hierarchy.min[sourceIndex] ?? 0;
+            data[targetIndex + 2] = hierarchy.max[sourceIndex] ?? 0;
+            data[targetIndex + 3] = 255;
+          }
         }
       }
     }
@@ -2507,7 +2551,7 @@ export function useVolumeResources({
           max3DTextureSize,
           cameraPosition: localCameraPosition,
           forceFullResidency: Boolean(resource.playbackPinnedResidency),
-          isSegmentation: brickAtlas.dataType === 'uint16',
+          isSegmentation: brickAtlas.kind === 'segmentation',
         });
       };
     };
@@ -2622,7 +2666,7 @@ export function useVolumeResources({
           : segmentationVolume
             ? THREE.RGFormat
             : THREE.RedFormat;
-        const textureType = THREE.UnsignedByteType;
+        const textureType = textureData instanceof Float32Array ? THREE.FloatType : THREE.UnsignedByteType;
         const directAtlasFormat = brickAtlas ? getTextureFormatFromBrickAtlas(brickAtlas) : null;
         const proxyVisibleBox = resolveBackgroundMaskVisibleBox(layer.backgroundMask ?? null, {
           width,
@@ -2653,6 +2697,7 @@ export function useVolumeResources({
             : createFallbackVolumeDataTexture();
           texture.format = sourceUsesVolume ? textureFormat : THREE.RedFormat;
           texture.type = sourceUsesVolume ? textureType : THREE.UnsignedByteType;
+          texture.internalFormat = null;
           applyVolumeTextureSampling(texture, effectiveSamplingMode);
           texture.unpackAlignment = 1;
           if (!layer.isSegmentation) {
@@ -2892,7 +2937,8 @@ export function useVolumeResources({
                 volume.height,
                 sliceInfo.format,
               );
-              texture.type = THREE.UnsignedByteType;
+              texture.type = sliceInfo.data instanceof Float32Array ? THREE.FloatType : THREE.UnsignedByteType;
+              texture.internalFormat = null;
               texture.minFilter = isNearestSampling ? THREE.NearestFilter : THREE.LinearFilter;
               texture.magFilter = isNearestSampling ? THREE.NearestFilter : THREE.LinearFilter;
               texture.unpackAlignment = 1;
@@ -2903,6 +2949,7 @@ export function useVolumeResources({
             if (pageTable && brickAtlas?.enabled) {
               const sliceInfo = prepareSliceTextureFromBrickAtlas(
                 {
+                  kind: brickAtlas.kind,
                   pageTable,
                   atlasData: brickAtlas.data,
                   textureFormat: brickAtlas.textureFormat,
@@ -2919,7 +2966,8 @@ export function useVolumeResources({
                 sliceInfo.height,
                 sliceInfo.format,
               );
-              texture.type = THREE.UnsignedByteType;
+              texture.type = sliceInfo.data instanceof Float32Array ? THREE.FloatType : THREE.UnsignedByteType;
+              texture.internalFormat = null;
               texture.minFilter = isNearestSampling ? THREE.NearestFilter : THREE.LinearFilter;
               texture.magFilter = isNearestSampling ? THREE.NearestFilter : THREE.LinearFilter;
               texture.unpackAlignment = 1;
@@ -3241,14 +3289,16 @@ export function useVolumeResources({
             : segmentationVolume
               ? THREE.RGFormat
               : THREE.RedFormat;
-          const nextTextureType = THREE.UnsignedByteType;
+          const nextTextureType = nextTextureData instanceof Float32Array ? THREE.FloatType : THREE.UnsignedByteType;
+          const nextTextureInternalFormat = null;
           const textureSourceChanged =
             dataTexture.image.data !== nextTextureData ||
             dataTexture.image.width !== nextTextureWidth ||
             dataTexture.image.height !== nextTextureHeight ||
             dataTexture.image.depth !== nextTextureDepth ||
             dataTexture.format !== nextTextureFormat ||
-            dataTexture.type !== nextTextureType;
+            dataTexture.type !== nextTextureType ||
+            dataTexture.internalFormat !== nextTextureInternalFormat;
           if (textureSourceChanged) {
             dataTexture.image.data = nextTextureData;
             dataTexture.image.width = nextTextureWidth;
@@ -3256,6 +3306,7 @@ export function useVolumeResources({
             dataTexture.image.depth = nextTextureDepth;
             dataTexture.format = nextTextureFormat;
             dataTexture.type = nextTextureType;
+            dataTexture.internalFormat = nextTextureInternalFormat;
             dataTexture.needsUpdate = true;
           }
           if (materialUniforms.u_data.value !== dataTexture) {
@@ -3360,12 +3411,15 @@ export function useVolumeResources({
             dataTexture.image.width = volume.width;
             dataTexture.image.height = volume.height;
             dataTexture.format = sliceInfo.format;
+            dataTexture.type = sliceInfo.data instanceof Float32Array ? THREE.FloatType : THREE.UnsignedByteType;
+            dataTexture.internalFormat = null;
             dataTexture.needsUpdate = true;
-            materialUniforms.u_slice.value = dataTexture;
+              materialUniforms.u_slice.value = dataTexture;
           } else if (pageTable && brickAtlas?.enabled) {
             const existingBuffer = resources.sliceBuffer ?? null;
             const sliceInfo = prepareSliceTextureFromBrickAtlas(
               {
+                kind: brickAtlas.kind,
                 pageTable,
                 atlasData: brickAtlas.data,
                 textureFormat: brickAtlas.textureFormat,
@@ -3381,6 +3435,8 @@ export function useVolumeResources({
             dataTexture.image.width = sliceInfo.width;
             dataTexture.image.height = sliceInfo.height;
             dataTexture.format = sliceInfo.format;
+            dataTexture.type = sliceInfo.data instanceof Float32Array ? THREE.FloatType : THREE.UnsignedByteType;
+            dataTexture.internalFormat = null;
             dataTexture.needsUpdate = true;
             materialUniforms.u_slice.value = dataTexture;
           }

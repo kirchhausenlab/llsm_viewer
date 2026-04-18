@@ -23,11 +23,13 @@ const createVolume = ({
   channels: number;
   normalized: Uint8Array;
 }): NormalizedVolume => ({
+  kind: 'intensity',
   width,
   height,
   depth,
   channels,
   dataType: 'uint8',
+  normalizedDataType: 'uint8',
   normalized,
   min: 0,
   max: 255,
@@ -68,6 +70,7 @@ const createVolume = ({
         volumeShape: [2, 2, 2],
         brickAtlasIndices: new Int32Array([0]),
       },
+      kind: 'intensity',
       atlasData: new Uint8Array([
         0, 10,
         20, 30,
@@ -99,6 +102,7 @@ const createVolume = ({
         volumeShape: [1, 1, 1],
         brickAtlasIndices: new Int32Array([0]),
       },
+      kind: 'intensity',
       atlasData: new Uint8Array([64, 192]),
       textureFormat: 'rg',
       sourceChannels: 2,
@@ -128,6 +132,7 @@ const createVolume = ({
         volumeShape: [2, 2, 2],
         brickAtlasIndices: new Int32Array([-1]),
       },
+      kind: 'intensity',
       atlasData: new Uint8Array(0),
       textureFormat: 'red',
       sourceChannels: 1,
@@ -140,6 +145,52 @@ const createVolume = ({
 
   assert.deepStrictEqual(atlas.normalizedValues, [0]);
   assert.deepStrictEqual(atlas.rawValues, [0]);
+})();
+
+(() => {
+  const volume: NormalizedVolume = {
+    kind: 'intensity',
+    width: 2,
+    height: 1,
+    depth: 1,
+    channels: 1,
+    dataType: 'uint16',
+    normalizedDataType: 'uint16',
+    normalized: new Uint16Array([0, 65535]),
+    min: 0,
+    max: 65535,
+  };
+
+  const sample = sampleVolumeAtNormalizedPosition(volume, { x: 0.25, y: 0, z: 0 });
+  assert.ok(Math.abs(sample.normalizedValues[0] - 0.5) < 1e-9);
+  assert.ok(Math.abs(sample.rawValues[0] - 32767.5) < 1e-6);
+})();
+
+(() => {
+  const atlas = sampleBrickAtlasAtNormalizedPosition(
+    {
+      kind: 'intensity',
+      pageTable: {
+        layerKey: 'layer-u16',
+        timepoint: 0,
+        scaleLevel: 0,
+        gridShape: [1, 1, 1],
+        chunkShape: [1, 1, 2],
+        volumeShape: [1, 1, 2],
+        brickAtlasIndices: new Int32Array([0]),
+      },
+      atlasData: new Uint16Array([0, 65535]),
+      textureFormat: 'red',
+      sourceChannels: 1,
+      dataType: 'uint16',
+      min: 0,
+      max: 65535,
+    },
+    { x: 0.25, y: 0, z: 0 },
+  );
+
+  assert.ok(Math.abs(atlas.normalizedValues[0] - 0.5) < 1e-9);
+  assert.ok(Math.abs(atlas.rawValues[0] - 32767.5) < 1e-6);
 })();
 
 (() => {

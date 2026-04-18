@@ -89,9 +89,14 @@ function buildScalePyramid(
       }
     }
   } else {
+    const intensityDataType = message.storedDataType;
+    if (intensityDataType !== 'uint8' && intensityDataType !== 'uint16') {
+      throw new Error(`Layer "${message.layerKey}" requested unsupported intensity storage type ${intensityDataType}.`);
+    }
     const normalized = normalizeVolume(
       rawVolume,
-      message.normalization ?? computeNormalizationParameters([rawVolume])
+      message.normalization ?? computeNormalizationParameters([rawVolume]),
+      intensityDataType
     );
     if (normalized.kind !== 'intensity') {
       throw new Error(`Layer "${message.layerKey}" produced a non-intensity payload in the intensity worker path.`);
@@ -101,7 +106,7 @@ function buildScalePyramid(
       height: number;
       depth: number;
       channels: number;
-      data: Uint8Array;
+      data: Uint8Array | Uint16Array;
     } = {
       width: normalized.width,
       height: normalized.height,
@@ -150,18 +155,20 @@ function downsampleDataByMaxPooling(volume: {
   height: number;
   depth: number;
   channels: number;
-  data: Uint8Array;
+  data: Uint8Array | Uint16Array;
 }): {
   width: number;
   height: number;
   depth: number;
   channels: number;
-  data: Uint8Array;
+  data: Uint8Array | Uint16Array;
 } {
   const nextDepth = Math.max(1, Math.ceil(volume.depth / 2));
   const nextHeight = Math.max(1, Math.ceil(volume.height / 2));
   const nextWidth = Math.max(1, Math.ceil(volume.width / 2));
-  const downsampled = new Uint8Array(nextDepth * nextHeight * nextWidth * volume.channels);
+  const downsampled = volume.data instanceof Uint16Array
+    ? new Uint16Array(nextDepth * nextHeight * nextWidth * volume.channels)
+    : new Uint8Array(nextDepth * nextHeight * nextWidth * volume.channels);
 
   for (let z = 0; z < nextDepth; z += 1) {
     const sourceZStart = z * 2;

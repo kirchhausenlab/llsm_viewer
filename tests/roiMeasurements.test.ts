@@ -20,6 +20,7 @@ function createVolume(width: number, height: number, depth: number, normalized: 
     depth,
     channels: 1,
     dataType: 'uint8',
+    normalizedDataType: 'uint8',
     normalized: Uint8Array.from(normalized),
     min: 0,
     max: 255,
@@ -68,6 +69,36 @@ function createVolume(width: number, height: number, depth: number, normalized: 
   assert.equal(values.min, 0);
   assert.equal(values.max, 200);
   assert.equal(values.mean, 100);
+})();
+
+(() => {
+  const volume: IntensityVolume = {
+    kind: 'intensity',
+    width: 2,
+    height: 1,
+    depth: 1,
+    channels: 1,
+    dataType: 'uint16',
+    normalizedDataType: 'uint16',
+    normalized: new Uint16Array([0, 65535]),
+    min: 0,
+    max: 65535,
+  };
+  const roi: SavedRoi = {
+    id: 'roi-u16',
+    name: 'ROI U16',
+    shape: 'rectangle',
+    mode: '2d',
+    start: { x: 0, y: 0, z: 0 },
+    end: { x: 1, y: 0, z: 0 },
+    color: '#FFFFFF',
+  };
+
+  const values = computeRoiMeasurementValues(roi, volume);
+  assert.equal(values.count, 2);
+  assert.equal(values.min, 0);
+  assert.equal(values.max, 65535);
+  assert.equal(values.mean, 32767.5);
 })();
 
 (() => {

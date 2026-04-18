@@ -30,16 +30,35 @@ const clampRangeValue = (value: number, min: number, max: number) => Math.min(ma
 const HOVER_INTENSITY_MIN_DURATION_SECONDS = 8;
 const HOVER_INTENSITY_PIXELS_PER_SECOND = 18;
 
+const formatFollowCoordinate = (value: number): string => {
+  if (!Number.isFinite(value)) {
+    return '?';
+  }
+  if (Number.isInteger(value)) {
+    return String(value);
+  }
+  return Number(value.toFixed(2)).toString();
+};
+
+const formatFollowedTrackNumber = (trackId: string): string => {
+  const suffix = trackId.includes(':') ? trackId.slice(trackId.indexOf(':') + 1) : trackId;
+  const prefixedMatch = /^track-(.+)$/.exec(suffix);
+  return prefixedMatch?.[1] ?? suffix;
+};
+
 export default function TopMenu(props: TopMenuProps) {
   const {
     onReturnToLauncher,
     onResetLayout,
     openHelpMenu,
     onOpenChannelsWindow,
+    onOpenCameraWindow,
+    onOpenCameraSettingsWindow,
     onOpenPropsWindow,
     onOpenPaintbrush,
     onOpenDrawRoiWindow,
     onOpenRoiManagerWindow,
+    onOpenSetMeasurementsWindow,
     onOpenRecordWindow,
     onOpenRenderSettingsWindow,
     onOpenHoverSettingsWindow,
@@ -142,18 +161,20 @@ export default function TopMenu(props: TopMenuProps) {
         { label: 'Exit', onSelect: onReturnToLauncher }
       ],
       view: [
-        { label: 'Channels window', onSelect: onOpenChannelsWindow },
-        { label: 'Camera', disabled: true },
-        { label: 'Record', onSelect: onOpenRecordWindow },
+        { label: 'Channels', onSelect: onOpenChannelsWindow },
+        { label: 'View selection', onSelect: onOpenCameraWindow },
+        { label: 'Screen capture', onSelect: onOpenRecordWindow },
         { label: 'Background', disabled: true },
         { label: 'Render settings', onSelect: onOpenRenderSettingsWindow },
-        { label: 'Hover Settings', onSelect: onOpenHoverSettingsWindow }
+        { label: 'Camera settings', onSelect: onOpenCameraSettingsWindow },
+        { label: 'Hover settings', onSelect: onOpenHoverSettingsWindow }
       ],
       edit: [
         { label: 'Props', onSelect: onOpenPropsWindow },
         { label: 'Paintbrush', onSelect: onOpenPaintbrush },
         { label: 'Draw ROI', onSelect: onOpenDrawRoiWindow },
-        { label: 'ROI Manager', onSelect: onOpenRoiManagerWindow }
+        { label: 'ROI Manager', onSelect: onOpenRoiManagerWindow },
+        { label: 'Set measurements', onSelect: onOpenSetMeasurementsWindow }
       ],
       tracks: [
         { label: 'Tracks window', onSelect: onOpenTracksWindow },
@@ -168,12 +189,15 @@ export default function TopMenu(props: TopMenuProps) {
     }),
     [
       onOpenAmplitudePlotWindow,
+      onOpenCameraWindow,
+      onOpenCameraSettingsWindow,
       onOpenChannelsWindow,
       onOpenDiagnosticsWindow,
       onOpenDrawRoiWindow,
       onOpenPaintbrush,
       onOpenPlotSettingsWindow,
       onOpenPropsWindow,
+      onOpenSetMeasurementsWindow,
       onOpenRecordWindow,
       onOpenRenderSettingsWindow,
       onOpenHoverSettingsWindow,
@@ -378,6 +402,18 @@ export default function TopMenu(props: TopMenuProps) {
   const hasTrackTabs = trackSets.length > 0;
   const isTrackFollowActive = followedTrackSetId !== null && followedTrackId !== null;
   const isFollowActive = isTrackFollowActive || followedVoxel !== null;
+  const followTargetLabel = useMemo(() => {
+    if (isTrackFollowActive && followedTrackId) {
+      const trackSetName =
+        trackSets.find((trackSet) => trackSet.id === followedTrackSetId)?.name.trim() || 'Track';
+      return `Following ${trackSetName} track #${formatFollowedTrackNumber(followedTrackId)}`;
+    }
+    if (followedVoxel) {
+      const { x, y, z } = followedVoxel.coordinates;
+      return `Following voxel (${formatFollowCoordinate(x)}, ${formatFollowCoordinate(y)}, ${formatFollowCoordinate(z)})`;
+    }
+    return null;
+  }, [followedTrackId, followedTrackSetId, followedVoxel, isTrackFollowActive, trackSets]);
   const shouldAnimateHoverIntensity = hoverIntensityOverflow > 0;
   const hoverIntensityTrackStyle = shouldAnimateHoverIntensity
     ? ({
@@ -735,18 +771,29 @@ export default function TopMenu(props: TopMenuProps) {
 
         <div className="viewer-top-menu-cell viewer-top-menu-cell--bottom viewer-top-menu-cell--column-4">
           <div className="viewer-top-menu-cell-content viewer-top-menu-cell-content--end">
-            {isFollowActive ? (
-              <button
-                type="button"
-                className="viewer-top-menu-button viewer-top-menu-button--danger"
-                onClick={() =>
-                  isTrackFollowActive
-                    ? onStopTrackFollow(followedTrackSetId ?? undefined)
-                    : onStopVoxelFollow()
-                }
-              >
-                Stop following
-              </button>
+            {isFollowActive && followTargetLabel ? (
+              <div className="viewer-top-menu-status-group viewer-top-menu-follow-group">
+                <span
+                  className="viewer-top-menu-follow-target"
+                  title={followTargetLabel}
+                  role="status"
+                  aria-live="polite"
+                >
+                  {followTargetLabel}
+                </span>
+                <button
+                  type="button"
+                  className="viewer-top-menu-button viewer-top-menu-button--danger"
+                  onClick={() =>
+                    isTrackFollowActive
+                      ? onStopTrackFollow(followedTrackSetId ?? undefined)
+                      : onStopVoxelFollow()
+                  }
+                  aria-label={`Stop following ${followTargetLabel.replace(/^Following\s+/, '')}`}
+                >
+                  Stop
+                </button>
+              </div>
             ) : null}
           </div>
         </div>

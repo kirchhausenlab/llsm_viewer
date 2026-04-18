@@ -233,22 +233,22 @@ export default function DrawRoiWindow({
                   />
                 );
               })}
+              <label className="color-picker-trigger draw-roi-color-picker" htmlFor="draw-roi-color-input">
+                <input
+                  id="draw-roi-color-input"
+                  className="color-picker-input"
+                  type="color"
+                  value={currentColor}
+                  onChange={(event) => onColorChange(event.target.value)}
+                  aria-label="Choose ROI color"
+                />
+                <span
+                  className="color-picker-indicator"
+                  style={{ backgroundColor: currentColor }}
+                  aria-hidden="true"
+                />
+              </label>
             </div>
-            <label className="color-picker-trigger draw-roi-color-picker" htmlFor="draw-roi-color-input">
-              <input
-                id="draw-roi-color-input"
-                className="color-picker-input"
-                type="color"
-                value={currentColor}
-                onChange={(event) => onColorChange(event.target.value)}
-                aria-label="Choose ROI color"
-              />
-              <span
-                className="color-picker-indicator"
-                style={{ backgroundColor: currentColor }}
-                aria-hidden="true"
-              />
-            </label>
           </div>
         </div>
       </div>

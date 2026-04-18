@@ -65,10 +65,13 @@ export type TopMenuProps = TopMenuChromeProps &
     };
     hoverIntensityValueDigits: number;
     onOpenChannelsWindow: () => void;
+    onOpenCameraWindow: () => void;
+    onOpenCameraSettingsWindow: () => void;
     onOpenPropsWindow: () => void;
     onOpenPaintbrush: () => void;
     onOpenDrawRoiWindow: () => void;
     onOpenRoiManagerWindow: () => void;
+    onOpenSetMeasurementsWindow: () => void;
     onOpenRecordWindow: () => void;
     onOpenRenderSettingsWindow: () => void;
     onOpenHoverSettingsWindow: () => void;
@@ -111,6 +114,13 @@ export type ModeControlsProps = {
   onBlendingModeToggle: () => void;
 };
 
+export type RecordingStatus =
+  | 'idle'
+  | 'pending-start'
+  | 'recording'
+  | 'paused'
+  | 'pending-resume';
+
 export type PlaybackControlsProps = {
   fps: number;
   onFpsChange: (value: number) => void;
@@ -119,6 +129,8 @@ export type PlaybackControlsProps = {
   onZSliderChange?: (value: number) => void;
   recordingBitrateMbps?: number;
   onRecordingBitrateMbpsChange?: (value: number) => void;
+  countdownSeconds?: number;
+  onCountdownSecondsChange?: (value: number) => void;
   volumeTimepointCount: number;
   isPlaying: boolean;
   playbackLabel: string;
@@ -127,8 +139,12 @@ export type PlaybackControlsProps = {
   playbackDisabled: boolean;
   onTogglePlayback: () => void;
   error: string | null;
-  onStartRecording: () => void;
+  onTakeScreenshot: () => void;
+  canTakeScreenshot: boolean;
+  onRecordingPrimaryAction: () => void;
   onStopRecording: () => void;
+  recordingStatus: RecordingStatus;
+  countdownRemainingSeconds: number | null;
   isRecording: boolean;
   canRecord: boolean;
 };
@@ -265,6 +281,8 @@ export type LayoutProps = {
   controlWindowWidth: number;
   selectedTracksWindowWidth: number;
   resetToken: number;
+  cameraWindowInitialPosition: Position;
+  cameraSettingsWindowInitialPosition: Position;
   viewerSettingsWindowInitialPosition: Position;
   recordWindowInitialPosition: Position;
   layersWindowInitialPosition: Position;

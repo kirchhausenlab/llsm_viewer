@@ -17,7 +17,11 @@ import type {
   ZarrArrayShardingPlan,
   ZarrArrayShardingPlanArrayKind
 } from './types';
-import { PREPROCESSED_DATASET_FORMAT } from './types';
+import {
+  LEGACY_PREPROCESSED_DATASET_FORMAT,
+  PREPROCESSED_DATASET_FORMAT,
+  type StoredIntensityDataType
+} from './types';
 import {
   TEMPORAL_RESOLUTION_UNITS,
   VOXEL_RESOLUTION_UNITS,
@@ -280,12 +284,14 @@ function validateSkipHierarchyDescriptors({
   value,
   path,
   layerVolumeCount,
-  expectedLeafGridShape
+  expectedLeafGridShape,
+  expectedDataType
 }: {
   value: unknown;
   path: string;
   layerVolumeCount: number;
   expectedLeafGridShape: readonly number[];
+  expectedDataType: 'uint8' | 'uint16';
 }): PreprocessedScaleSkipHierarchyZarrDescriptor {
   const skipHierarchy = expectRecord(value, path);
   const levelsValue = expectArray(skipHierarchy.levels, `${path}.levels`);
@@ -350,14 +356,14 @@ function validateSkipHierarchyDescriptors({
       value: levelEntry.min,
       path: `${levelPath}.min`,
       expectedRank: 4,
-      expectedDataType: 'uint8',
+      expectedDataType,
       expectedShape
     });
     const max = validateDescriptor({
       value: levelEntry.max,
       path: `${levelPath}.max`,
       expectedRank: 4,
-      expectedDataType: 'uint8',
+      expectedDataType,
       expectedShape
     });
     levels.push({
@@ -391,13 +397,15 @@ function validateSubcellDescriptor({
   path,
   layerVolumeCount,
   chunkShape,
-  expectedLeafGridShape
+  expectedLeafGridShape,
+  expectedDataType
 }: {
   value: unknown;
   path: string;
   layerVolumeCount: number;
   chunkShape: readonly number[];
   expectedLeafGridShape: readonly number[];
+  expectedDataType: 'uint8' | 'uint16';
 }): PreprocessedScaleSubcellZarrDescriptor | undefined {
   if (value === undefined) {
     return undefined;
@@ -440,7 +448,7 @@ function validateSubcellDescriptor({
     value: subcell.data,
     path: `${path}.data`,
     expectedRank: 5,
-    expectedDataType: 'uint8',
+    expectedDataType,
     expectedShape: [
       layerVolumeCount,
       expectedTextureSize.depth,
@@ -573,6 +581,7 @@ function validateScale({
     depth: number;
     channels: number;
     dataType: VolumeDataType;
+    storedDataType: StoredIntensityDataType;
     isSegmentation: boolean;
   };
 }): PreprocessedLayerScaleManifestEntry {
@@ -601,7 +610,9 @@ function validateScale({
   }
 
   const expectedDataShape = [layerVolumeCount, depth, height, width, channels];
-  const expectedStoredDataType: VolumeDataType = layerDimensions.isSegmentation ? 'uint16' : 'uint8';
+  const expectedStoredDataType: VolumeDataType = layerDimensions.isSegmentation
+    ? 'uint16'
+    : layerDimensions.storedDataType;
   const data = validateDescriptor({
     value: zarr.data,
     path: `${path}.zarr.data`,
@@ -622,7 +633,8 @@ function validateScale({
     value: zarr.skipHierarchy,
     path: `${path}.zarr.skipHierarchy`,
     layerVolumeCount,
-    expectedLeafGridShape
+    expectedLeafGridShape,
+    expectedDataType: layerDimensions.isSegmentation ? 'uint8' : layerDimensions.storedDataType
   });
 
   const histogramValue = zarr.histogram;
@@ -642,7 +654,8 @@ function validateScale({
     path: `${path}.zarr.subcell`,
     layerVolumeCount,
     chunkShape: [chunkDepth, chunkHeight, chunkWidth],
-    expectedLeafGridShape
+    expectedLeafGridShape,
+    expectedDataType: layerDimensions.isSegmentation ? 'uint16' : layerDimensions.storedDataType
   });
   const playbackAtlas = validatePlaybackAtlasDescriptor({
     value: zarr.playbackAtlas,
@@ -963,12 +976,14 @@ function validateLayer({
   value,
   path,
   channelId,
-  totalVolumeCount
+  totalVolumeCount,
+  format
 }: {
   value: unknown;
   path: string;
   channelId: string;
   totalVolumeCount: number;
+  format: string;
 }): PreprocessedLayerManifestEntry {
   const layer = expectRecord(value, path);
   const key = expectString(layer.key, `${path}.key`, { nonEmpty: true });
@@ -992,8 +1007,41 @@ function validateLayer({
   const depth = expectPositiveInteger(layer.depth, `${path}.depth`);
   const channels = expectPositiveInteger(layer.channels, `${path}.channels`);
   const dataType = expectDataType(layer.dataType, `${path}.dataType`);
-  const normalization = validateNormalization(layer.normalization, `${path}.normalization`);
   const zarr = expectRecord(layer.zarr, `${path}.zarr`);
+  const storedDataTypeValue = layer.storedDataType;
+  let storedDataType: StoredIntensityDataType;
+  if (storedDataTypeValue === undefined) {
+    const scalesForInference = expectArray(zarr.scales, `${path}.zarr.scales`);
+    const firstScale = scalesForInference[0] ? expectRecord(scalesForInference[0], `${path}.zarr.scales[0]`) : null;
+    const firstScaleZarr = firstScale ? expectRecord(firstScale.zarr, `${path}.zarr.scales[0].zarr`) : null;
+    const firstScaleData = firstScaleZarr ? expectRecord(firstScaleZarr.data, `${path}.zarr.scales[0].zarr.data`) : null;
+    const inferredStoredDataType =
+      typeof firstScaleData?.dataType === 'string' &&
+      (firstScaleData.dataType === 'uint8' || firstScaleData.dataType === 'uint16')
+        ? firstScaleData.dataType
+        : null;
+    if (inferredStoredDataType) {
+      storedDataType = inferredStoredDataType;
+    } else if (format === LEGACY_PREPROCESSED_DATASET_FORMAT) {
+      storedDataType = isSegmentation ? 'uint16' : 'uint8';
+    } else {
+      throw new Error(`Invalid manifest schema at ${path}.storedDataType: expected a value.`);
+    }
+  } else {
+    const storedDataTypeRaw = expectString(storedDataTypeValue, `${path}.storedDataType`, { nonEmpty: true });
+    if (storedDataTypeRaw !== 'uint8' && storedDataTypeRaw !== 'uint16') {
+      throw new Error(
+        `Invalid manifest schema at ${path}.storedDataType: expected "uint8" or "uint16", got "${storedDataTypeRaw}".`
+      );
+    }
+    storedDataType = storedDataTypeRaw as StoredIntensityDataType;
+  }
+  if (storedDataType !== 'uint8' && storedDataType !== 'uint16') {
+    throw new Error(
+      `Invalid manifest schema at ${path}.storedDataType: expected "uint8" or "uint16", got "${storedDataType}".`
+    );
+  }
+  const normalization = validateNormalization(layer.normalization, `${path}.normalization`);
   const scalesValue = expectArray(zarr.scales, `${path}.zarr.scales`);
   if (scalesValue.length === 0) {
     throw new Error(`Invalid manifest schema at ${path}.zarr.scales: expected at least one scale.`);
@@ -1006,7 +1054,7 @@ function validateLayer({
       value: scalesValue[index],
       path: `${path}.zarr.scales[${index}]`,
       layerVolumeCount: volumeCount,
-      layerDimensions: { width, height, depth, channels, dataType, isSegmentation }
+      layerDimensions: { width, height, depth, channels, dataType, storedDataType, isSegmentation }
     });
     if (scale.level <= previousLevel) {
       throw new Error(`Invalid manifest schema at ${path}.zarr.scales[${index}].level: levels must be strictly increasing.`);
@@ -1034,6 +1082,7 @@ function validateLayer({
     depth,
     channels,
     dataType,
+    storedDataType,
     normalization,
     zarr: {
       scales
@@ -1108,11 +1157,13 @@ function validateAnisotropyCorrection(
 function validateChannel({
   value,
   path,
-  totalVolumeCount
+  totalVolumeCount,
+  format
 }: {
   value: unknown;
   path: string;
   totalVolumeCount: number;
+  format: string;
 }): PreprocessedChannelManifest {
   const channel = expectRecord(value, path);
   const id = expectString(channel.id, `${path}.id`, { nonEmpty: true });
@@ -1128,7 +1179,8 @@ function validateChannel({
       value: layersValue[index],
       path: `${path}.layers[${index}]`,
       channelId: id,
-      totalVolumeCount
+      totalVolumeCount,
+      format
     });
     layers.push(layer);
   }
@@ -1143,7 +1195,10 @@ export function coercePreprocessedManifest(value: unknown): PreprocessedManifest
 
   const manifest = expectRecord(value, 'manifest');
   const format = expectString(manifest.format, 'manifest.format');
-  if (format !== PREPROCESSED_DATASET_FORMAT) {
+  if (
+    format !== PREPROCESSED_DATASET_FORMAT &&
+    format !== LEGACY_PREPROCESSED_DATASET_FORMAT
+  ) {
     throw new Error('Unsupported preprocessed dataset format.');
   }
 
@@ -1168,7 +1223,8 @@ export function coercePreprocessedManifest(value: unknown): PreprocessedManifest
     const channel = validateChannel({
       value: channelsValue[index],
       path: `manifest.dataset.channels[${index}]`,
-      totalVolumeCount
+      totalVolumeCount,
+      format
     });
     if (channelIds.has(channel.id)) {
       throw new Error(

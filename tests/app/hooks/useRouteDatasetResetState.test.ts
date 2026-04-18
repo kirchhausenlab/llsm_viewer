@@ -25,8 +25,14 @@ const createStateSetter = <T>(state: { value: T }) => (next: SetStateAction<T>) 
   const layerAutoThresholds = { value: { 'layer-1': 0.4 } };
   const currentLayerVolumes = { value: { 'layer-1': { width: 1 } } as Record<string, unknown> };
   const selectedIndex = { value: 9 };
+  const zSliderValue = { value: 7 };
   const activeChannelTabId = { value: 'channel-1' as string | null };
   const isExperimentSetupStarted = { value: true };
+  const hoveredVolumeVoxel = { value: { layerKey: 'layer-1' } as unknown };
+  const lastHoveredVolumeVoxel = { value: { layerKey: 'layer-1' } as unknown };
+  const followedVoxel = { value: { layerKey: 'layer-1' } as unknown };
+  const viewerCameraSample = { value: { distance: 3 } as unknown };
+  const resetViewHandler = { value: (() => {}) as (() => void) | null };
   const channelIdRef = { current: 5 };
   const layerIdRef = { current: 8 };
   const trackSetIdRef = { current: 3 };
@@ -44,6 +50,7 @@ const createStateSetter = <T>(state: { value: T }) => (next: SetStateAction<T>) 
       setLayerAutoThresholds: createStateSetter(layerAutoThresholds),
       setCurrentLayerVolumes: createStateSetter(currentLayerVolumes),
       setSelectedIndex: createStateSetter(selectedIndex),
+      setZSliderValue: createStateSetter(zSliderValue),
       resetChannelEditingState: () => {
         resetChannelEditingStateCalls += 1;
       },
@@ -55,6 +62,11 @@ const createStateSetter = <T>(state: { value: T }) => (next: SetStateAction<T>) 
         resetLaunchStateCalls += 1;
       },
       setIsExperimentSetupStarted: createStateSetter(isExperimentSetupStarted),
+      setHoveredVolumeVoxel: createStateSetter(hoveredVolumeVoxel),
+      setLastHoveredVolumeVoxel: createStateSetter(lastHoveredVolumeVoxel),
+      setFollowedVoxel: createStateSetter(followedVoxel),
+      setViewerCameraSample: createStateSetter(viewerCameraSample),
+      setResetViewHandler: createStateSetter(resetViewHandler),
       channelIdRef,
       layerIdRef,
       trackSetIdRef,
@@ -81,8 +93,14 @@ const createStateSetter = <T>(state: { value: T }) => (next: SetStateAction<T>) 
   assert.deepStrictEqual(layerAutoThresholds.value, {});
   assert.deepStrictEqual(currentLayerVolumes.value, {});
   assert.strictEqual(selectedIndex.value, 0);
+  assert.strictEqual(zSliderValue.value, 1);
   assert.strictEqual(activeChannelTabId.value, null);
   assert.strictEqual(isExperimentSetupStarted.value, false);
+  assert.strictEqual(hoveredVolumeVoxel.value, null);
+  assert.strictEqual(lastHoveredVolumeVoxel.value, null);
+  assert.strictEqual(followedVoxel.value, null);
+  assert.strictEqual(viewerCameraSample.value, null);
+  assert.strictEqual(resetViewHandler.value, null);
   assert.strictEqual(channelIdRef.current, 0);
   assert.strictEqual(layerIdRef.current, 0);
   assert.strictEqual(trackSetIdRef.current, 0);

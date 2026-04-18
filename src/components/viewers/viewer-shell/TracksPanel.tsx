@@ -148,7 +148,11 @@ export default function TracksPanel({
                 const isActive = trackSet.id === activeTrackSetId;
                 const orderMode = trackOrderModeByTrackSet[trackSet.id] ?? 'id';
                 const colorMode = trackColorModesByTrackSet[trackSet.id] ?? { type: 'random' };
-                const trackColorLabel = colorMode.type === 'uniform' ? 'Uniform' : 'By ID';
+                const customTrackColor =
+                  colorMode.type === 'uniform'
+                    ? normalizeTrackColor(colorMode.color)
+                    : normalizeTrackColor('#ffffff');
+                const trackColorLabel = colorMode.type === 'uniform' ? customTrackColor : 'By ID';
                 const hasSetTracks = (trackHeadersByTrackSet.get(trackSet.id)?.totalTracks ?? 0) > 0;
                 const opacity = trackOpacityByTrackSet[trackSet.id] ?? trackDefaults.opacity;
                 const lineWidth = trackLineWidthByTrackSet[trackSet.id] ?? trackDefaults.lineWidth;
@@ -246,7 +250,7 @@ export default function TracksPanel({
                       </div>
                       <div className="track-color-control">
                         <div className="track-color-control-header">
-                          <span id={`track-color-label-${trackSet.id}`}>Track color</span>
+                          <span id={`track-color-label-${trackSet.id}`}>Color</span>
                           <span>{trackColorLabel}</span>
                         </div>
                         <div className="track-color-swatch-row">
@@ -269,15 +273,39 @@ export default function TracksPanel({
                                 />
                               );
                             })}
+                            <button
+                              type="button"
+                              className={
+                                colorMode.type === 'random'
+                                  ? 'color-swatch-button color-swatch-button--rainbow is-selected'
+                                  : 'color-swatch-button color-swatch-button--rainbow'
+                              }
+                              onClick={() => onTrackColorReset(trackSet.id)}
+                              disabled={tracksForSet.length === 0}
+                              aria-pressed={colorMode.type === 'random'}
+                              aria-label="By ID tracks color"
+                              title="By ID"
+                            />
+                            <label
+                              className={tracksForSet.length === 0 ? 'color-picker-trigger is-disabled' : 'color-picker-trigger'}
+                              htmlFor={`track-color-custom-${trackSet.id}`}
+                            >
+                              <input
+                                id={`track-color-custom-${trackSet.id}`}
+                                className="color-picker-input"
+                                type="color"
+                                value={customTrackColor}
+                                onChange={(event) => onTrackColorSelect(trackSet.id, event.target.value)}
+                                disabled={tracksForSet.length === 0}
+                                aria-label="Choose custom color"
+                              />
+                              <span
+                                className="color-picker-indicator"
+                                style={{ backgroundColor: customTrackColor }}
+                                aria-hidden="true"
+                              />
+                            </label>
                           </div>
-                          <button
-                            type="button"
-                            className={colorMode.type === 'random' ? 'track-color-randomizer' : 'track-color-randomizer is-active'}
-                            onClick={() => onTrackColorReset(trackSet.id)}
-                            disabled={tracksForSet.length === 0}
-                          >
-                            Sorted
-                          </button>
                         </div>
                       </div>
                       <div className="track-list-section">

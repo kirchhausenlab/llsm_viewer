@@ -37,6 +37,8 @@ type ExperimentConfigurationProps = {
   backgroundMaskError: string | null;
   onBackgroundMaskToggle: (value: boolean) => void;
   onBackgroundMaskValuesInputChange: (value: string) => void;
+  renderIn16Bit: boolean;
+  onRenderIn16BitToggle: (value: boolean) => void;
   isFrontPageLocked: boolean;
 };
 
@@ -52,6 +54,8 @@ const ExperimentConfiguration: FC<ExperimentConfigurationProps> = ({
   backgroundMaskError,
   onBackgroundMaskToggle,
   onBackgroundMaskValuesInputChange,
+  renderIn16Bit,
+  onRenderIn16BitToggle,
   isFrontPageLocked
 }) => {
   const spatialResolutionAxes = SPATIAL_VOXEL_RESOLUTION_AXES_BY_EXPERIMENT_TYPE[experimentType];
@@ -153,6 +157,17 @@ const ExperimentConfiguration: FC<ExperimentConfigurationProps> = ({
               />
             </label>
           ) : null}
+        </div>
+        <div className="voxel-resolution-anisotropy-row">
+          <label className="voxel-resolution-anisotropy">
+            <input
+              type="checkbox"
+              checked={renderIn16Bit}
+              onChange={(event) => onRenderIn16BitToggle(event.target.checked)}
+              disabled={isFrontPageLocked}
+            />
+            <strong>Render in 16bit</strong>
+          </label>
         </div>
         {backgroundMaskEnabled && backgroundMaskError ? (
           <div className="voxel-resolution-background-mask-error">{backgroundMaskError}</div>

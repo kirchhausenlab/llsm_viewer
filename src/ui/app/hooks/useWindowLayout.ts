@@ -2,6 +2,10 @@ import type React from 'react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import {
+  computeCameraWindowDefaultPosition,
+  computeCameraWindowRecenterPosition,
+  computeCameraSettingsWindowDefaultPosition,
+  computeCameraSettingsWindowRecenterPosition,
   computeDrawRoiWindowDefaultPosition,
   computeDrawRoiWindowRecenterPosition,
   computeLayersWindowDefaultPosition,
@@ -29,6 +33,8 @@ import {
 type UseWindowLayoutResult = {
   layoutResetToken: number;
   layersWindowInitialPosition: WindowPosition;
+  cameraWindowInitialPosition: WindowPosition;
+  cameraSettingsWindowInitialPosition: WindowPosition;
   recordWindowInitialPosition: WindowPosition;
   paintbrushWindowInitialPosition: WindowPosition;
   drawRoiWindowInitialPosition: WindowPosition;
@@ -49,6 +55,12 @@ const positionsMatch = (a: WindowPosition, b: WindowPosition) => a.x === b.x && 
 export function useWindowLayout(): UseWindowLayoutResult {
   const [layoutResetToken, setLayoutResetToken] = useState(0);
   const layersWindowInitialPosition = useMemo(computeLayersWindowDefaultPosition, []);
+  const [cameraWindowInitialPosition, setCameraWindowInitialPosition] = useState<WindowPosition>(
+    () => computeCameraWindowDefaultPosition()
+  );
+  const [cameraSettingsWindowInitialPosition, setCameraSettingsWindowInitialPosition] = useState<WindowPosition>(
+    () => computeCameraSettingsWindowDefaultPosition()
+  );
   const [propsWindowInitialPosition, setPropsWindowInitialPosition] = useState<WindowPosition>(
     () => computePropsWindowDefaultPosition()
   );
@@ -90,6 +102,14 @@ export function useWindowLayout(): UseWindowLayoutResult {
     },
     []
   );
+
+  useEffect(() => {
+    updatePositionToDefault(computeCameraWindowDefaultPosition, setCameraWindowInitialPosition);
+  }, [updatePositionToDefault]);
+
+  useEffect(() => {
+    updatePositionToDefault(computeCameraSettingsWindowDefaultPosition, setCameraSettingsWindowInitialPosition);
+  }, [updatePositionToDefault]);
 
   useEffect(() => {
     updatePositionToDefault(computeTrackWindowDefaultPosition, setTrackWindowInitialPosition);
@@ -162,6 +182,8 @@ export function useWindowLayout(): UseWindowLayoutResult {
 
   const resetLayout = useCallback(() => {
     setLayoutResetToken(nextLayoutResetToken);
+    setCameraWindowInitialPosition(computeCameraWindowRecenterPosition());
+    setCameraSettingsWindowInitialPosition(computeCameraSettingsWindowRecenterPosition());
     setPropsWindowInitialPosition(computePropsWindowRecenterPosition());
     setTrackWindowInitialPosition(computeTrackWindowDefaultPosition());
     setPaintbrushWindowInitialPosition(computePaintbrushWindowRecenterPosition());
@@ -179,6 +201,8 @@ export function useWindowLayout(): UseWindowLayoutResult {
   return {
     layoutResetToken,
     layersWindowInitialPosition,
+    cameraWindowInitialPosition,
+    cameraSettingsWindowInitialPosition,
     recordWindowInitialPosition,
     paintbrushWindowInitialPosition,
     drawRoiWindowInitialPosition,

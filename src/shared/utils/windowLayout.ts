@@ -3,14 +3,15 @@ export type WindowPosition = { x: number; y: number };
 export const WINDOW_MARGIN = 24;
 export const TOP_MENU_HEIGHT = 52;
 export const TOP_MENU_WINDOW_PADDING = 12;
-export const CONTROL_WINDOW_WIDTH = 360;
-export const PROPS_WINDOW_WIDTH = 400;
+export const CONTROL_WINDOW_WIDTH = 288;
+export const PROPS_WINDOW_WIDTH = CONTROL_WINDOW_WIDTH;
 export const SELECTED_TRACKS_WINDOW_WIDTH = 1120;
 export const SELECTED_TRACKS_WINDOW_HEIGHT = 220;
 export const PAINTBRUSH_WINDOW_VERTICAL_OFFSET = 220;
 export const WARNING_WINDOW_WIDTH = 360;
-export const RUNTIME_DIAGNOSTICS_WINDOW_WIDTH = 320;
+export const RUNTIME_DIAGNOSTICS_WINDOW_WIDTH = CONTROL_WINDOW_WIDTH;
 export const VIEWER_SETTINGS_WINDOW_ESTIMATED_HEIGHT = 320;
+export const CAMERA_SETTINGS_WINDOW_ESTIMATED_HEIGHT = 340;
 export const HOVER_SETTINGS_WINDOW_ESTIMATED_HEIGHT = 260;
 export const RECORD_WINDOW_ESTIMATED_HEIGHT = 220;
 export const PROPS_WINDOW_ESTIMATED_HEIGHT = 560;
@@ -21,8 +22,10 @@ export const ROI_MANAGER_WINDOW_ESTIMATED_HEIGHT = 420;
 export const PLOT_SETTINGS_WINDOW_ESTIMATED_HEIGHT = 260;
 export const TRACK_SETTINGS_WINDOW_ESTIMATED_HEIGHT = 180;
 export const RUNTIME_DIAGNOSTICS_WINDOW_ESTIMATED_HEIGHT = 260;
+export const CAMERA_WINDOW_WIDTH = CONTROL_WINDOW_WIDTH;
+export const CAMERA_WINDOW_ESTIMATED_HEIGHT = 760;
 export const MEASUREMENTS_WINDOW_WIDTH = 760;
-export const SET_MEASUREMENTS_WINDOW_WIDTH = 320;
+export const SET_MEASUREMENTS_WINDOW_WIDTH = CONTROL_WINDOW_WIDTH;
 export const MEASUREMENTS_WINDOW_ESTIMATED_HEIGHT = 420;
 export const SET_MEASUREMENTS_WINDOW_ESTIMATED_HEIGHT = 360;
 
@@ -93,8 +96,16 @@ export const computeViewerSettingsWindowDefaultPosition = (): WindowPosition => 
   return computeTopCenteredWindowPosition(CONTROL_WINDOW_WIDTH, VIEWER_SETTINGS_WINDOW_ESTIMATED_HEIGHT);
 };
 
+export const computeCameraSettingsWindowDefaultPosition = (): WindowPosition => {
+  return computeTopCenteredWindowPosition(CONTROL_WINDOW_WIDTH, CAMERA_SETTINGS_WINDOW_ESTIMATED_HEIGHT);
+};
+
 export const computeHoverSettingsWindowDefaultPosition = (): WindowPosition => {
   return computeTopCenteredWindowPosition(CONTROL_WINDOW_WIDTH, HOVER_SETTINGS_WINDOW_ESTIMATED_HEIGHT);
+};
+
+export const computeCameraWindowDefaultPosition = (): WindowPosition => {
+  return computeTopCenteredWindowPosition(CAMERA_WINDOW_WIDTH, CAMERA_WINDOW_ESTIMATED_HEIGHT);
 };
 
 export const computeRecordWindowDefaultPosition = (): WindowPosition =>
@@ -198,6 +209,12 @@ export const computeMeasurementsWindowDefaultPosition = (): WindowPosition =>
 
 export const computeSetMeasurementsWindowDefaultPosition = (): WindowPosition =>
   computeTopCenteredWindowPosition(SET_MEASUREMENTS_WINDOW_WIDTH, SET_MEASUREMENTS_WINDOW_ESTIMATED_HEIGHT);
+
+export const computeCameraWindowRecenterPosition = (): WindowPosition =>
+  computeTopCenteredWindowPosition(CAMERA_WINDOW_WIDTH, CAMERA_WINDOW_ESTIMATED_HEIGHT);
+
+export const computeCameraSettingsWindowRecenterPosition = (): WindowPosition =>
+  computeTopCenteredWindowPosition(CONTROL_WINDOW_WIDTH, CAMERA_SETTINGS_WINDOW_ESTIMATED_HEIGHT);
 
 export const computePropsWindowRecenterPosition = (): WindowPosition =>
   computeTopCenteredWindowPosition(PROPS_WINDOW_WIDTH, PROPS_WINDOW_ESTIMATED_HEIGHT);

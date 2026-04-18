@@ -274,7 +274,7 @@ export function createVolumeRenderContext(
   const renderer = new THREE.WebGLRenderer({
     antialias: true,
     alpha: true,
-    powerPreference: 'high-performance'
+    powerPreference: 'high-performance',
   });
 
   renderer.outputColorSpace = THREE.SRGBColorSpace;

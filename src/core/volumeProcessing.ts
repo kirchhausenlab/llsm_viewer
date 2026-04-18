@@ -5,6 +5,9 @@ import {
   type VolumeTypedArray
 } from '../types/volume';
 
+export type NormalizedIntensityDataType = 'uint8' | 'uint16';
+export type NormalizedIntensityArray = Uint8Array | Uint16Array;
+
 type BaseViewerVolume = {
   width: number;
   height: number;
@@ -17,12 +20,13 @@ export type IntensityVolume = BaseViewerVolume & {
   kind: 'intensity';
   channels: number;
   dataType: VolumeDataType;
+  normalizedDataType: NormalizedIntensityDataType;
   /**
    * Normalized voxel data. This view must be treated as read-only because it
    * can share the underlying buffer with the source volume when normalization
-   * is already in the [0, 255] range.
+   * is already in the full normalized storage range for the target precision.
    */
-  readonly normalized: Uint8Array;
+  readonly normalized: NormalizedIntensityArray;
   /**
    * Optional precomputed intensity histogram for the normalized bytes, using the
    * viewer's intensity definition (1ch=R, 2ch=avg(R,G), >=3ch=luminance(R,G,B)).
@@ -50,6 +54,10 @@ export type NormalizationParameters = {
   min: number;
   max: number;
 };
+
+export function getNormalizedIntensityDenominator(type: NormalizedIntensityDataType): number {
+  return type === 'uint16' ? 0xffff : 0xff;
+}
 
 export const MAX_SEGMENTATION_LABEL_ID = 0xffff;
 export const SEGMENTATION_PALETTE_SIZE = MAX_SEGMENTATION_LABEL_ID + 1;
@@ -279,7 +287,8 @@ function normalizeFromSource({
   channels,
   dataType,
   source,
-  parameters
+  parameters,
+  normalizedDataType
 }: {
   width: number;
   height: number;
@@ -288,14 +297,24 @@ function normalizeFromSource({
   dataType: VolumeDataType;
   source: SourceArray;
   parameters: NormalizationParameters;
+  normalizedDataType: NormalizedIntensityDataType;
 }): NormalizedVolume {
   const { min, max } = parameters;
+  const denominator = getNormalizedIntensityDenominator(normalizedDataType);
 
   if (
-    dataType === 'uint8' &&
-    min === 0 &&
-    max === 255 &&
-    source instanceof Uint8Array
+    (
+      (normalizedDataType === 'uint8' &&
+        dataType === 'uint8' &&
+        min === 0 &&
+        max === 255 &&
+        source instanceof Uint8Array) ||
+      (normalizedDataType === 'uint16' &&
+        dataType === 'uint16' &&
+        min === 0 &&
+        max === denominator &&
+        source instanceof Uint16Array)
+    )
   ) {
     return {
       kind: 'intensity',
@@ -304,6 +323,7 @@ function normalizeFromSource({
       depth,
       channels,
       dataType,
+      normalizedDataType,
       normalized: source,
       min,
       max
@@ -312,12 +332,14 @@ function normalizeFromSource({
 
   const totalValues = source.length;
   const range = max - min || 1;
-  const normalized = new Uint8Array(totalValues);
+  const normalized = normalizedDataType === 'uint16'
+    ? new Uint16Array(totalValues)
+    : new Uint8Array(totalValues);
 
   for (let i = 0; i < totalValues; i++) {
     const normalizedValue = (source[i] - min) / range;
     const clamped = Math.max(0, Math.min(1, normalizedValue));
-    normalized[i] = Math.round(clamped * 255);
+    normalized[i] = Math.round(clamped * denominator);
   }
 
   return {
@@ -327,6 +349,7 @@ function normalizeFromSource({
     depth,
     channels,
     dataType,
+    normalizedDataType,
     normalized,
     min,
     max
@@ -335,7 +358,8 @@ function normalizeFromSource({
 
 export function normalizeVolume(
   volume: VolumePayload,
-  parameters: NormalizationParameters
+  parameters: NormalizationParameters,
+  normalizedDataType: NormalizedIntensityDataType = 'uint8'
 ): NormalizedVolume {
   const { width, height, depth, channels, data, dataType } = volume;
   const source = createSourceArray(data, dataType);
@@ -346,7 +370,8 @@ export function normalizeVolume(
     channels,
     dataType,
     source,
-    parameters
+    parameters,
+    normalizedDataType
   });
 }
 
@@ -357,7 +382,8 @@ export function normalizeTypedArray({
   channels,
   dataType,
   source,
-  parameters
+  parameters,
+  normalizedDataType = 'uint8'
 }: {
   width: number;
   height: number;
@@ -366,6 +392,7 @@ export function normalizeTypedArray({
   dataType: VolumeDataType;
   source: VolumeTypedArray;
   parameters: NormalizationParameters;
+  normalizedDataType?: NormalizedIntensityDataType;
 }): NormalizedVolume {
   return normalizeFromSource({
     width,
@@ -374,7 +401,8 @@ export function normalizeTypedArray({
     channels,
     dataType,
     source,
-    parameters
+    parameters,
+    normalizedDataType
   });
 }
 

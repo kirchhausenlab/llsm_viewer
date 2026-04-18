@@ -6,6 +6,7 @@ import './viewerCommon.css';
 import './VolumeViewer.css';
 import { createEmptyDesktopViewStateMap } from '../../hooks/useVolumeRenderSetup';
 import type {
+  VolumeViewerCaptureTarget,
   VolumeResources,
   VolumeViewerProps,
 } from './VolumeViewer.types';
@@ -120,6 +121,144 @@ const ROI_TRANSMITTANCE_FALLBACK_TEXTURE = (() => {
   return texture;
 })();
 
+type ScreenshotCanvasResource = {
+  canvas: HTMLCanvasElement;
+  context: CanvasRenderingContext2D;
+  imageData: ImageData;
+};
+
+function dataUrlToBlob(dataUrl: string): Blob | null {
+  const [header, encodedPayload] = dataUrl.split(',', 2);
+  if (!header || !encodedPayload) {
+    return null;
+  }
+
+  const mimeTypeMatch = /^data:(.*?)(;base64)?$/.exec(header);
+  if (!mimeTypeMatch) {
+    return null;
+  }
+
+  const mimeType = mimeTypeMatch[1] || 'application/octet-stream';
+
+  try {
+    if (mimeTypeMatch[2] === ';base64') {
+      const binary = globalThis.atob(encodedPayload);
+      const bytes = new Uint8Array(binary.length);
+      for (let index = 0; index < binary.length; index += 1) {
+        bytes[index] = binary.charCodeAt(index);
+      }
+      return new Blob([bytes], { type: mimeType });
+    }
+
+    return new Blob([decodeURIComponent(encodedPayload)], { type: mimeType });
+  } catch {
+    return null;
+  }
+}
+
+async function captureCanvasPng(canvas: HTMLCanvasElement): Promise<Blob | null> {
+  if (typeof canvas.toBlob === 'function') {
+    const blob = await new Promise<Blob | null>((resolve) => {
+      canvas.toBlob((nextBlob) => resolve(nextBlob), 'image/png');
+    });
+    if (blob) {
+      return blob;
+    }
+  }
+
+  try {
+    return dataUrlToBlob(canvas.toDataURL('image/png'));
+  } catch {
+    return null;
+  }
+}
+
+function ensureScreenshotCanvasResource(
+  resourceRef: MutableRefObject<ScreenshotCanvasResource | null>,
+  width: number,
+  height: number,
+): ScreenshotCanvasResource | null {
+  if (typeof document === 'undefined') {
+    return null;
+  }
+
+  const existing = resourceRef.current;
+  if (existing && existing.canvas.width === width && existing.canvas.height === height) {
+    return existing;
+  }
+
+  const canvas = existing?.canvas ?? document.createElement('canvas');
+  canvas.width = width;
+  canvas.height = height;
+  const context = existing?.context ?? canvas.getContext('2d');
+  if (!context) {
+    return null;
+  }
+
+  const imageData = context.createImageData(width, height);
+  const nextResource = { canvas, context, imageData };
+  resourceRef.current = nextResource;
+  return nextResource;
+}
+
+function copyRenderTargetPixelsToImageData(
+  pixels: Uint8Array,
+  imageData: ImageData,
+  width: number,
+  height: number,
+): void {
+  const rowLength = width * 4;
+  for (let row = 0; row < height; row += 1) {
+    const sourceOffset = row * rowLength;
+    const targetOffset = (height - row - 1) * rowLength;
+    imageData.data.set(pixels.subarray(sourceOffset, sourceOffset + rowLength), targetOffset);
+  }
+}
+
+function ensureScreenshotRenderTarget(
+  targetRef: MutableRefObject<THREE.WebGLRenderTarget | null>,
+  renderer: THREE.WebGLRenderer,
+  width: number,
+  height: number,
+): THREE.WebGLRenderTarget {
+  const current = targetRef.current;
+  if (current && current.width === width && current.height === height) {
+    return current;
+  }
+
+  current?.dispose();
+  const target = new THREE.WebGLRenderTarget(width, height, {
+    depthBuffer: true,
+    stencilBuffer: false,
+    format: THREE.RGBAFormat,
+    type: THREE.UnsignedByteType,
+  });
+  target.texture.minFilter = THREE.LinearFilter;
+  target.texture.magFilter = THREE.LinearFilter;
+  target.texture.generateMipmaps = false;
+  target.texture.colorSpace = THREE.SRGBColorSpace;
+  if (renderer.capabilities.isWebGL2) {
+    target.samples = 4;
+  }
+  targetRef.current = target;
+  return target;
+}
+
+function ensureScreenshotReadbackBuffer(
+  bufferRef: MutableRefObject<Uint8Array | null>,
+  width: number,
+  height: number,
+): Uint8Array {
+  const expectedLength = width * height * 4;
+  const current = bufferRef.current;
+  if (current && current.length === expectedLength) {
+    return current;
+  }
+  const nextBuffer = new Uint8Array(expectedLength);
+  bufferRef.current = nextBuffer;
+  return nextBuffer;
+}
+
 function ensureRoiCompositeShader(
   material: LineMaterial,
   uniforms: {
@@ -207,6 +346,10 @@ function VolumeViewer({
   onFpsChange,
   onRegisterVolumeStepScaleChange,
   onCameraNavigationSample,
+  translationSpeedMultiplier = 1,
+  rotationSpeedMultiplier = 1,
+  onCameraWindowStateChange,
+  onRegisterCameraWindowController,
   onRegisterReset,
   onRegisterCaptureTarget,
   trackScale,
@@ -254,6 +397,9 @@ function VolumeViewer({
   const roiBlOcclusionAlphaTargetRef = useRef<THREE.WebGLRenderTarget | null>(null);
   const roiBlOcclusionDepthTargetRef = useRef<THREE.WebGLRenderTarget | null>(null);
   const roiBlOcclusionSizeRef = useRef({ width: 0, height: 0 });
+  const screenshotRenderTargetRef = useRef<THREE.WebGLRenderTarget | null>(null);
+  const screenshotReadbackBufferRef = useRef<Uint8Array | null>(null);
+  const screenshotCanvasResourceRef = useRef<ScreenshotCanvasResource | null>(null);
   const roiPrepassSceneRef = useRef<THREE.Scene | null>(new THREE.Scene());
   const roiPrepassLineRef = useRef<LineSegments2 | null>(null);
   const roiPrepassTargetRef = useRef<THREE.WebGLRenderTarget | null>(null);
@@ -355,16 +501,31 @@ function VolumeViewer({
     handleResize,
     applyKeyboardRotation,
     applyKeyboardMovement,
+    applyCameraPose,
+    captureCameraWindowState,
     createPointerLookHandlers,
     initializeRenderContext,
   } = useCameraControls({
     trackLinesRef,
     roiLinesRef,
+    volumeRootGroupRef,
+    currentDimensionsRef,
     followTargetActiveRef,
+    followTargetOffsetRef,
     setHasMeasured,
     projectionMode,
+    translationSpeedMultiplier,
+    rotationSpeedMultiplier,
     enableKeyboardNavigation,
   });
+  useEffect(() => {
+    onRegisterCameraWindowController?.({
+      applyCameraPose,
+    });
+    return () => {
+      onRegisterCameraWindowController?.(null);
+    };
+  }, [applyCameraPose, onRegisterCameraWindowController]);
   const isDevMode = Boolean(import.meta.env?.DEV);
   const { resolvedAnisotropyScale, anisotropyStepRatio } = useVolumeViewerAnisotropy({
     trackScale,
@@ -914,6 +1075,103 @@ function VolumeViewer({
     cameraRef,
     hoverRaycasterRef,
   });
+  const captureVolumeScreenshot = useCallback(async (): Promise<Blob | null> => {
+    const renderer = rendererRef.current;
+    const scene = sceneRef.current;
+    const camera = cameraRef.current;
+    if (!renderer || !scene || !camera || renderer.xr?.isPresenting) {
+      return null;
+    }
+
+    const bufferSize = new THREE.Vector2();
+    renderer.getDrawingBufferSize(bufferSize);
+    const width = Math.max(1, Math.floor(bufferSize.x));
+    const height = Math.max(1, Math.floor(bufferSize.y));
+    const renderTarget = ensureScreenshotRenderTarget(screenshotRenderTargetRef, renderer, width, height);
+    const readbackBuffer = ensureScreenshotReadbackBuffer(screenshotReadbackBufferRef, width, height);
+    const screenshotCanvasResource = ensureScreenshotCanvasResource(
+      screenshotCanvasResourceRef,
+      width,
+      height,
+    );
+    if (!screenshotCanvasResource) {
+      return null;
+    }
+
+    const previousRenderTarget = renderer.getRenderTarget();
+    const previousAutoClear = renderer.autoClear;
+    const previousClearColor = new THREE.Color();
+    renderer.getClearColor(previousClearColor);
+    const previousClearAlpha = renderer.getClearAlpha();
+    const roiGroup = roiGroupRef.current;
+    const previousRoiVisibility = roiGroup?.visible ?? false;
+
+    const captureTimestamp =
+      typeof performance !== 'undefined' && typeof performance.now === 'function'
+        ? performance.now()
+        : Date.now();
+
+    try {
+      updateOverlayAppearance(captureTimestamp);
+      refreshWorldProps();
+
+      renderer.setRenderTarget(renderTarget);
+      renderer.autoClear = true;
+      renderer.clear(true, true, true);
+
+      if (roiGroup) {
+        roiGroup.visible = false;
+      }
+      renderer.render(scene, camera);
+      if (roiGroup) {
+        roiGroup.visible = previousRoiVisibility;
+      }
+
+      renderRoiBlOcclusionPass(renderer, camera);
+
+      renderer.readRenderTargetPixels(renderTarget, 0, 0, width, height, readbackBuffer);
+      copyRenderTargetPixelsToImageData(
+        readbackBuffer,
+        screenshotCanvasResource.imageData,
+        width,
+        height,
+      );
+      screenshotCanvasResource.context.putImageData(screenshotCanvasResource.imageData, 0, 0);
+      return captureCanvasPng(screenshotCanvasResource.canvas);
+    } finally {
+      if (roiGroup) {
+        roiGroup.visible = previousRoiVisibility;
+      }
+      renderer.setRenderTarget(previousRenderTarget);
+      renderer.autoClear = previousAutoClear;
+      renderer.setClearColor(previousClearColor, previousClearAlpha);
+    }
+  }, [
+    refreshWorldProps,
+    renderRoiBlOcclusionPass,
+    rendererRef,
+    roiGroupRef,
+    sceneRef,
+    cameraRef,
+    updateOverlayAppearance,
+  ]);
+  useEffect(() => {
+    onRegisterCaptureTarget?.(() => {
+      const renderer = rendererRef.current;
+      if (!renderer) {
+        return null;
+      }
+      const target: VolumeViewerCaptureTarget = {
+        canvas: renderer.domElement,
+        captureImage: captureVolumeScreenshot,
+      };
+      return target;
+    });
+
+    return () => {
+      onRegisterCaptureTarget?.(null);
+    };
+  }, [captureVolumeScreenshot, onRegisterCaptureTarget, renderContextRevision, rendererRef]);
   useVolumeViewerResources({
     layers,
     playbackWarmupLayers,
@@ -1046,6 +1304,8 @@ function VolumeViewer({
       followTargetOffsetRef,
       resourcesRef,
       onCameraNavigationSample,
+      emitCameraWindowState: captureCameraWindowState,
+      onCameraWindowStateChange,
       rotationTargetRef,
       refreshVrHudPlacementsRef,
       currentDimensionsRef,
@@ -1219,6 +1479,10 @@ function VolumeViewer({
   useEffect(() => {
     return () => {
       emitHoverVoxel(null);
+      screenshotRenderTargetRef.current?.dispose();
+      screenshotRenderTargetRef.current = null;
+      screenshotReadbackBufferRef.current = null;
+      screenshotCanvasResourceRef.current = null;
       roiBlOcclusionAlphaTargetRef.current?.dispose();
       roiBlOcclusionDepthTargetRef.current?.dispose();
       roiPrepassTargetRef.current?.dispose();

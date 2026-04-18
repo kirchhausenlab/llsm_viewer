@@ -19,22 +19,22 @@ test('@smoke projection mode can switch between perspective and orthographic aft
   );
 
   await page.getByRole('button', { name: 'View', exact: true }).click();
-  await page.getByRole('menuitem', { name: 'Render settings' }).click();
+  await page.getByRole('menuitem', { name: 'Camera settings' }).click();
 
-  const viewerSettingsWindow = page.locator('.floating-window--viewer-settings');
-  await expect(viewerSettingsWindow.getByRole('heading', { name: 'Render settings' })).toBeVisible();
+  const viewerSettingsWindow = page.locator('.floating-window--camera-settings');
+  await expect(viewerSettingsWindow.getByRole('heading', { name: 'Camera settings' })).toBeVisible();
 
   const perspectiveButton = viewerSettingsWindow.getByRole('button', { name: 'Perspective', exact: true });
-  const orthographicButton = viewerSettingsWindow.getByRole('button', { name: 'Orthographic', exact: true });
+  const isometricButton = viewerSettingsWindow.getByRole('button', { name: 'Isometric', exact: true });
 
   await expect(perspectiveButton).toHaveAttribute('aria-pressed', 'true');
-  await expect(orthographicButton).toHaveAttribute('aria-pressed', 'false');
+  await expect(isometricButton).toHaveAttribute('aria-pressed', 'false');
 
-  await orthographicButton.evaluate((element) => {
+  await isometricButton.evaluate((element) => {
     (element as HTMLButtonElement).click();
   });
 
-  await expect(orthographicButton).toHaveAttribute('aria-pressed', 'true');
+  await expect(isometricButton).toHaveAttribute('aria-pressed', 'true');
   await expect(perspectiveButton).toHaveAttribute('aria-pressed', 'false');
   await forceViewerRender(page);
   const orthographicMetrics = await collectPrimaryCanvasMetrics(page);
@@ -46,7 +46,7 @@ test('@smoke projection mode can switch between perspective and orthographic aft
   });
 
   await expect(perspectiveButton).toHaveAttribute('aria-pressed', 'true');
-  await expect(orthographicButton).toHaveAttribute('aria-pressed', 'false');
+  await expect(isometricButton).toHaveAttribute('aria-pressed', 'false');
   await forceViewerRender(page);
   const perspectiveMetrics = await collectPrimaryCanvasMetrics(page);
   expect(perspectiveMetrics.nonBlackSamples).toBeGreaterThan(0);

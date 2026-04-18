@@ -29,6 +29,7 @@ export default function ChannelCard({
   onLayerRemove
 }: ChannelCardProps) {
   const { state: dropboxState, controls: dropboxControls } = useChannelDropbox({ disabled: isDisabled });
+  const visibleErrors = validation.errors.filter((message) => message !== 'Name this channel.');
 
   const isDropboxImporting = dropboxState.importTarget !== null;
   const primaryLayer = channel.volume;
@@ -44,9 +45,9 @@ export default function ChannelCard({
   }, [primaryLayer]);
 
   const statusContent =
-    hasLayerSelection && (validation.errors.length > 0 || validation.warnings.length > 0) ? (
+    hasLayerSelection && (visibleErrors.length > 0 || validation.warnings.length > 0) ? (
       <div className="track-card-status-row">
-        {validation.errors.map((message, index) => (
+        {visibleErrors.map((message, index) => (
           <p key={`error-${index}`} className="channel-tracks-error">
             {message}
           </p>
@@ -91,9 +92,6 @@ export default function ChannelCard({
             <div className="channel-layer-description">
               <p className="channel-layer-drop-subtitle">
                 Source channel {componentLabel} of {sourceChannels} from the multichannel upload above.
-              </p>
-              <p className="channel-layer-status">
-                Clear or replace the upload on the parent row to remove or update this linked channel.
               </p>
             </div>
           </div>
@@ -152,11 +150,6 @@ export default function ChannelCard({
       statusSlot={
         hasLayerSelection ? (
           <>
-            {isMultichannelOwner && sourceChannels > 1 ? (
-              <p className="channel-layer-status">
-                Expanded into {sourceChannels} linked grayscale channels below.
-              </p>
-            ) : null}
             {statusContent}
           </>
         ) : !hasLayerSelection ? (

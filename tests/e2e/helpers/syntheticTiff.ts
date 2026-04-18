@@ -15,8 +15,24 @@ const TAG_ROWS_PER_STRIP = 278;
 const TAG_STRIP_BYTE_COUNTS = 279;
 const TAG_SAMPLE_FORMAT = 339;
 
-function encodeGrayscaleTiffStack(width: number, height: number, depth: number, data: Uint8Array): Buffer {
-  const bytesPerSlice = width * height;
+type GrayscaleTypedArray = Uint8Array | Uint16Array | Float32Array;
+
+function getTiffSampleSpec(data: GrayscaleTypedArray): { bitsPerSample: number; sampleFormat: number; bytesPerSample: number } {
+  if (data instanceof Uint8Array) {
+    return { bitsPerSample: 8, sampleFormat: 1, bytesPerSample: 1 };
+  }
+  if (data instanceof Uint16Array) {
+    return { bitsPerSample: 16, sampleFormat: 1, bytesPerSample: 2 };
+  }
+  if (data instanceof Float32Array) {
+    return { bitsPerSample: 32, sampleFormat: 3, bytesPerSample: 4 };
+  }
+  throw new Error('Unsupported grayscale TIFF typed array.');
+}
+
+function encodeGrayscaleTiffStack(width: number, height: number, depth: number, data: GrayscaleTypedArray): Buffer {
+  const { bitsPerSample, sampleFormat, bytesPerSample } = getTiffSampleSpec(data);
+  const bytesPerSlice = width * height * bytesPerSample;
   const headerSize = 8;
   const dataStart = headerSize;
   const dataSize = bytesPerSlice * depth;
@@ -32,7 +48,7 @@ function encodeGrayscaleTiffStack(width: number, height: number, depth: number, 
   bytes.set(new Uint8Array([0x49, 0x49]), 0);
   view.setUint16(2, 42, true);
   view.setUint32(4, ifdStart, true);
-  bytes.set(data, dataStart);
+  bytes.set(new Uint8Array(data.buffer, data.byteOffset, data.byteLength), dataStart);
 
   for (let z = 0; z < depth; z += 1) {
     const ifdOffset = ifdStart + z * ifdSize;
@@ -42,14 +58,14 @@ function encodeGrayscaleTiffStack(width: number, height: number, depth: number, 
     const entries = [
       [TAG_IMAGE_WIDTH, TYPE_LONG, 1, width],
       [TAG_IMAGE_LENGTH, TYPE_LONG, 1, height],
-      [TAG_BITS_PER_SAMPLE, TYPE_SHORT, 1, 8],
+      [TAG_BITS_PER_SAMPLE, TYPE_SHORT, 1, bitsPerSample],
       [TAG_COMPRESSION, TYPE_SHORT, 1, 1],
       [TAG_PHOTOMETRIC_INTERPRETATION, TYPE_SHORT, 1, 1],
       [TAG_STRIP_OFFSETS, TYPE_LONG, 1, stripOffset],
       [TAG_SAMPLES_PER_PIXEL, TYPE_SHORT, 1, 1],
       [TAG_ROWS_PER_STRIP, TYPE_LONG, 1, height],
       [TAG_STRIP_BYTE_COUNTS, TYPE_LONG, 1, bytesPerSlice],
-      [TAG_SAMPLE_FORMAT, TYPE_SHORT, 1, 1],
+      [TAG_SAMPLE_FORMAT, TYPE_SHORT, 1, sampleFormat],
     ] as const;
 
     let entryOffset = ifdOffset + 2;
@@ -73,18 +89,33 @@ export function createSyntheticVolumeTiffPath(options?: {
   height?: number;
   depth?: number;
   seed?: number;
+  dataType?: 'uint8' | 'uint16' | 'float32';
 }): string {
   const width = options?.width ?? 8;
   const height = options?.height ?? 8;
   const depth = options?.depth ?? 4;
   const seed = options?.seed ?? 0;
-  const data = new Uint8Array(width * height * depth);
+  const dataType = options?.dataType ?? 'uint8';
+  const valueCount = width * height * depth;
+  const data =
+    dataType === 'uint16'
+      ? new Uint16Array(valueCount)
+      : dataType === 'float32'
+        ? new Float32Array(valueCount)
+        : new Uint8Array(valueCount);
 
   for (let z = 0; z < depth; z += 1) {
     for (let y = 0; y < height; y += 1) {
       for (let x = 0; x < width; x += 1) {
         const index = ((z * height) + y) * width + x;
-        data[index] = (x * 20 + y * 10 + z * 30 + seed * 7) % 255;
+        const value = x * 20 + y * 10 + z * 30 + seed * 7;
+        if (data instanceof Uint16Array) {
+          data[index] = value % 65535;
+        } else if (data instanceof Float32Array) {
+          data[index] = (value % 1000) / 1000;
+        } else {
+          data[index] = value % 255;
+        }
       }
     }
   }
@@ -103,6 +134,7 @@ export function createSyntheticVolumeMovieTiffPaths(options?: {
   height?: number;
   depth?: number;
   seed?: number;
+  dataType?: 'uint8' | 'uint16' | 'float32';
 }): string[] {
   const timepoints = options?.timepoints ?? 3;
   const seed = options?.seed ?? 0;
@@ -114,6 +146,7 @@ export function createSyntheticVolumeMovieTiffPaths(options?: {
         height: options?.height,
         depth: options?.depth,
         seed: seed + timepoint * 17,
+        dataType: options?.dataType,
       })
     );
   }
@@ -124,18 +157,32 @@ export function createCustomVolumeTiffPath(options: {
   width: number;
   height: number;
   depth: number;
+  dataType?: 'uint8' | 'uint16' | 'float32';
   fill: (x: number, y: number, z: number) => number;
   label?: string;
 }): string {
   const { width, height, depth, fill, label = 'custom' } = options;
-  const data = new Uint8Array(width * height * depth);
+  const dataType = options.dataType ?? 'uint8';
+  const valueCount = width * height * depth;
+  const data =
+    dataType === 'uint16'
+      ? new Uint16Array(valueCount)
+      : dataType === 'float32'
+        ? new Float32Array(valueCount)
+        : new Uint8Array(valueCount);
 
   for (let z = 0; z < depth; z += 1) {
     for (let y = 0; y < height; y += 1) {
       for (let x = 0; x < width; x += 1) {
         const index = ((z * height) + y) * width + x;
         const value = fill(x, y, z);
-        data[index] = Math.max(0, Math.min(255, Math.round(value)));
+        if (data instanceof Uint16Array) {
+          data[index] = Math.max(0, Math.min(65535, Math.round(value)));
+        } else if (data instanceof Float32Array) {
+          data[index] = value;
+        } else {
+          data[index] = Math.max(0, Math.min(255, Math.round(value)));
+        }
       }
     }
   }
