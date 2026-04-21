@@ -4,18 +4,22 @@ import * as THREE from 'three';
 
 import { DEFAULT_LAYER_COLOR, normalizeHexColor } from '../../../shared/colorMaps/layerColors';
 import {
+  applyOrthographicZoomBounds,
   applyDesktopViewState,
   captureDesktopViewState,
+  clampOrthographicZoomForControls,
   cloneDesktopViewStateMap,
   createDesktopCamera,
   createEmptyDesktopViewStateMap,
   createOrthographicViewStateFromPerspective,
   getProjectionModeForCamera,
+  isOrthographicDesktopCamera,
   isPerspectiveDesktopCamera,
   type DesktopViewStateMap,
   type DesktopViewerCamera,
   type ViewerProjectionMode,
 } from '../../../hooks/useVolumeRenderSetup';
+import { resolveSceneWorldBounds } from './cameraNavigationBounds';
 import {
   createColormapTexture,
   disposeMaterial,
@@ -69,6 +73,7 @@ import {
   hasMismatchedPageTableSource,
   isPlaybackPinnedLayer,
   isPlaybackWarmupLayer,
+  resolveCanonicalSceneDimensions,
   resolveLayerRenderSource,
   type ManagedViewerLayer
 } from './layerRenderSource';
@@ -2416,18 +2421,13 @@ export function useVolumeResources({
       return;
     }
 
+    // Use canonical full-resolution scene dimensions here so scale transitions do not masquerade
+    // as dataset changes and reset the camera state.
     const referenceSource =
-      primaryVolume
+      resolveCanonicalSceneDimensions(layers) ??
+      (layers.length === 0 && primaryVolume
         ? { width: primaryVolume.width, height: primaryVolume.height, depth: primaryVolume.depth }
-        : (() => {
-            for (const layer of layers) {
-              const source = resolveLayerRenderSource(layer);
-              if (source) {
-                return { width: source.width, height: source.height, depth: source.depth };
-              }
-            }
-            return null;
-          })();
+        : null);
 
     if (!referenceSource) {
       removeAllResources();
@@ -2486,6 +2486,30 @@ export function useVolumeResources({
 
       applyTrackGroupTransform({ width, height, depth });
       applyVolumeRootTransform({ width, height, depth });
+    }
+
+    const sceneBounds = resolveSceneWorldBounds(currentDimensionsRef.current, volumeRootGroupRef.current);
+    const canonicalOrthographicReferenceZoom =
+      sceneBounds ? Math.max(2 / Math.max(sceneBounds.radius * 2.2, 1e-6), 1e-6) : null;
+    const orthographicReferenceZoom = Math.max(
+      defaultViewStateRef.current?.orthographic?.zoom ?? 0,
+      canonicalOrthographicReferenceZoom ?? 0,
+    );
+    applyOrthographicZoomBounds(controls, orthographicReferenceZoom);
+    if (isOrthographicDesktopCamera(camera)) {
+      const clampedZoom = clampOrthographicZoomForControls(camera.zoom, controls);
+      if (Math.abs(camera.zoom - clampedZoom) > 1e-9) {
+        camera.zoom = clampedZoom;
+        camera.updateProjectionMatrix();
+      }
+      if (projectionMode === 'orthographic') {
+        projectionViewStateRef.current.orthographic = captureDesktopViewState(
+          camera,
+          controls.target,
+          'orthographic',
+          controls,
+        );
+      }
     }
 
     const seenKeys = new Set<string>();

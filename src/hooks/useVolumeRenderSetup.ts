@@ -37,6 +37,8 @@ export const DEFAULT_DESKTOP_CAMERA_NEAR = 0.0001;
 export const DEFAULT_DESKTOP_CAMERA_FAR = 1000;
 export const DEFAULT_DESKTOP_PERSPECTIVE_FOV = 38;
 const DEFAULT_ORTHOGRAPHIC_HALF_HEIGHT = 1;
+const MIN_DESKTOP_CAMERA_ZOOM = 1e-6;
+const DEFAULT_ORTHOGRAPHIC_ZOOM_OUT_LIMIT_MULTIPLIER = 4;
 
 export function createEmptyDesktopViewStateMap(): DesktopViewStateMap {
   return {
@@ -59,6 +61,37 @@ export function isOrthographicDesktopCamera(
 
 export function getProjectionModeForCamera(camera: THREE.Camera | null | undefined): ViewerProjectionMode {
   return isOrthographicDesktopCamera(camera) ? 'orthographic' : 'perspective';
+}
+
+function clampDesktopCameraZoom(zoom: number): number {
+  return Number.isFinite(zoom) && zoom > 0 ? Math.max(zoom, MIN_DESKTOP_CAMERA_ZOOM) : MIN_DESKTOP_CAMERA_ZOOM;
+}
+
+export function resolveOrthographicMinZoom(referenceZoom: number): number {
+  return clampDesktopCameraZoom(referenceZoom / DEFAULT_ORTHOGRAPHIC_ZOOM_OUT_LIMIT_MULTIPLIER);
+}
+
+export function applyOrthographicZoomBounds(
+  controls: Pick<OrbitControls, 'minZoom' | 'maxZoom'>,
+  referenceZoom: number | null | undefined,
+): number {
+  const minZoom = resolveOrthographicMinZoom(clampDesktopCameraZoom(referenceZoom ?? MIN_DESKTOP_CAMERA_ZOOM));
+  controls.minZoom = minZoom;
+  controls.maxZoom = Infinity;
+  return minZoom;
+}
+
+export function clampOrthographicZoomForControls(
+  zoom: number,
+  controls: Pick<OrbitControls, 'minZoom' | 'maxZoom'> | null | undefined,
+): number {
+  const minZoom =
+    controls && Number.isFinite(controls.minZoom)
+      ? clampDesktopCameraZoom(controls.minZoom)
+      : MIN_DESKTOP_CAMERA_ZOOM;
+  const maxZoom =
+    controls && Number.isFinite(controls.maxZoom) ? Math.max(minZoom, controls.maxZoom) : Number.POSITIVE_INFINITY;
+  return Math.min(maxZoom, Math.max(minZoom, clampDesktopCameraZoom(zoom)));
 }
 
 function getSafeAspect(width: number, height: number): number {
@@ -158,7 +191,7 @@ export function computePerspectiveVisibleHeight(
 export function computeOrthographicVisibleHeight(
   camera: THREE.OrthographicCamera,
 ): number {
-  return (camera.top - camera.bottom) / Math.max(camera.zoom, 1e-6);
+  return (camera.top - camera.bottom) / clampDesktopCameraZoom(camera.zoom);
 }
 
 export function computeProjectedPixelsPerUnit(
@@ -177,13 +210,16 @@ export function captureDesktopViewState(
   camera: DesktopViewerCamera,
   target: THREE.Vector3,
   projectionMode = getProjectionModeForCamera(camera),
+  controls?: Pick<OrbitControls, 'minZoom' | 'maxZoom'> | null,
 ): DesktopViewState {
   return {
     projectionMode,
     position: camera.position.clone(),
     target: target.clone(),
     up: camera.up.clone(),
-    zoom: Math.max(camera.zoom ?? 1, 1e-6),
+    zoom: isOrthographicDesktopCamera(camera)
+      ? clampOrthographicZoomForControls(camera.zoom ?? 1, controls)
+      : clampDesktopCameraZoom(camera.zoom ?? 1),
     distanceToTarget: Math.max(camera.position.distanceTo(target), 1e-6),
   };
 }
@@ -220,9 +256,9 @@ export function applyDesktopViewState(
   camera.position.copy(state.position);
   camera.up.copy(state.up);
   if (isOrthographicDesktopCamera(camera)) {
-    camera.zoom = Math.max(state.zoom, 1e-6);
+    camera.zoom = clampOrthographicZoomForControls(state.zoom, controls);
   } else if (isPerspectiveDesktopCamera(camera)) {
-    camera.zoom = Math.max(state.zoom || 1, 1e-6);
+    camera.zoom = clampDesktopCameraZoom(state.zoom || 1);
   }
   camera.updateProjectionMatrix();
   controls.target.copy(state.target);
@@ -240,7 +276,7 @@ export function createOrthographicViewStateFromPerspective(
     position: camera.position.clone(),
     target: target.clone(),
     up: camera.up.clone(),
-    zoom: Math.max(2 / Math.max(visibleHeight, 1e-6), 1e-6),
+    zoom: clampDesktopCameraZoom(2 / Math.max(visibleHeight, 1e-6)),
     distanceToTarget: Math.max(camera.position.distanceTo(target), 1e-6),
   };
 }

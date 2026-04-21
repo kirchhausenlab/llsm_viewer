@@ -21,7 +21,7 @@ import {
   resolveSceneWorldBounds,
 } from './volume-viewer/cameraNavigationBounds';
 import { resolveBackgroundGridStyle } from './volume-viewer/backgroundGrid';
-import { resolveLayerRenderSource } from './volume-viewer/layerRenderSource';
+import { resolveCanonicalSceneDimensions } from './volume-viewer/layerRenderSource';
 import { useVolumeHover } from './volume-viewer/useVolumeHover';
 import { useVolumeViewerVrBridge } from './volume-viewer/useVolumeViewerVrBridge';
 import { useViewerPropsRendering } from './volume-viewer/useViewerPropsRendering';
@@ -122,23 +122,17 @@ function resolveBackgroundReferenceDimensions(
   layers: VolumeViewerProps['layers'],
   primaryVolume: { width: number; height: number; depth: number } | null
 ): { width: number; height: number; depth: number } | null {
+  const canonicalDimensions = resolveCanonicalSceneDimensions(layers);
+  if (canonicalDimensions) {
+    return canonicalDimensions;
+  }
+
   if (primaryVolume) {
     return {
       width: primaryVolume.width,
       height: primaryVolume.height,
       depth: primaryVolume.depth,
     };
-  }
-
-  for (const layer of layers) {
-    const source = resolveLayerRenderSource(layer);
-    if (source) {
-      return {
-        width: source.width,
-        height: source.height,
-        depth: source.depth,
-      };
-    }
   }
 
   return null;

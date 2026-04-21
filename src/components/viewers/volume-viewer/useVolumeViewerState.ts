@@ -10,6 +10,8 @@ import type {
 import type { HoveredVoxelInfo } from '../../../types/hover';
 
 export function useVolumeViewerState() {
+  // Canonical full-resolution scene dimensions. Active scale/texture dimensions are tracked separately
+  // inside per-resource data and must not be written here.
   const currentDimensionsRef = useRef<{ width: number; height: number; depth: number } | null>(null);
   const colormapCacheRef = useRef<Map<string, THREE.DataTexture>>(new Map());
   const volumeRootGroupRef = useRef<THREE.Group | null>(null);

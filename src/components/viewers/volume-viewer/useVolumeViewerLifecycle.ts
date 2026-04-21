@@ -611,6 +611,7 @@ export function useVolumeViewerLifecycle({
         camera,
         controls.target,
         currentProjectionModeRef.current,
+        controls,
       );
       renderer.setAnimationLoop(null);
       detachPointerLifecycle();

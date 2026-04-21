@@ -1629,6 +1629,7 @@ const createLayer = (
     } as unknown as THREE.OrbitControls,
   };
   const resourcesRef = { current: new Map<string, VolumeResources>() };
+  const currentDimensionsRef = { current: null as { width: number; height: number; depth: number } | null };
   const layer: ViewerLayer = {
     ...createLayer(volume, pageTable, null, 'linear'),
     fullResolutionWidth: 4,
@@ -1649,7 +1650,7 @@ const createLayer = (
       defaultViewStateRef: { current: null },
       trackGroupRef: { current: new THREE.Group() },
       resourcesRef,
-      currentDimensionsRef: { current: null },
+      currentDimensionsRef,
       colormapCacheRef: { current: new Map() },
       volumeRootGroupRef: { current: new THREE.Group() },
       volumeRootBaseOffsetRef: { current: new THREE.Vector3() },
@@ -1671,6 +1672,7 @@ const createLayer = (
 
   const resource = resourcesRef.current.get('layer-3d');
   assert.ok(resource);
+  assert.deepStrictEqual(currentDimensionsRef.current, { width: 4, height: 4, depth: 4 });
   assert.deepStrictEqual(resource.dimensions, { width: 4, height: 4, depth: 4 });
   const textureImage = resource.texture.image as { width: number; height: number; depth: number };
   assert.deepStrictEqual(
@@ -1685,6 +1687,119 @@ const createLayer = (
   assert.deepStrictEqual(
     ((uniforms.u_segmentationVolumeSize?.value as THREE.Vector3) ?? new THREE.Vector3()).toArray(),
     [2, 2, 2]
+  );
+})();
+
+(() => {
+  const scale0Volume: NormalizedVolume = {
+    kind: 'intensity',
+    width: 8,
+    height: 8,
+    depth: 4,
+    channels: 1,
+    dataType: 'uint8',
+    normalized: new Uint8Array(8 * 8 * 4).fill(32),
+    min: 0,
+    max: 32,
+    scaleLevel: 0,
+  };
+  const scale1Volume: NormalizedVolume = {
+    kind: 'intensity',
+    width: 4,
+    height: 4,
+    depth: 2,
+    channels: 1,
+    dataType: 'uint8',
+    normalized: new Uint8Array(4 * 4 * 2).fill(32),
+    min: 0,
+    max: 32,
+    scaleLevel: 1,
+  };
+
+  let activeVolume: NormalizedVolume = scale0Volume;
+  const currentDimensionsRef = { current: null as { width: number; height: number; depth: number } | null };
+  const sceneRef = { current: new THREE.Scene() };
+  const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.1, 20);
+  const cameraRef = { current: camera };
+  const controls = {
+    target: new THREE.Vector3(),
+    update: () => {},
+    saveState: () => {},
+    minZoom: 0,
+    maxZoom: Number.POSITIVE_INFINITY,
+  } as unknown as THREE.OrbitControls;
+  const controlsRef = { current: controls };
+  const resourcesRef = { current: new Map<string, VolumeResources>() };
+  const defaultViewStateRef = { current: { perspective: null, orthographic: null } as any };
+
+  const renderLayers = () => [{
+    ...createLayer(activeVolume, null, null, 'linear'),
+    fullResolutionWidth: 8,
+    fullResolutionHeight: 8,
+    fullResolutionDepth: 4,
+  }];
+
+  const hook = renderHook(() =>
+    useVolumeResources({
+      layers: renderLayers(),
+      primaryVolume: activeVolume,
+      isAdditiveBlending: false,
+      renderContextRevision: 0,
+      projectionMode: 'orthographic',
+      sceneRef,
+      cameraRef,
+      controlsRef,
+      rotationTargetRef: { current: new THREE.Vector3() },
+      defaultViewStateRef,
+      projectionViewStateRef: { current: { perspective: null, orthographic: null } as any },
+      trackGroupRef: { current: new THREE.Group() },
+      resourcesRef,
+      currentDimensionsRef,
+      colormapCacheRef: { current: new Map() },
+      volumeRootGroupRef: { current: new THREE.Group() },
+      volumeRootBaseOffsetRef: { current: new THREE.Vector3() },
+      volumeRootCenterOffsetRef: { current: new THREE.Vector3() },
+      volumeRootCenterUnscaledRef: { current: new THREE.Vector3() },
+      volumeRootHalfExtentsRef: { current: new THREE.Vector3() },
+      volumeNormalizationScaleRef: { current: 1 },
+      volumeUserScaleRef: { current: 1 },
+      volumeStepScaleRef: { current: 1 },
+      volumeYawRef: { current: 0 },
+      volumePitchRef: { current: 0 },
+      volumeRootRotatedCenterTempRef: { current: new THREE.Vector3() },
+      applyTrackGroupTransform: () => {},
+      applyVolumeRootTransform: () => {},
+      applyVolumeStepScaleToResources: () => {},
+      applyHoverHighlightToResources: () => {},
+    }),
+  );
+
+  assert.deepStrictEqual(currentDimensionsRef.current, { width: 8, height: 8, depth: 4 });
+
+  camera.position.set(2.5, 1.5, 7);
+  controls.target.set(1, 1, 1);
+  camera.zoom = 0.7;
+  camera.updateProjectionMatrix();
+  camera.updateMatrixWorld(true);
+  const cameraPositionBefore = camera.position.clone();
+  const targetBefore = controls.target.clone();
+  const zoomBefore = camera.zoom;
+
+  activeVolume = scale1Volume;
+  hook.rerender();
+
+  assert.deepStrictEqual(currentDimensionsRef.current, { width: 8, height: 8, depth: 4 });
+  assert.deepStrictEqual(camera.position.toArray(), cameraPositionBefore.toArray());
+  assert.deepStrictEqual(controls.target.toArray(), targetBefore.toArray());
+  assert.ok(Math.abs(camera.zoom - zoomBefore) < 1e-9);
+
+  const resource = resourcesRef.current.get('layer-3d');
+  assert.ok(resource);
+  assert.deepStrictEqual(resource.dimensions, { width: 8, height: 8, depth: 4 });
+  const textureImage = resource.texture.image as { width: number; height: number; depth: number };
+  assert.deepStrictEqual(
+    { width: textureImage.width, height: textureImage.height, depth: textureImage.depth },
+    { width: 4, height: 4, depth: 2 },
   );
 })();
 

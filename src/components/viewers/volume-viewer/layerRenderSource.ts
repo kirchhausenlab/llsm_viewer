@@ -17,6 +17,12 @@ export type LayerRenderSource = {
   brickAtlas: VolumeBrickAtlas | null;
 };
 
+export type SceneDimensions = {
+  width: number;
+  height: number;
+  depth: number;
+};
+
 export function hasMismatchedPageTableSource(
   left: Pick<VolumeBrickPageTable, 'layerKey' | 'timepoint' | 'scaleLevel'>,
   right: Pick<VolumeBrickPageTable, 'layerKey' | 'timepoint' | 'scaleLevel'>
@@ -75,6 +81,22 @@ export function resolveLayerRenderSource(layer: ManagedViewerLayer): LayerRender
       pageTable,
       brickAtlas
     };
+  }
+  return null;
+}
+
+export function resolveCanonicalSceneDimensions(
+  layers: readonly ManagedViewerLayer[],
+): SceneDimensions | null {
+  for (const layer of layers) {
+    const source = resolveLayerRenderSource(layer);
+    if (source) {
+      return {
+        width: source.width,
+        height: source.height,
+        depth: source.depth,
+      };
+    }
   }
   return null;
 }

@@ -3,8 +3,10 @@ import * as THREE from 'three';
 import type { OrbitControls } from 'three/examples/jsm/controls/OrbitControls';
 
 import {
+  applyOrthographicZoomBounds,
   applyDesktopViewState,
   captureDesktopViewState,
+  clampOrthographicZoomForControls,
   computeOrthographicVisibleHeight,
   createDesktopCamera,
   createDesktopControls,
@@ -233,13 +235,53 @@ export function useCameraControls({
     };
   }, [currentDimensionsRef, volumeRootGroupRef]);
 
+  const resolveOrthographicReferenceZoom = useCallback(
+    (camera: DesktopViewerCamera | null | undefined) => {
+      const bounds = resolveCanonicalBounds();
+      if (bounds) {
+        const visibleHeight = Math.max(bounds.radius * 2.2, 1e-6);
+        return Math.max(2 / visibleHeight, 1e-6);
+      }
+
+      const storedDefaultZoom = defaultViewStateRef.current.orthographic?.zoom ?? Number.NaN;
+      if (Number.isFinite(storedDefaultZoom) && storedDefaultZoom > 0) {
+        return storedDefaultZoom;
+      }
+
+      if (isOrthographicDesktopCamera(camera)) {
+        return Math.max(camera.zoom, 1e-6);
+      }
+
+      return null;
+    },
+    [resolveCanonicalBounds],
+  );
+
+  const applyOrthographicZoomFloor = useCallback(
+    (camera: DesktopViewerCamera | null | undefined, controls: OrbitControls | null | undefined) => {
+      if (!camera || !controls || !isOrthographicDesktopCamera(camera)) {
+        return;
+      }
+
+      applyOrthographicZoomBounds(controls, resolveOrthographicReferenceZoom(camera));
+      const clampedZoom = clampOrthographicZoomForControls(camera.zoom, controls);
+      if (Math.abs(camera.zoom - clampedZoom) <= 1e-9) {
+        return;
+      }
+
+      camera.zoom = clampedZoom;
+      camera.updateProjectionMatrix();
+    },
+    [resolveOrthographicReferenceZoom],
+  );
+
   const createWeaklyCanonicalOrthographicState = useCallback(
     (camera: DesktopViewerCamera) => {
       const bounds = resolveCanonicalBounds();
       if (!bounds) {
         return isPerspectiveDesktopCamera(camera)
           ? createOrthographicViewStateFromPerspective(camera, rotationTargetRef.current.clone())
-          : captureDesktopViewState(camera, rotationTargetRef.current.clone(), 'orthographic');
+          : captureDesktopViewState(camera, rotationTargetRef.current.clone(), 'orthographic', controlsRef.current);
       }
 
       const rotation = resolveCameraRotation(camera);
@@ -585,8 +627,9 @@ export function useCameraControls({
     sceneRef.current = renderContext.scene;
     cameraRef.current = renderContext.camera;
     controlsRef.current = renderContext.controls;
+    applyOrthographicZoomFloor(renderContext.camera, renderContext.controls);
     return renderContext;
-  }, []);
+  }, [applyOrthographicZoomFloor]);
 
   useEffect(() => {
     const renderer = rendererRef.current;
@@ -613,6 +656,7 @@ export function useCameraControls({
       camera,
       controls.target,
       previousProjectionMode,
+      controls,
     );
 
     let nextViewState = projectionViewStateRef.current[projectionMode];
@@ -621,7 +665,8 @@ export function useCameraControls({
       projectionViewStateRef.current.orthographic = nextViewState;
     } else if (!nextViewState) {
       nextViewState =
-        defaultViewStateRef.current.perspective ?? captureDesktopViewState(camera, controls.target, projectionMode);
+        defaultViewStateRef.current.perspective ??
+        captureDesktopViewState(camera, controls.target, projectionMode, controls);
       projectionViewStateRef.current.perspective = nextViewState;
     }
 
@@ -634,6 +679,7 @@ export function useCameraControls({
     );
     const nextControls = createDesktopControls(nextCamera, renderer.domElement);
     nextControls.enableRotate = controls.enableRotate;
+    applyOrthographicZoomFloor(nextCamera, nextControls);
 
     scene.remove(camera);
     scene.add(nextCamera);
@@ -644,7 +690,7 @@ export function useCameraControls({
     currentProjectionModeRef.current = projectionMode;
     applyDesktopViewState(nextCamera, nextControls, nextViewState, width, height);
     rotationTargetRef.current.copy(nextControls.target);
-  }, [createWeaklyCanonicalOrthographicState, projectionMode]);
+  }, [applyOrthographicZoomFloor, createWeaklyCanonicalOrthographicState, projectionMode]);
 
   useEffect(() => {
     if (!rotationLocked) {
