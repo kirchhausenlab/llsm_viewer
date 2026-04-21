@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 
 const MAJOR_GRID_TARGET_DIVISIONS = 8;
-const MINOR_GRID_SUBDIVISIONS = 5;
+const FAR_GRID_SPACING_MULTIPLIER = 4;
 
 function chooseNiceStep(targetStep: number): number {
   const safeTarget = Number.isFinite(targetStep) && targetStep > 0 ? targetStep : 1;
@@ -29,51 +29,44 @@ function clamp01(value: number): number {
 }
 
 export type BackgroundGridStyle = {
-  majorSpacing: number;
-  minorSpacing: number;
-  majorLineStrength: number;
-  minorLineStrength: number;
-  minorFadeStart: number;
-  minorFadeEnd: number;
-  majorColor: string;
-  minorColor: string;
+  gridSpacing: number;
+  gridLineStrength: number;
+  gridColor: string;
+  farGridSpacing: number;
+  farGridLineStrength: number;
+  farGridColor: string;
 };
 
 export function resolveBackgroundGridStyle({
   floorColor,
   maxDimension,
-  boundsRadius,
 }: {
   floorColor: string;
   maxDimension: number;
-  boundsRadius: number;
 }): BackgroundGridStyle {
   const safeMaxDimension = Number.isFinite(maxDimension) && maxDimension > 0 ? maxDimension : 1;
-  const safeBoundsRadius = Number.isFinite(boundsRadius) && boundsRadius > 0 ? boundsRadius : 1;
-  const majorSpacing = Math.max(1, chooseNiceStep(safeMaxDimension / MAJOR_GRID_TARGET_DIVISIONS));
-  const minorSpacing = Math.max(1, majorSpacing / MINOR_GRID_SUBDIVISIONS);
+  const gridSpacing = Math.max(1, chooseNiceStep(safeMaxDimension / MAJOR_GRID_TARGET_DIVISIONS));
+  const farGridSpacing = Math.max(gridSpacing * 2, chooseNiceStep(gridSpacing * FAR_GRID_SPACING_MULTIPLIER));
 
   const baseColor = new THREE.Color(floorColor);
   const luminance = clamp01(0.2126 * baseColor.r + 0.7152 * baseColor.g + 0.0722 * baseColor.b);
-  const majorColor = baseColor.clone();
-  const minorColor = baseColor.clone();
+  const gridColor = baseColor.clone();
+  const farGridColor = baseColor.clone();
 
   if (luminance >= 0.55) {
-    majorColor.multiplyScalar(0.62);
-    minorColor.multiplyScalar(0.8);
+    gridColor.multiplyScalar(0.62);
+    farGridColor.multiplyScalar(0.74);
   } else {
-    majorColor.lerp(new THREE.Color(1, 1, 1), 0.5);
-    minorColor.lerp(new THREE.Color(1, 1, 1), 0.28);
+    gridColor.lerp(new THREE.Color(1, 1, 1), 0.5);
+    farGridColor.lerp(new THREE.Color(1, 1, 1), 0.34);
   }
 
   return {
-    majorSpacing,
-    minorSpacing,
-    majorLineStrength: 0.5,
-    minorLineStrength: 0.24,
-    minorFadeStart: safeBoundsRadius * 1.5,
-    minorFadeEnd: safeBoundsRadius * 4.5,
-    majorColor: `#${majorColor.getHexString()}`,
-    minorColor: `#${minorColor.getHexString()}`,
+    gridSpacing,
+    gridLineStrength: 0.5,
+    gridColor: `#${gridColor.getHexString()}`,
+    farGridSpacing,
+    farGridLineStrength: 0.34,
+    farGridColor: `#${farGridColor.getHexString()}`,
   };
 }

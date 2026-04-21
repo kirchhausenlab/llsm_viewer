@@ -45,17 +45,16 @@ test('resolveAdaptiveCameraFrustum expands as the camera moves farther away', ()
   assert.ok(farView.near > nearView.near);
 });
 
-test('resolveBackgroundGridStyle returns stable major/minor spacing and colors', () => {
+test('resolveBackgroundGridStyle returns stable coarse-grid spacing and color', () => {
   const style = resolveBackgroundGridStyle({
     floorColor: '#d7dbe0',
     maxDimension: 120,
-    boundsRadius: 10,
   });
 
-  assert.equal(style.majorSpacing, 20);
-  assert.equal(style.minorSpacing, 4);
-  assert.ok(style.majorColor.startsWith('#'));
-  assert.ok(style.minorColor.startsWith('#'));
-  assert.ok(style.minorFadeEnd > style.minorFadeStart);
-  assert.ok(style.majorLineStrength > style.minorLineStrength);
+  assert.equal(style.gridSpacing, 20);
+  assert.ok(style.gridColor.startsWith('#'));
+  assert.ok(style.gridLineStrength > 0);
+  assert.ok(style.farGridSpacing > style.gridSpacing);
+  assert.ok(style.farGridColor.startsWith('#'));
+  assert.ok(style.farGridLineStrength < style.gridLineStrength);
 });

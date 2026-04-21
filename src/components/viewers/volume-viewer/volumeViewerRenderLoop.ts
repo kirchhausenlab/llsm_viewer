@@ -102,6 +102,7 @@ export function createVolumeViewerRenderLoop({
     applyKeyboardRotation(renderer, camera, controls);
     applyKeyboardMovement(renderer, camera, controls);
     controls.update();
+    camera.updateMatrixWorld(true);
     rotationTargetRef.current.copy(controls.target);
 
     updateTrackAppearance(timestamp);

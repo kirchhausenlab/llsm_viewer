@@ -146,7 +146,7 @@ const ROI_TRANSMITTANCE_FALLBACK_TEXTURE = (() => {
   texture.needsUpdate = true;
   return texture;
 })();
-const BACKGROUND_FLOOR_SHADER_KEY = 'background-floor-infinite-plane-v1';
+const BACKGROUND_FLOOR_SHADER_KEY = 'background-floor-infinite-plane-v3';
 
 type ScreenshotCanvasResource = {
   canvas: HTMLCanvasElement;
@@ -435,6 +435,7 @@ function VolumeViewer({
   const backgroundPassPlanePointLocalRef = useRef(new THREE.Vector3());
   const backgroundPassPlanePointWorldRef = useRef(new THREE.Vector3());
   const backgroundPassPlaneNormalWorldRef = useRef(new THREE.Vector3());
+  const backgroundPassCameraLocalRef = useRef(new THREE.Vector3());
   const roiPrepassSceneRef = useRef<THREE.Scene | null>(new THREE.Scene());
   const roiPrepassLineRef = useRef<LineSegments2 | null>(null);
   const roiPrepassTargetRef = useRef<THREE.WebGLRenderTarget | null>(null);
@@ -454,14 +455,14 @@ function VolumeViewer({
     planePointWorld: { value: new THREE.Vector3() },
     planeNormalWorld: { value: new THREE.Vector3(0, 1, 0) },
     floorColor: { value: new THREE.Color('#d7dbe0') },
-    majorGridColor: { value: new THREE.Color('#8c9198') },
-    minorGridColor: { value: new THREE.Color('#b0b5bc') },
-    majorGridSpacing: { value: 10 },
-    minorGridSpacing: { value: 2 },
-    majorGridStrength: { value: 0.5 },
-    minorGridStrength: { value: 0.24 },
-    minorGridFadeStart: { value: 10 },
-    minorGridFadeEnd: { value: 40 },
+    gridColor: { value: new THREE.Color('#8c9198') },
+    gridSpacing: { value: 10 },
+    gridStrength: { value: 0.5 },
+    gridOriginOffset: { value: new THREE.Vector2() },
+    farGridColor: { value: new THREE.Color('#9ea3aa') },
+    farGridSpacing: { value: 40 },
+    farGridStrength: { value: 0.34 },
+    farGridOriginOffset: { value: new THREE.Vector2() },
   });
 
   const resourcesRef = useRef<Map<string, VolumeResources>>(new Map());
@@ -1276,18 +1277,25 @@ function VolumeViewer({
         uniform vec3 planePointWorld;
         uniform vec3 planeNormalWorld;
         uniform vec3 floorColor;
-        uniform vec3 majorGridColor;
-        uniform vec3 minorGridColor;
-        uniform float majorGridSpacing;
-        uniform float minorGridSpacing;
-        uniform float majorGridStrength;
-        uniform float minorGridStrength;
-        uniform float minorGridFadeStart;
-        uniform float minorGridFadeEnd;
+        uniform vec3 gridColor;
+        uniform float gridSpacing;
+        uniform float gridStrength;
+        uniform vec2 gridOriginOffset;
+        uniform vec3 farGridColor;
+        uniform float farGridSpacing;
+        uniform float farGridStrength;
+        uniform vec2 farGridOriginOffset;
 
         varying vec2 v_ndc;
 
-        float grid_mask(vec2 coords, float spacing, float lineWidth) {
+        float grid_band_visibility(vec2 coords, float spacing) {
+          vec2 cell = coords / max(spacing, 1e-6);
+          vec2 cellDerivatives = fwidth(cell);
+          float cellsPerPixel = max(cellDerivatives.x, cellDerivatives.y);
+          return 1.0 - smoothstep(0.35, 1.0, cellsPerPixel);
+        }
+
+        float grid_line_mask(vec2 coords, float spacing, float lineWidth) {
           vec2 cell = coords / max(spacing, 1e-6);
           vec2 distanceToLine = abs(fract(cell - 0.5) - 0.5);
           vec2 aa = max(fwidth(cell), vec2(1e-4));
@@ -1310,13 +1318,17 @@ function VolumeViewer({
           }
           vec3 hitWorld = cameraWorldPosition + rayDirection * t;
           vec3 hitLocal = (volumeRootWorldInverse * vec4(hitWorld, 1.0)).xyz;
-          vec2 gridCoords = hitLocal.xz;
-          float distanceToCamera = length(hitWorld - cameraWorldPosition);
-          float minorFade = 1.0 - smoothstep(minorGridFadeStart, minorGridFadeEnd, distanceToCamera);
-          float minorMask = grid_mask(gridCoords, minorGridSpacing, 0.035) * minorFade * minorGridStrength;
-          float majorMask = grid_mask(gridCoords, majorGridSpacing, 0.045) * majorGridStrength;
-          vec3 color = mix(floorColor, minorGridColor, clamp(minorMask, 0.0, 1.0));
-          color = mix(color, majorGridColor, clamp(majorMask, 0.0, 1.0));
+          vec2 nearGridCoords = hitLocal.xz - gridOriginOffset;
+          vec2 farGridCoords = hitLocal.xz - farGridOriginOffset;
+          float nearVisibility = grid_band_visibility(nearGridCoords, gridSpacing);
+          float farVisibility = grid_band_visibility(farGridCoords, farGridSpacing);
+          float nearGridMask = grid_line_mask(nearGridCoords, gridSpacing, 0.045) * nearVisibility * gridStrength;
+          float farGridMask = grid_line_mask(farGridCoords, farGridSpacing, 0.05) *
+            farVisibility *
+            (1.0 - nearVisibility) *
+            farGridStrength;
+          vec3 color = mix(floorColor, farGridColor, clamp(farGridMask, 0.0, 1.0));
+          color = mix(color, gridColor, clamp(nearGridMask, 0.0, 1.0));
           gl_FragColor = vec4(color, 1.0);
         }
       `,
@@ -1383,6 +1395,7 @@ function VolumeViewer({
       return;
     }
 
+    camera.updateMatrixWorld(true);
     const { width, height, depth } = backgroundReferenceDimensions;
     const maxDimension = Math.max(width, height, depth, 1);
     const floorGap = Math.max(1, maxDimension * 0.03);
@@ -1393,27 +1406,36 @@ function VolumeViewer({
     const planeNormalWorld = backgroundPassPlaneNormalWorldRef.current.set(0, 1, 0).transformDirection(volumeRootGroup.matrixWorld).normalize();
 
     const uniforms = backgroundPassUniformsRef.current;
-    const bounds = resolveSceneWorldBounds(currentDimensionsRef.current, volumeRootGroupRef.current);
     const gridStyle = resolveBackgroundGridStyle({
       floorColor: background.floorColor,
       maxDimension,
-      boundsRadius: bounds?.radius ?? maxDimension,
     });
+    const safeGridSpacing = Math.max(gridStyle.gridSpacing, 1e-6);
+    const safeFarGridSpacing = Math.max(gridStyle.farGridSpacing, 1e-6);
+    const cameraLocalPosition = volumeRootGroup.worldToLocal(
+      backgroundPassCameraLocalRef.current.copy(camera.position),
+    );
+    uniforms.gridOriginOffset.value.set(
+      Math.floor(cameraLocalPosition.x / safeGridSpacing) * safeGridSpacing,
+      Math.floor(cameraLocalPosition.z / safeGridSpacing) * safeGridSpacing,
+    );
+    uniforms.farGridOriginOffset.value.set(
+      Math.floor(cameraLocalPosition.x / safeFarGridSpacing) * safeFarGridSpacing,
+      Math.floor(cameraLocalPosition.z / safeFarGridSpacing) * safeFarGridSpacing,
+    );
     uniforms.projectionInverse.value.copy(camera.projectionMatrixInverse);
     uniforms.cameraWorldMatrix.value.copy(camera.matrixWorld);
-    uniforms.cameraWorldPosition.value.copy(camera.position);
+    uniforms.cameraWorldPosition.value.setFromMatrixPosition(camera.matrixWorld);
     uniforms.volumeRootWorldInverse.value.copy(volumeRootGroup.matrixWorld).invert();
     uniforms.planePointWorld.value.copy(planePointWorld);
     uniforms.planeNormalWorld.value.copy(planeNormalWorld);
     uniforms.floorColor.value.set(background.floorColor);
-    uniforms.majorGridColor.value.set(gridStyle.majorColor);
-    uniforms.minorGridColor.value.set(gridStyle.minorColor);
-    uniforms.majorGridSpacing.value = gridStyle.majorSpacing;
-    uniforms.minorGridSpacing.value = gridStyle.minorSpacing;
-    uniforms.majorGridStrength.value = gridStyle.majorLineStrength;
-    uniforms.minorGridStrength.value = gridStyle.minorLineStrength;
-    uniforms.minorGridFadeStart.value = gridStyle.minorFadeStart;
-    uniforms.minorGridFadeEnd.value = gridStyle.minorFadeEnd;
+    uniforms.gridColor.value.set(gridStyle.gridColor);
+    uniforms.gridSpacing.value = gridStyle.gridSpacing;
+    uniforms.gridStrength.value = gridStyle.gridLineStrength;
+    uniforms.farGridColor.value.set(gridStyle.farGridColor);
+    uniforms.farGridSpacing.value = gridStyle.farGridSpacing;
+    uniforms.farGridStrength.value = gridStyle.farGridLineStrength;
 
     renderer.render(backgroundScene, backgroundCamera);
   }, [
