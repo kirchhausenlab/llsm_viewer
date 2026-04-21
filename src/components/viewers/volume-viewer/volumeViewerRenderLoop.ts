@@ -33,6 +33,8 @@ type CreateVolumeViewerRenderLoopOptions = {
   updateTrackAppearance: (timestamp: number) => void;
   renderRoiBlOcclusionPass?: (renderer: THREE.WebGLRenderer, camera: THREE.Camera) => void;
   refreshViewerProps: () => void;
+  updateCameraFrustum?: (camera: DesktopViewerCamera) => void;
+  renderBackgroundPass?: (renderer: THREE.WebGLRenderer, camera: DesktopViewerCamera) => void;
   followTargetActiveRef: MutableRefObject<boolean>;
   followTargetOffsetRef: MutableRefObject<THREE.Vector3 | null>;
   roiGroupRef?: MutableRefObject<THREE.Group | null>;
@@ -61,6 +63,8 @@ export function createVolumeViewerRenderLoop({
   updateTrackAppearance,
   renderRoiBlOcclusionPass,
   refreshViewerProps,
+  updateCameraFrustum,
+  renderBackgroundPass,
   followTargetActiveRef,
   followTargetOffsetRef,
   roiGroupRef,
@@ -102,6 +106,7 @@ export function createVolumeViewerRenderLoop({
 
     updateTrackAppearance(timestamp);
     refreshViewerProps();
+    updateCameraFrustum?.(camera);
 
     if (followTargetActiveRef.current) {
       const rotationTarget = rotationTargetRef.current;
@@ -233,6 +238,9 @@ export function createVolumeViewerRenderLoop({
     lastRenderTickSummary = renderSummary;
     const roiGroup = roiGroupRef?.current ?? null;
     const previousRoiVisibility = roiGroup?.visible ?? false;
+    const previousAutoClear = renderer.autoClear;
+    renderer.autoClear = false;
+    renderBackgroundPass?.(renderer, camera);
     if (roiGroup) {
       roiGroup.visible = false;
     }
@@ -241,5 +249,6 @@ export function createVolumeViewerRenderLoop({
       roiGroup.visible = previousRoiVisibility;
     }
     renderRoiBlOcclusionPass?.(renderer, camera);
+    renderer.autoClear = previousAutoClear;
   };
 }

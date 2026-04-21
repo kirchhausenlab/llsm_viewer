@@ -46,6 +46,8 @@ type UseVolumeViewerLifecycleParams = {
   updateTrackAppearance: RenderLoopOptions['updateTrackAppearance'];
   renderRoiBlOcclusionPass: RenderLoopOptions['renderRoiBlOcclusionPass'];
   refreshViewerProps: RenderLoopOptions['refreshViewerProps'];
+  updateCameraFrustum: RenderLoopOptions['updateCameraFrustum'];
+  renderBackgroundPass: RenderLoopOptions['renderBackgroundPass'];
   advancePlaybackFrame: RenderLoopOptions['advancePlaybackFrame'];
   updateControllerRays: RenderLoopOptions['updateControllerRays'];
   controllersRef: MutableRefObject<ControllerEntry[]>;
@@ -155,6 +157,8 @@ export function useVolumeViewerLifecycle({
   updateTrackAppearance,
   renderRoiBlOcclusionPass,
   refreshViewerProps,
+  updateCameraFrustum,
+  renderBackgroundPass,
   advancePlaybackFrame,
   updateControllerRays,
   controllersRef,
@@ -258,6 +262,10 @@ export function useVolumeViewerLifecycle({
   renderRoiBlOcclusionPassRef.current = renderRoiBlOcclusionPass;
   const refreshViewerPropsRef = useRef(refreshViewerProps);
   refreshViewerPropsRef.current = refreshViewerProps;
+  const updateCameraFrustumRef = useRef(updateCameraFrustum);
+  updateCameraFrustumRef.current = updateCameraFrustum;
+  const renderBackgroundPassRef = useRef(renderBackgroundPass);
+  renderBackgroundPassRef.current = renderBackgroundPass;
   const advancePlaybackFrameRef = useRef(advancePlaybackFrame);
   advancePlaybackFrameRef.current = advancePlaybackFrame;
   const updateControllerRaysRef = useRef(updateControllerRays);
@@ -574,6 +582,9 @@ export function useVolumeViewerLifecycle({
       renderRoiBlOcclusionPass: (rendererInstance, cameraInstance) =>
         renderRoiBlOcclusionPassRef.current?.(rendererInstance, cameraInstance),
       refreshViewerProps: () => refreshViewerPropsRef.current(),
+      updateCameraFrustum: (cameraInstance) => updateCameraFrustumRef.current?.(cameraInstance),
+      renderBackgroundPass: (rendererInstance, cameraInstance) =>
+        renderBackgroundPassRef.current?.(rendererInstance, cameraInstance),
       followTargetActiveRef,
       followTargetOffsetRef,
       roiGroupRef,

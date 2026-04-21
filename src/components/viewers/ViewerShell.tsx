@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
+import BackgroundsWindow from './viewer-shell/BackgroundsWindow';
 import CameraWindow from './viewer-shell/CameraWindow';
 import CameraSettingsWindow from './viewer-shell/CameraSettingsWindow';
 import DrawRoiWindow from './viewer-shell/DrawRoiWindow';
@@ -24,6 +25,10 @@ import { useViewerPropsState } from './viewer-shell/hooks/useViewerPropsState';
 import { useViewerRoiState } from './viewer-shell/hooks/useViewerRoiState';
 import { useViewerRecording } from './viewer-shell/hooks/useViewerRecording';
 import type { ViewerShellProps } from './viewer-shell/types';
+import type {
+  DesktopViewerBackgroundConfig,
+  DesktopViewerBackgroundSelection,
+} from './VolumeViewer.types';
 import {
   createDefaultLayerSettings,
   RENDER_STYLE_SLICE,
@@ -57,6 +62,7 @@ import {
   type RoiMeasurementsSnapshot,
 } from '../../types/roiMeasurements';
 import {
+  computeBackgroundsWindowDefaultPosition,
   computeHoverSettingsWindowDefaultPosition,
   MEASUREMENTS_WINDOW_WIDTH,
 } from '../../shared/utils/windowLayout';
@@ -64,12 +70,14 @@ import {
   DEFAULT_HOVER_SETTINGS,
   clampHoverSliderValue,
 } from '../../shared/utils/hoverSettings';
+import { normalizeHexColor } from '../../shared/colorMaps/layerColors';
 import {
   fromUserFacingVoxelIndex,
   getUserFacingVoxelIndexDigits,
   toUserFacingVoxelIndex,
 } from '../../shared/utils/voxelIndex';
 import type { HoverSettings, HoverType } from '../../types/hover';
+import { useUiTheme } from '../../ui/app/providers/UiThemeProvider';
 
 type CoordinateDraft = {
   x: string;
@@ -86,6 +94,29 @@ type RotationDraft = {
 type LayerRenderModeSnapshot = Record<string, { renderStyle: RenderStyle; samplingMode: SamplingMode }>;
 
 const EMPTY_COORDINATE_DRAFT: CoordinateDraft = { x: '', y: '', z: '' };
+const DEFAULT_DARK_VIEWER_BACKGROUND = '#040607';
+const DEFAULT_LIGHT_VIEWER_BACKGROUND = '#ffffff';
+const DEFAULT_FLOOR_COLOR = '#d7dbe0';
+
+function resolveDefaultViewerBackgroundColor(isDarkMode: boolean): string {
+  return isDarkMode ? DEFAULT_DARK_VIEWER_BACKGROUND : DEFAULT_LIGHT_VIEWER_BACKGROUND;
+}
+
+function resolveViewerBackgroundConfig(
+  selection: DesktopViewerBackgroundSelection,
+  isDarkMode: boolean
+): DesktopViewerBackgroundConfig {
+  const defaultBackgroundColor = resolveDefaultViewerBackgroundColor(isDarkMode);
+  const backgroundColor = normalizeHexColor(selection.customBackgroundColor, defaultBackgroundColor);
+  const floorColor = normalizeHexColor(selection.floorColor, DEFAULT_FLOOR_COLOR);
+
+  return {
+    clearColor: backgroundColor,
+    surfaceColor: backgroundColor,
+    floorEnabled: selection.floorEnabled,
+    floorColor,
+  };
+}
 
 function coordinateToDraft(
   coordinate: CameraCoordinate,
@@ -196,6 +227,7 @@ function ViewerShell({
   trackSettings,
   trackDefaults
 }: ViewerShellProps) {
+  const { isDarkMode } = useUiTheme();
   const {
     windowMargin,
     controlWindowWidth,
@@ -296,10 +328,18 @@ function ViewerShell({
   );
   const [renderingQuality, setRenderingQuality] = useState(1.1);
   const [hoverSettings, setHoverSettings] = useState<HoverSettings>(() => ({ ...DEFAULT_HOVER_SETTINGS }));
+  const [backgroundSelection, setBackgroundSelection] = useState<DesktopViewerBackgroundSelection>({
+    customBackgroundColor: null,
+    floorEnabled: false,
+    floorColor: DEFAULT_FLOOR_COLOR,
+  });
+  const [backgroundsWindowInitialPosition, setBackgroundsWindowInitialPosition] = useState(() =>
+    computeBackgroundsWindowDefaultPosition()
+  );
   const [hoverSettingsWindowInitialPosition, setHoverSettingsWindowInitialPosition] = useState(() =>
     computeHoverSettingsWindowDefaultPosition()
   );
-  const lastHoverSettingsResetTokenRef = useRef(resetToken);
+  const lastFloatingWindowResetTokenRef = useRef(resetToken);
 
   const handleRenderingQualityChange = (value: number) => {
     setRenderingQuality(value);
@@ -347,6 +387,9 @@ function ViewerShell({
     isCameraSettingsWindowOpen,
     openCameraSettingsWindow,
     closeCameraSettingsWindow,
+    isBackgroundsWindowOpen,
+    openBackgroundsWindow,
+    closeBackgroundsWindow,
     isPropsWindowOpen,
     openPropsWindow,
     closePropsWindow,
@@ -390,12 +433,61 @@ function ViewerShell({
   });
 
   useEffect(() => {
-    if (lastHoverSettingsResetTokenRef.current === resetToken) {
+    if (lastFloatingWindowResetTokenRef.current === resetToken) {
       return;
     }
-    lastHoverSettingsResetTokenRef.current = resetToken;
+    lastFloatingWindowResetTokenRef.current = resetToken;
+    setBackgroundsWindowInitialPosition(computeBackgroundsWindowDefaultPosition());
     setHoverSettingsWindowInitialPosition(computeHoverSettingsWindowDefaultPosition());
   }, [resetToken]);
+
+  const handleResetBackgrounds = useCallback(() => {
+    setBackgroundSelection({
+      customBackgroundColor: null,
+      floorEnabled: false,
+      floorColor: DEFAULT_FLOOR_COLOR,
+    });
+  }, []);
+
+  const handleBackgroundColorChange = useCallback((color: string) => {
+    const normalizedColor = normalizeHexColor(color, resolveDefaultViewerBackgroundColor(isDarkMode));
+    const defaultBackgroundColor = resolveDefaultViewerBackgroundColor(isDarkMode);
+    setBackgroundSelection((current) => ({
+      ...current,
+      customBackgroundColor: normalizedColor === defaultBackgroundColor ? null : normalizedColor,
+    }));
+  }, [isDarkMode]);
+
+  const handleFloorEnabledChange = useCallback((enabled: boolean) => {
+    setBackgroundSelection((current) => ({
+      ...current,
+      floorEnabled: enabled,
+    }));
+  }, []);
+
+  const handleFloorColorChange = useCallback((color: string) => {
+    setBackgroundSelection((current) => ({
+      ...current,
+      floorColor: normalizeHexColor(color, DEFAULT_FLOOR_COLOR),
+    }));
+  }, []);
+
+  const resolvedViewerBackground = useMemo(
+    () => resolveViewerBackgroundConfig(backgroundSelection, isDarkMode),
+    [backgroundSelection, isDarkMode]
+  );
+  const effectiveBackgroundColor = useMemo(
+    () => normalizeHexColor(backgroundSelection.customBackgroundColor, resolveDefaultViewerBackgroundColor(isDarkMode)),
+    [backgroundSelection.customBackgroundColor, isDarkMode]
+  );
+  const isBackgroundResetDisabled = useMemo(
+    () =>
+      backgroundSelection.customBackgroundColor === null &&
+      !backgroundSelection.floorEnabled &&
+      normalizeHexColor(backgroundSelection.floorColor, DEFAULT_FLOOR_COLOR) === DEFAULT_FLOOR_COLOR,
+    [backgroundSelection.customBackgroundColor, backgroundSelection.floorEnabled, backgroundSelection.floorColor]
+  );
+  const isFloorAvailable = modeControls.projectionMode === 'perspective';
 
   const handleHoverEnabledChange = useCallback((enabled: boolean) => {
     setHoverSettings((current) => ({ ...current, enabled }));
@@ -1507,6 +1599,7 @@ function ViewerShell({
       onOpenChannelsWindow: openChannelsWindow,
       onOpenCameraWindow: openCameraWindow,
       onOpenCameraSettingsWindow: openCameraSettingsWindow,
+      onOpenBackgroundsWindow: openBackgroundsWindow,
       onOpenPropsWindow: openPropsWindow,
       onOpenPaintbrush: openPaintbrush,
       onOpenDrawRoiWindow: openDrawRoiWindow,
@@ -1563,6 +1656,7 @@ function ViewerShell({
       hoverIntensityValueDigits,
       modeToggle,
       openAmplitudePlot,
+      openBackgroundsWindow,
       openCameraWindow,
       openCameraSettingsWindow,
       openPlotSettings,
@@ -1595,6 +1689,7 @@ function ViewerShell({
     () => ({
       ...volumeViewerWithCaptureTarget,
       hoverSettings,
+      background: resolvedViewerBackground,
       translationSpeedMultiplier,
       rotationSpeedMultiplier,
       rotationLocked: is2dViewActive,
@@ -1653,6 +1748,7 @@ function ViewerShell({
       volumeViewerProps.temporalResolution,
       volumeViewerWithCaptureTarget,
       hoverSettings,
+      resolvedViewerBackground,
       is2dViewActive,
       translationSpeedMultiplier,
       rotationSpeedMultiplier,
@@ -1921,6 +2017,28 @@ function ViewerShell({
         }}
         isOpen={isHoverSettingsWindowOpen}
         onClose={closeHoverSettingsWindow}
+      />
+
+      <BackgroundsWindow
+        layout={{
+          windowMargin,
+          controlWindowWidth,
+          backgroundsWindowInitialPosition,
+          resetToken,
+        }}
+        backgrounds={{
+          backgroundColor: effectiveBackgroundColor,
+          floorEnabled: backgroundSelection.floorEnabled,
+          floorColor: backgroundSelection.floorColor,
+          isFloorAvailable,
+          isResetDisabled: isBackgroundResetDisabled,
+          onResetToDefault: handleResetBackgrounds,
+          onBackgroundColorChange: handleBackgroundColorChange,
+          onFloorEnabledChange: handleFloorEnabledChange,
+          onFloorColorChange: handleFloorColorChange,
+        }}
+        isOpen={isBackgroundsWindowOpen}
+        onClose={closeBackgroundsWindow}
       />
 
       <RecordWindow

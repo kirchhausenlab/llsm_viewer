@@ -18,6 +18,7 @@ test('viewer panel window controls open and close the requested windows', () => 
   assert.equal(hook.result.isTracksWindowOpen, true);
   assert.equal(hook.result.isAmplitudePlotOpen, false);
   assert.equal(hook.result.isViewerSettingsOpen, false);
+  assert.equal(hook.result.isBackgroundsWindowOpen, false);
   assert.equal(hook.result.isHoverSettingsWindowOpen, false);
   assert.equal(hook.result.isTrackSettingsOpen, false);
   assert.equal(hook.result.isPlotSettingsOpen, false);
@@ -37,6 +38,7 @@ test('viewer panel window controls open and close the requested windows', () => 
 
   hook.act(() => {
     hook.result.openViewerSettings();
+    hook.result.openBackgroundsWindow();
     hook.result.openHoverSettingsWindow();
     hook.result.openTrackSettings();
     hook.result.openAmplitudePlot();
@@ -49,6 +51,7 @@ test('viewer panel window controls open and close the requested windows', () => 
   });
 
   assert.equal(hook.result.isViewerSettingsOpen, true);
+  assert.equal(hook.result.isBackgroundsWindowOpen, true);
   assert.equal(hook.result.isHoverSettingsWindowOpen, true);
   assert.equal(hook.result.isPropsWindowOpen, true);
   assert.equal(hook.result.isTracksWindowOpen, true);
@@ -63,11 +66,13 @@ test('viewer panel window controls open and close the requested windows', () => 
   hook.act(() => {
     hook.result.closeTracksWindow();
     hook.result.closeAmplitudePlot();
+    hook.result.closeBackgroundsWindow();
   });
 
   assert.equal(hook.result.isTracksWindowOpen, false);
   assert.equal(hook.result.isTrackSettingsOpen, false);
   assert.equal(hook.result.isAmplitudePlotOpen, false);
+  assert.equal(hook.result.isBackgroundsWindowOpen, false);
   assert.equal(hook.result.isDrawRoiWindowOpen, true);
   assert.equal(hook.result.isRoiManagerWindowOpen, true);
   assert.equal(hook.result.isPlotSettingsOpen, false);
@@ -114,6 +119,7 @@ test('viewer panel windows react to availability changes and reset layout events
     hook.result.closeTracksWindow();
     hook.result.closeAmplitudePlot();
     hook.result.openViewerSettings();
+    hook.result.openBackgroundsWindow();
     hook.result.openHoverSettingsWindow();
     hook.result.openDrawRoiWindow();
     hook.result.openRoiManagerWindow();
@@ -131,6 +137,7 @@ test('viewer panel windows react to availability changes and reset layout events
   assert.equal(hook.result.isTracksWindowOpen, false);
   assert.equal(hook.result.isAmplitudePlotOpen, false);
   assert.equal(hook.result.isViewerSettingsOpen, true);
+  assert.equal(hook.result.isBackgroundsWindowOpen, true);
   assert.equal(hook.result.isHoverSettingsWindowOpen, true);
   assert.equal(hook.result.isDrawRoiWindowOpen, true);
   assert.equal(hook.result.isRoiManagerWindowOpen, true);

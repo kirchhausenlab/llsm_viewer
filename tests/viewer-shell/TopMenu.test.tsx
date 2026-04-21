@@ -145,6 +145,7 @@ function createProps(overrides: Partial<React.ComponentProps<typeof TopMenu>> = 
     onOpenChannelsWindow: () => {},
     onOpenCameraWindow: () => {},
     onOpenCameraSettingsWindow: () => {},
+    onOpenBackgroundsWindow: () => {},
     onOpenPropsWindow: () => {},
     onOpenPaintbrush: () => {},
     onOpenDrawRoiWindow: () => {},
@@ -238,7 +239,7 @@ test('top menu renders the requested dropdown order and items', () => {
 
     const expectedMenus = new Map<string, string[]>([
       ['File', ['Save changes', 'Reset changes', 'Recenter windows', 'Diagnostics', 'Exit']],
-      ['View', ['Channels', 'View selection', 'Screen capture', 'Background', 'Render settings', 'Camera settings', 'Hover settings']],
+      ['View', ['Channels', 'View selection', 'Screen capture', 'Backgrounds', 'Render settings', 'Camera settings', 'Hover settings']],
       ['Edit', ['Props', 'Paintbrush', 'Draw ROI', 'ROI Manager', 'Set measurements']],
       ['Tracks', ['Tracks window', 'Amplitude plot', 'Plot settings', 'Tracks settings']],
       ['Help', ['About', 'Controls']]
@@ -345,6 +346,7 @@ test('wired dropdown items invoke the expected handlers', () => {
     let channelsCalls = 0;
     let cameraCalls = 0;
     let cameraSettingsCalls = 0;
+    let backgroundsCalls = 0;
     let propsCalls = 0;
     let paintbrushCalls = 0;
     let drawRoiCalls = 0;
@@ -375,6 +377,9 @@ test('wired dropdown items invoke the expected handlers', () => {
       },
       onOpenCameraSettingsWindow: () => {
         cameraSettingsCalls += 1;
+      },
+      onOpenBackgroundsWindow: () => {
+        backgroundsCalls += 1;
       },
       onOpenPropsWindow: () => {
         propsCalls += 1;
@@ -446,6 +451,13 @@ test('wired dropdown items invoke the expected handlers', () => {
     });
     act(() => {
       findMenuItem(renderer, 'View selection').props.onClick();
+    });
+
+    act(() => {
+      findDropdownTrigger(renderer, 'View').props.onClick();
+    });
+    act(() => {
+      findMenuItem(renderer, 'Backgrounds').props.onClick();
     });
 
     act(() => {
@@ -558,6 +570,7 @@ test('wired dropdown items invoke the expected handlers', () => {
     assert.equal(channelsCalls, 1);
     assert.equal(cameraCalls, 1);
     assert.equal(cameraSettingsCalls, 1);
+    assert.equal(backgroundsCalls, 1);
     assert.equal(propsCalls, 1);
     assert.equal(paintbrushCalls, 1);
     assert.equal(drawRoiCalls, 1);
@@ -583,13 +596,11 @@ test('top menu placeholder actions render as inactive buttons', () => {
     const inactiveItems = [
       'Save changes',
       'Reset changes',
-      'Background',
       'About'
     ];
 
     for (const [menuLabel, itemLabel] of [
       ['File', 'Save changes'],
-      ['View', 'Background'],
       ['Help', 'About']
     ] as const) {
       act(() => {
@@ -599,9 +610,7 @@ test('top menu placeholder actions render as inactive buttons', () => {
       for (const label of inactiveItems.filter((value) =>
         menuLabel === 'File'
           ? value === 'Save changes' || value === 'Reset changes'
-          : menuLabel === 'View'
-            ? value === 'Background'
-            : value === 'About'
+          : value === 'About'
       )) {
         assert.equal(findMenuItem(renderer, label).props.disabled, true);
       }
@@ -639,7 +648,7 @@ test('top menu does not close the controls window when another menu opens', () =
       'Channels',
       'View selection',
       'Screen capture',
-      'Background',
+      'Backgrounds',
       'Render settings',
       'Camera settings',
       'Hover settings'

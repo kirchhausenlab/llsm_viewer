@@ -16,6 +16,9 @@ type UseViewerPanelWindowsResult = {
   isCameraSettingsWindowOpen: boolean;
   openCameraSettingsWindow: () => void;
   closeCameraSettingsWindow: () => void;
+  isBackgroundsWindowOpen: boolean;
+  openBackgroundsWindow: () => void;
+  closeBackgroundsWindow: () => void;
   isPropsWindowOpen: boolean;
   openPropsWindow: () => void;
   closePropsWindow: () => void;
@@ -63,6 +66,7 @@ export function useViewerPanelWindows({
   const [isChannelsWindowOpen, setIsChannelsWindowOpen] = useState(true);
   const [isCameraWindowOpen, setIsCameraWindowOpen] = useState(false);
   const [isCameraSettingsWindowOpen, setIsCameraSettingsWindowOpen] = useState(false);
+  const [isBackgroundsWindowOpen, setIsBackgroundsWindowOpen] = useState(false);
   const [isPropsWindowOpen, setIsPropsWindowOpen] = useState(false);
   const [isTracksWindowOpen, setIsTracksWindowOpen] = useState(hasTrackData);
   const [isViewerSettingsOpen, setIsViewerSettingsOpen] = useState(false);
@@ -98,6 +102,14 @@ export function useViewerPanelWindows({
 
   const closeCameraSettingsWindow = useCallback(() => {
     setIsCameraSettingsWindowOpen(false);
+  }, []);
+
+  const openBackgroundsWindow = useCallback(() => {
+    setIsBackgroundsWindowOpen(true);
+  }, []);
+
+  const closeBackgroundsWindow = useCallback(() => {
+    setIsBackgroundsWindowOpen(false);
   }, []);
 
   const openPropsWindow = useCallback(() => {
@@ -239,6 +251,9 @@ export function useViewerPanelWindows({
     isCameraSettingsWindowOpen,
     openCameraSettingsWindow,
     closeCameraSettingsWindow,
+    isBackgroundsWindowOpen,
+    openBackgroundsWindow,
+    closeBackgroundsWindow,
     isPropsWindowOpen,
     openPropsWindow,
     closePropsWindow,

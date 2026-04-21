@@ -2112,11 +2112,49 @@
   box-shadow: 0 0 0 2px var(--accent-border);
 }
 
+.floating-window--backgrounds .backgrounds-window__options {
+  gap: 0.65rem;
+}
+
+.floating-window--backgrounds .backgrounds-window__row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.floating-window--backgrounds .backgrounds-window__label,
+.floating-window--backgrounds .backgrounds-window__checkbox {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.8);
+}
+
+.floating-window--backgrounds .backgrounds-window__checkbox {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.floating-window--backgrounds .backgrounds-window__checkbox input[type='checkbox'] {
+  margin: 0;
+}
+
+.floating-window--backgrounds .backgrounds-window__row > .color-picker-trigger {
+  flex: 0 0 auto;
+}
+
 .floating-window .color-swatch-button:disabled {
   cursor: not-allowed;
   opacity: 0.5;
   box-shadow: none;
   transform: none;
+}
+
+@media (max-width: 540px) {
+  .floating-window--backgrounds .backgrounds-window__row {
+    align-items: flex-start;
+  }
 }
 
 .floating-window--selected-tracks .floating-window-body {

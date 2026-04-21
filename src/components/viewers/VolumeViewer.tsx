@@ -4,7 +4,7 @@ import { LineMaterial } from 'three/examples/jsm/lines/LineMaterial';
 import { LineSegments2 } from 'three/examples/jsm/lines/LineSegments2';
 import './viewerCommon.css';
 import './VolumeViewer.css';
-import { createEmptyDesktopViewStateMap } from '../../hooks/useVolumeRenderSetup';
+import { createEmptyDesktopViewStateMap, type DesktopViewerCamera } from '../../hooks/useVolumeRenderSetup';
 import type {
   VolumeViewerCaptureTarget,
   VolumeResources,
@@ -16,6 +16,12 @@ import { HoverDebug } from './volume-viewer/HoverDebug';
 import { ViewerPropsOverlay } from './volume-viewer/ViewerPropsOverlay';
 import { VolumeViewerVrAdapter } from './volume-viewer/VolumeViewerVrAdapter';
 import { TrackCameraPresenter } from './volume-viewer/TrackCameraPresenter';
+import {
+  resolveAdaptiveCameraFrustum,
+  resolveSceneWorldBounds,
+} from './volume-viewer/cameraNavigationBounds';
+import { resolveBackgroundGridStyle } from './volume-viewer/backgroundGrid';
+import { resolveLayerRenderSource } from './volume-viewer/layerRenderSource';
 import { useVolumeHover } from './volume-viewer/useVolumeHover';
 import { useVolumeViewerVrBridge } from './volume-viewer/useVolumeViewerVrBridge';
 import { useViewerPropsRendering } from './volume-viewer/useViewerPropsRendering';
@@ -112,6 +118,32 @@ function summarizeGpuResidency(resources: Map<string, VolumeResources>) {
   };
 }
 
+function resolveBackgroundReferenceDimensions(
+  layers: VolumeViewerProps['layers'],
+  primaryVolume: { width: number; height: number; depth: number } | null
+): { width: number; height: number; depth: number } | null {
+  if (primaryVolume) {
+    return {
+      width: primaryVolume.width,
+      height: primaryVolume.height,
+      depth: primaryVolume.depth,
+    };
+  }
+
+  for (const layer of layers) {
+    const source = resolveLayerRenderSource(layer);
+    if (source) {
+      return {
+        width: source.width,
+        height: source.height,
+        depth: source.depth,
+      };
+    }
+  }
+
+  return null;
+}
+
 const ROI_COMPOSITE_SHADER_KEY = 'roi-composite-transmittance-v1';
 const ROI_PREPASS_SHADER_KEY = 'roi-prepass-depth-v1';
 const ROI_TRANSMITTANCE_FALLBACK_TEXTURE = (() => {
@@ -120,6 +152,7 @@ const ROI_TRANSMITTANCE_FALLBACK_TEXTURE = (() => {
   texture.needsUpdate = true;
   return texture;
 })();
+const BACKGROUND_FLOOR_SHADER_KEY = 'background-floor-infinite-plane-v1';
 
 type ScreenshotCanvasResource = {
   canvas: HTMLCanvasElement;
@@ -372,6 +405,7 @@ function VolumeViewer({
   onVoxelFollowRequest,
   onHoverVoxelChange,
   hoverSettings = DEFAULT_HOVER_SETTINGS,
+  background,
   viewerPropsConfig,
   roiConfig,
   paintbrush,
@@ -401,6 +435,12 @@ function VolumeViewer({
   const screenshotRenderTargetRef = useRef<THREE.WebGLRenderTarget | null>(null);
   const screenshotReadbackBufferRef = useRef<Uint8Array | null>(null);
   const screenshotCanvasResourceRef = useRef<ScreenshotCanvasResource | null>(null);
+  const backgroundPassSceneRef = useRef<THREE.Scene | null>(new THREE.Scene());
+  const backgroundPassCameraRef = useRef<THREE.Camera | null>(new THREE.Camera());
+  const backgroundPassMeshRef = useRef<THREE.Mesh<THREE.PlaneGeometry, THREE.ShaderMaterial> | null>(null);
+  const backgroundPassPlanePointLocalRef = useRef(new THREE.Vector3());
+  const backgroundPassPlanePointWorldRef = useRef(new THREE.Vector3());
+  const backgroundPassPlaneNormalWorldRef = useRef(new THREE.Vector3());
   const roiPrepassSceneRef = useRef<THREE.Scene | null>(new THREE.Scene());
   const roiPrepassLineRef = useRef<LineSegments2 | null>(null);
   const roiPrepassTargetRef = useRef<THREE.WebGLRenderTarget | null>(null);
@@ -411,6 +451,23 @@ function VolumeViewer({
     enabled: { value: 0 },
     transmittanceTexture: { value: ROI_TRANSMITTANCE_FALLBACK_TEXTURE as THREE.Texture },
     viewport: { value: new THREE.Vector2(1, 1) },
+  });
+  const backgroundPassUniformsRef = useRef({
+    projectionInverse: { value: new THREE.Matrix4() },
+    cameraWorldMatrix: { value: new THREE.Matrix4() },
+    cameraWorldPosition: { value: new THREE.Vector3() },
+    volumeRootWorldInverse: { value: new THREE.Matrix4() },
+    planePointWorld: { value: new THREE.Vector3() },
+    planeNormalWorld: { value: new THREE.Vector3(0, 1, 0) },
+    floorColor: { value: new THREE.Color('#d7dbe0') },
+    majorGridColor: { value: new THREE.Color('#8c9198') },
+    minorGridColor: { value: new THREE.Color('#b0b5bc') },
+    majorGridSpacing: { value: 10 },
+    minorGridSpacing: { value: 2 },
+    majorGridStrength: { value: 0.5 },
+    minorGridStrength: { value: 0.24 },
+    minorGridFadeStart: { value: 10 },
+    minorGridFadeEnd: { value: 40 },
   });
 
   const resourcesRef = useRef<Map<string, VolumeResources>>(new Map());
@@ -650,6 +707,18 @@ function VolumeViewer({
       loadedVolumes,
       expectedVolumes,
     });
+  const backgroundReferenceDimensions = useMemo(
+    () => resolveBackgroundReferenceDimensions(layers, primaryVolume),
+    [layers, primaryVolume]
+  );
+  const isDesktopBackgroundDisabled = vr?.isVrActive ?? false;
+  const viewerSurfaceBackgroundStyle = useMemo(
+    () =>
+      !isDesktopBackgroundDisabled && background?.surfaceColor
+        ? { background: background.surfaceColor }
+        : undefined,
+    [background?.surfaceColor, isDesktopBackgroundDisabled]
+  );
   const {
     hoveredTrackId,
     tooltipPosition,
@@ -1077,103 +1146,6 @@ function VolumeViewer({
     cameraRef,
     hoverRaycasterRef,
   });
-  const captureVolumeScreenshot = useCallback(async (): Promise<Blob | null> => {
-    const renderer = rendererRef.current;
-    const scene = sceneRef.current;
-    const camera = cameraRef.current;
-    if (!renderer || !scene || !camera || renderer.xr?.isPresenting) {
-      return null;
-    }
-
-    const bufferSize = new THREE.Vector2();
-    renderer.getDrawingBufferSize(bufferSize);
-    const width = Math.max(1, Math.floor(bufferSize.x));
-    const height = Math.max(1, Math.floor(bufferSize.y));
-    const renderTarget = ensureScreenshotRenderTarget(screenshotRenderTargetRef, renderer, width, height);
-    const readbackBuffer = ensureScreenshotReadbackBuffer(screenshotReadbackBufferRef, width, height);
-    const screenshotCanvasResource = ensureScreenshotCanvasResource(
-      screenshotCanvasResourceRef,
-      width,
-      height,
-    );
-    if (!screenshotCanvasResource) {
-      return null;
-    }
-
-    const previousRenderTarget = renderer.getRenderTarget();
-    const previousAutoClear = renderer.autoClear;
-    const previousClearColor = new THREE.Color();
-    renderer.getClearColor(previousClearColor);
-    const previousClearAlpha = renderer.getClearAlpha();
-    const roiGroup = roiGroupRef.current;
-    const previousRoiVisibility = roiGroup?.visible ?? false;
-
-    const captureTimestamp =
-      typeof performance !== 'undefined' && typeof performance.now === 'function'
-        ? performance.now()
-        : Date.now();
-
-    try {
-      updateOverlayAppearance(captureTimestamp);
-      refreshWorldProps();
-
-      renderer.setRenderTarget(renderTarget);
-      renderer.autoClear = true;
-      renderer.clear(true, true, true);
-
-      if (roiGroup) {
-        roiGroup.visible = false;
-      }
-      renderer.render(scene, camera);
-      if (roiGroup) {
-        roiGroup.visible = previousRoiVisibility;
-      }
-
-      renderRoiBlOcclusionPass(renderer, camera);
-
-      renderer.readRenderTargetPixels(renderTarget, 0, 0, width, height, readbackBuffer);
-      copyRenderTargetPixelsToImageData(
-        readbackBuffer,
-        screenshotCanvasResource.imageData,
-        width,
-        height,
-      );
-      screenshotCanvasResource.context.putImageData(screenshotCanvasResource.imageData, 0, 0);
-      return captureCanvasPng(screenshotCanvasResource.canvas);
-    } finally {
-      if (roiGroup) {
-        roiGroup.visible = previousRoiVisibility;
-      }
-      renderer.setRenderTarget(previousRenderTarget);
-      renderer.autoClear = previousAutoClear;
-      renderer.setClearColor(previousClearColor, previousClearAlpha);
-    }
-  }, [
-    refreshWorldProps,
-    renderRoiBlOcclusionPass,
-    rendererRef,
-    roiGroupRef,
-    sceneRef,
-    cameraRef,
-    updateOverlayAppearance,
-  ]);
-  useEffect(() => {
-    onRegisterCaptureTarget?.(() => {
-      const renderer = rendererRef.current;
-      if (!renderer) {
-        return null;
-      }
-      const target: VolumeViewerCaptureTarget = {
-        canvas: renderer.domElement,
-        captureImage: captureVolumeScreenshot,
-      };
-      return target;
-    });
-
-    return () => {
-      onRegisterCaptureTarget?.(null);
-    };
-  }, [captureVolumeScreenshot, onRegisterCaptureTarget, renderContextRevision, rendererRef]);
   useVolumeViewerResources({
     layers,
     playbackWarmupLayers,
@@ -1284,6 +1256,282 @@ function VolumeViewer({
     resolvedAnisotropyScale,
   });
 
+  useEffect(() => {
+    const backgroundScene = backgroundPassSceneRef.current;
+    const backgroundCamera = backgroundPassCameraRef.current;
+    if (!backgroundScene || !backgroundCamera) {
+      return undefined;
+    }
+
+    const geometry = new THREE.PlaneGeometry(2, 2);
+    const material = new THREE.ShaderMaterial({
+      uniforms: backgroundPassUniformsRef.current,
+      vertexShader: `
+        varying vec2 v_ndc;
+
+        void main() {
+          v_ndc = position.xy;
+          gl_Position = vec4(position.xy, 0.0, 1.0);
+        }
+      `,
+      fragmentShader: `
+        uniform mat4 projectionInverse;
+        uniform mat4 cameraWorldMatrix;
+        uniform vec3 cameraWorldPosition;
+        uniform mat4 volumeRootWorldInverse;
+        uniform vec3 planePointWorld;
+        uniform vec3 planeNormalWorld;
+        uniform vec3 floorColor;
+        uniform vec3 majorGridColor;
+        uniform vec3 minorGridColor;
+        uniform float majorGridSpacing;
+        uniform float minorGridSpacing;
+        uniform float majorGridStrength;
+        uniform float minorGridStrength;
+        uniform float minorGridFadeStart;
+        uniform float minorGridFadeEnd;
+
+        varying vec2 v_ndc;
+
+        float grid_mask(vec2 coords, float spacing, float lineWidth) {
+          vec2 cell = coords / max(spacing, 1e-6);
+          vec2 distanceToLine = abs(fract(cell - 0.5) - 0.5);
+          vec2 aa = max(fwidth(cell), vec2(1e-4));
+          vec2 mask = 1.0 - smoothstep(vec2(lineWidth) - aa, vec2(lineWidth) + aa, distanceToLine);
+          return max(mask.x, mask.y);
+        }
+
+        void main() {
+          vec4 viewFar = projectionInverse * vec4(v_ndc, 1.0, 1.0);
+          viewFar /= max(viewFar.w, 1e-6);
+          vec3 worldFar = (cameraWorldMatrix * vec4(viewFar.xyz, 1.0)).xyz;
+          vec3 rayDirection = normalize(worldFar - cameraWorldPosition);
+          float denominator = dot(rayDirection, planeNormalWorld);
+          if (abs(denominator) < 1e-5) {
+            discard;
+          }
+          float t = dot(planePointWorld - cameraWorldPosition, planeNormalWorld) / denominator;
+          if (t <= 0.0) {
+            discard;
+          }
+          vec3 hitWorld = cameraWorldPosition + rayDirection * t;
+          vec3 hitLocal = (volumeRootWorldInverse * vec4(hitWorld, 1.0)).xyz;
+          vec2 gridCoords = hitLocal.xz;
+          float distanceToCamera = length(hitWorld - cameraWorldPosition);
+          float minorFade = 1.0 - smoothstep(minorGridFadeStart, minorGridFadeEnd, distanceToCamera);
+          float minorMask = grid_mask(gridCoords, minorGridSpacing, 0.035) * minorFade * minorGridStrength;
+          float majorMask = grid_mask(gridCoords, majorGridSpacing, 0.045) * majorGridStrength;
+          vec3 color = mix(floorColor, minorGridColor, clamp(minorMask, 0.0, 1.0));
+          color = mix(color, majorGridColor, clamp(majorMask, 0.0, 1.0));
+          gl_FragColor = vec4(color, 1.0);
+        }
+      `,
+      transparent: true,
+      depthWrite: false,
+      depthTest: false,
+    });
+    material.extensions = { ...material.extensions, clipCullDistance: false };
+    (material.extensions as { derivatives?: boolean }).derivatives = true;
+    material.toneMapped = false;
+    material.name = BACKGROUND_FLOOR_SHADER_KEY;
+
+    const mesh = new THREE.Mesh(geometry, material);
+    mesh.frustumCulled = false;
+    backgroundScene.add(mesh);
+    backgroundPassMeshRef.current = mesh;
+
+    return () => {
+      if (backgroundPassMeshRef.current === mesh) {
+        backgroundPassMeshRef.current = null;
+      }
+      backgroundScene.remove(mesh);
+      geometry.dispose();
+      material.dispose();
+    };
+  }, [renderContextRevision]);
+
+  const updateCameraFrustum = useCallback((camera: DesktopViewerCamera | null) => {
+    if (!camera) {
+      return;
+    }
+    const bounds = resolveSceneWorldBounds(currentDimensionsRef.current, volumeRootGroupRef.current);
+    if (!bounds) {
+      return;
+    }
+    const { near, far } = resolveAdaptiveCameraFrustum(camera, bounds);
+    if (Math.abs(camera.near - near) <= 1e-6 && Math.abs(camera.far - far) <= 1e-4) {
+      return;
+    }
+    camera.near = near;
+    camera.far = far;
+    camera.updateProjectionMatrix();
+  }, [currentDimensionsRef, volumeRootGroupRef]);
+
+  const renderBackgroundPass = useCallback((renderer: THREE.WebGLRenderer, camera: DesktopViewerCamera | null) => {
+    renderer.clear(true, true, true);
+
+    if (
+      !camera ||
+      !(camera instanceof THREE.PerspectiveCamera) ||
+      projectionMode !== 'perspective' ||
+      !background?.floorEnabled ||
+      !hasActive3DLayer ||
+      !backgroundReferenceDimensions
+    ) {
+      return;
+    }
+
+    const backgroundScene = backgroundPassSceneRef.current;
+    const backgroundCamera = backgroundPassCameraRef.current;
+    const backgroundMesh = backgroundPassMeshRef.current;
+    const volumeRootGroup = volumeRootGroupRef.current;
+    if (!backgroundScene || !backgroundCamera || !backgroundMesh || !volumeRootGroup) {
+      return;
+    }
+
+    const { width, height, depth } = backgroundReferenceDimensions;
+    const maxDimension = Math.max(width, height, depth, 1);
+    const floorGap = Math.max(1, maxDimension * 0.03);
+    const floorY = height - 0.5 + floorGap;
+    const planePointLocal = backgroundPassPlanePointLocalRef.current.set(width / 2 - 0.5, floorY, depth / 2 - 0.5);
+    volumeRootGroup.updateMatrixWorld(true);
+    const planePointWorld = volumeRootGroup.localToWorld(backgroundPassPlanePointWorldRef.current.copy(planePointLocal));
+    const planeNormalWorld = backgroundPassPlaneNormalWorldRef.current.set(0, 1, 0).transformDirection(volumeRootGroup.matrixWorld).normalize();
+
+    const uniforms = backgroundPassUniformsRef.current;
+    const bounds = resolveSceneWorldBounds(currentDimensionsRef.current, volumeRootGroupRef.current);
+    const gridStyle = resolveBackgroundGridStyle({
+      floorColor: background.floorColor,
+      maxDimension,
+      boundsRadius: bounds?.radius ?? maxDimension,
+    });
+    uniforms.projectionInverse.value.copy(camera.projectionMatrixInverse);
+    uniforms.cameraWorldMatrix.value.copy(camera.matrixWorld);
+    uniforms.cameraWorldPosition.value.copy(camera.position);
+    uniforms.volumeRootWorldInverse.value.copy(volumeRootGroup.matrixWorld).invert();
+    uniforms.planePointWorld.value.copy(planePointWorld);
+    uniforms.planeNormalWorld.value.copy(planeNormalWorld);
+    uniforms.floorColor.value.set(background.floorColor);
+    uniforms.majorGridColor.value.set(gridStyle.majorColor);
+    uniforms.minorGridColor.value.set(gridStyle.minorColor);
+    uniforms.majorGridSpacing.value = gridStyle.majorSpacing;
+    uniforms.minorGridSpacing.value = gridStyle.minorSpacing;
+    uniforms.majorGridStrength.value = gridStyle.majorLineStrength;
+    uniforms.minorGridStrength.value = gridStyle.minorLineStrength;
+    uniforms.minorGridFadeStart.value = gridStyle.minorFadeStart;
+    uniforms.minorGridFadeEnd.value = gridStyle.minorFadeEnd;
+
+    renderer.render(backgroundScene, backgroundCamera);
+  }, [
+    background?.floorColor,
+    background?.floorEnabled,
+    backgroundReferenceDimensions,
+    hasActive3DLayer,
+    projectionMode,
+    volumeRootGroupRef,
+  ]);
+
+  const captureVolumeScreenshot = useCallback(async (): Promise<Blob | null> => {
+    const renderer = rendererRef.current;
+    const scene = sceneRef.current;
+    const camera = cameraRef.current;
+    if (!renderer || !scene || !camera || renderer.xr?.isPresenting) {
+      return null;
+    }
+
+    const bufferSize = new THREE.Vector2();
+    renderer.getDrawingBufferSize(bufferSize);
+    const width = Math.max(1, Math.floor(bufferSize.x));
+    const height = Math.max(1, Math.floor(bufferSize.y));
+    const renderTarget = ensureScreenshotRenderTarget(screenshotRenderTargetRef, renderer, width, height);
+    const readbackBuffer = ensureScreenshotReadbackBuffer(screenshotReadbackBufferRef, width, height);
+    const screenshotCanvasResource = ensureScreenshotCanvasResource(
+      screenshotCanvasResourceRef,
+      width,
+      height,
+    );
+    if (!screenshotCanvasResource) {
+      return null;
+    }
+
+    const previousRenderTarget = renderer.getRenderTarget();
+    const previousAutoClear = renderer.autoClear;
+    const previousClearColor = new THREE.Color();
+    renderer.getClearColor(previousClearColor);
+    const previousClearAlpha = renderer.getClearAlpha();
+    const roiGroup = roiGroupRef.current;
+    const previousRoiVisibility = roiGroup?.visible ?? false;
+
+    const captureTimestamp =
+      typeof performance !== 'undefined' && typeof performance.now === 'function'
+        ? performance.now()
+        : Date.now();
+
+    try {
+      updateOverlayAppearance(captureTimestamp);
+      refreshWorldProps();
+      updateCameraFrustum(camera);
+
+      renderer.setRenderTarget(renderTarget);
+      renderer.autoClear = false;
+      renderBackgroundPass(renderer, camera);
+
+      if (roiGroup) {
+        roiGroup.visible = false;
+      }
+      renderer.render(scene, camera);
+      if (roiGroup) {
+        roiGroup.visible = previousRoiVisibility;
+      }
+
+      renderRoiBlOcclusionPass(renderer, camera);
+
+      renderer.readRenderTargetPixels(renderTarget, 0, 0, width, height, readbackBuffer);
+      copyRenderTargetPixelsToImageData(
+        readbackBuffer,
+        screenshotCanvasResource.imageData,
+        width,
+        height,
+      );
+      screenshotCanvasResource.context.putImageData(screenshotCanvasResource.imageData, 0, 0);
+      return captureCanvasPng(screenshotCanvasResource.canvas);
+    } finally {
+      if (roiGroup) {
+        roiGroup.visible = previousRoiVisibility;
+      }
+      renderer.setRenderTarget(previousRenderTarget);
+      renderer.autoClear = previousAutoClear;
+      renderer.setClearColor(previousClearColor, previousClearAlpha);
+    }
+  }, [
+    refreshWorldProps,
+    renderRoiBlOcclusionPass,
+    renderBackgroundPass,
+    rendererRef,
+    roiGroupRef,
+    sceneRef,
+    cameraRef,
+    updateCameraFrustum,
+    updateOverlayAppearance,
+  ]);
+  useEffect(() => {
+    onRegisterCaptureTarget?.(() => {
+      const renderer = rendererRef.current;
+      if (!renderer) {
+        return null;
+      }
+      const target: VolumeViewerCaptureTarget = {
+        canvas: renderer.domElement,
+        captureImage: captureVolumeScreenshot,
+      };
+      return target;
+    });
+
+    return () => {
+      onRegisterCaptureTarget?.(null);
+    };
+  }, [captureVolumeScreenshot, onRegisterCaptureTarget, renderContextRevision, rendererRef]);
+
   const lifecycleParams = buildVolumeViewerLifecycleParams({
     core: {
       containerNode,
@@ -1298,6 +1546,8 @@ function VolumeViewer({
       updateTrackAppearance: updateOverlayAppearance,
       renderRoiBlOcclusionPass,
       refreshViewerProps: refreshWorldProps,
+      updateCameraFrustum,
+      renderBackgroundPass,
       advancePlaybackFrame,
       updateControllerRays,
       controllersRef,
@@ -1393,6 +1643,28 @@ function VolumeViewer({
     },
   });
   useVolumeViewerLifecycle(lifecycleParams);
+
+  useEffect(() => {
+    const renderer = rendererRef.current;
+    const scene = sceneRef.current;
+    if (!renderer || !scene) {
+      return;
+    }
+
+    scene.background = null;
+
+    if (isDesktopBackgroundDisabled || !background) {
+      renderer.setClearColor(0x000000, 0);
+      renderer.domElement.style.background = 'transparent';
+      return;
+    }
+
+    renderer.setClearColor(background.clearColor, 1);
+    renderer.domElement.style.background = background.surfaceColor;
+  }, [
+    background,
+    isDesktopBackgroundDisabled,
+  ]);
 
   useEffect(() => {
     if (typeof window === 'undefined' || !import.meta.env?.DEV) {
@@ -1516,9 +1788,13 @@ function VolumeViewer({
         requestVrSession={requestVrSession}
         endVrSession={endVrSession}
       />
-      <section className="viewer-surface">
+      <section className="viewer-surface" style={viewerSurfaceBackgroundStyle}>
         <LoadingOverlay visible={showLoadingOverlay} />
-        <div className={`render-surface${hasMeasured ? ' is-ready' : ''}`} ref={handleContainerRef}>
+        <div
+          className={`render-surface${hasMeasured ? ' is-ready' : ''}`}
+          ref={handleContainerRef}
+          style={viewerSurfaceBackgroundStyle}
+        >
           <ViewerPropsOverlay surfaceNode={containerNode} viewerPropsConfig={viewerPropsConfig} />
           <TrackTooltip label={hoveredTrackLabel} position={tooltipPosition} />
           <HoverDebug message={isDevMode ? voxelHoverDebug : null} />

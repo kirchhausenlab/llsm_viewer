@@ -55,6 +55,7 @@ export default function TopMenu(props: TopMenuProps) {
     onOpenChannelsWindow,
     onOpenCameraWindow,
     onOpenCameraSettingsWindow,
+    onOpenBackgroundsWindow,
     onOpenPropsWindow,
     onOpenPaintbrush,
     onOpenDrawRoiWindow,
@@ -169,7 +170,7 @@ export default function TopMenu(props: TopMenuProps) {
         { label: 'Channels', onSelect: onOpenChannelsWindow },
         { label: 'View selection', onSelect: onOpenCameraWindow },
         { label: 'Screen capture', onSelect: onOpenRecordWindow },
-        { label: 'Background', disabled: true },
+        { label: 'Backgrounds', onSelect: onOpenBackgroundsWindow },
         { label: 'Render settings', onSelect: onOpenRenderSettingsWindow },
         { label: 'Camera settings', onSelect: onOpenCameraSettingsWindow },
         { label: 'Hover settings', onSelect: onOpenHoverSettingsWindow }
@@ -194,6 +195,7 @@ export default function TopMenu(props: TopMenuProps) {
     }),
     [
       onOpenAmplitudePlotWindow,
+      onOpenBackgroundsWindow,
       onOpenCameraWindow,
       onOpenCameraSettingsWindow,
       onOpenChannelsWindow,

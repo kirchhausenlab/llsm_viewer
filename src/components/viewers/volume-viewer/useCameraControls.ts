@@ -19,6 +19,9 @@ import {
   type ViewerProjectionMode,
   type VolumeRenderContext,
 } from '../../../hooks/useVolumeRenderSetup';
+import {
+  resolveSceneWorldBounds,
+} from './cameraNavigationBounds';
 import type { MovementState, RoiRenderResource, TrackRenderResource } from '../VolumeViewer.types';
 import type { CameraRotation, CameraWindowState } from '../../../types/camera';
 import { normalizeSignedAngleDegrees } from '../../../shared/utils/cameraViews';

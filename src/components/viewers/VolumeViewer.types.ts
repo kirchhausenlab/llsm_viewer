@@ -140,6 +140,19 @@ export type VolumeViewerCaptureTarget = {
   captureImage?: () => Promise<Blob | null>;
 };
 
+export type DesktopViewerBackgroundSelection = {
+  customBackgroundColor: string | null;
+  floorEnabled: boolean;
+  floorColor: string;
+};
+
+export type DesktopViewerBackgroundConfig = {
+  clearColor: string;
+  surfaceColor: string;
+  floorEnabled: boolean;
+  floorColor: string;
+};
+
 export type ViewerRoiConfig = {
   isDrawWindowOpen: boolean;
   tool: RoiTool;
@@ -220,6 +233,7 @@ export type VolumeViewerProps = {
   onVoxelFollowRequest: (voxel: FollowedVoxelTarget) => void;
   onHoverVoxelChange?: (value: HoveredVoxelInfo | null) => void;
   hoverSettings?: HoverSettings;
+  background?: DesktopViewerBackgroundConfig;
   viewerPropsConfig?: ViewerPropsConfig;
   roiConfig?: ViewerRoiConfig;
   paintbrush?: PaintbrushStrokeHandlers;

@@ -13,6 +13,7 @@ export const RUNTIME_DIAGNOSTICS_WINDOW_WIDTH = CONTROL_WINDOW_WIDTH;
 export const VIEWER_SETTINGS_WINDOW_ESTIMATED_HEIGHT = 320;
 export const CAMERA_SETTINGS_WINDOW_ESTIMATED_HEIGHT = 340;
 export const HOVER_SETTINGS_WINDOW_ESTIMATED_HEIGHT = 260;
+export const BACKGROUNDS_WINDOW_ESTIMATED_HEIGHT = 220;
 export const RECORD_WINDOW_ESTIMATED_HEIGHT = 220;
 export const PROPS_WINDOW_ESTIMATED_HEIGHT = 560;
 export const PAINTBRUSH_WINDOW_ESTIMATED_HEIGHT = 420;
@@ -102,6 +103,10 @@ export const computeCameraSettingsWindowDefaultPosition = (): WindowPosition => 
 
 export const computeHoverSettingsWindowDefaultPosition = (): WindowPosition => {
   return computeTopCenteredWindowPosition(CONTROL_WINDOW_WIDTH, HOVER_SETTINGS_WINDOW_ESTIMATED_HEIGHT);
+};
+
+export const computeBackgroundsWindowDefaultPosition = (): WindowPosition => {
+  return computeTopCenteredWindowPosition(CONTROL_WINDOW_WIDTH, BACKGROUNDS_WINDOW_ESTIMATED_HEIGHT);
 };
 
 export const computeCameraWindowDefaultPosition = (): WindowPosition => {

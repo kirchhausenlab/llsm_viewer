@@ -14,7 +14,7 @@ const expectedMenus = [
   {
     buttonLabel: 'View',
     menuLabel: 'view menu',
-    items: ['Channels', 'View selection', 'Screen capture', 'Background', 'Render settings', 'Camera settings', 'Hover settings']
+    items: ['Channels', 'View selection', 'Screen capture', 'Backgrounds', 'Render settings', 'Camera settings', 'Hover settings']
   },
   {
     buttonLabel: 'Edit',
