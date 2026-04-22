@@ -131,6 +131,8 @@ export type RecordingStatus =
 export type PlaybackControlsProps = {
   fps: number;
   onFpsChange: (value: number) => void;
+  playbackBufferFrames: number;
+  onPlaybackBufferFramesChange: (value: number) => void;
   zSliderValue?: number;
   zSliderMax?: number;
   onZSliderChange?: (value: number) => void;

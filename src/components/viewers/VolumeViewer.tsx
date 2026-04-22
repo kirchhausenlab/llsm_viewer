@@ -348,6 +348,7 @@ function isPlaybackWarmupEligibleLayer(layer: VolumeViewerProps['layers'][number
 function VolumeViewer({
   layers,
   playbackWarmupLayers = [],
+  playbackWarmupFrames = [],
   projectionMode = 'perspective',
   isLoading,
   loadingProgress,
@@ -608,6 +609,9 @@ function VolumeViewer({
     resetVolumeCallbackRef,
     resetHudPlacementCallbackRef,
   });
+  const getPlaybackWarmupStatusRef = useRef<
+    (nextIndex: number, requiredLayerKeys: string[]) => 'ready' | 'pending' | 'missing'
+  >(() => 'missing');
 
   const canAdvancePlaybackWithWarmup = useMemo(() => {
     const requiredLayerKeys = layers.filter(isPlaybackWarmupEligibleLayer).map((layer) => layer.key);
@@ -619,14 +623,13 @@ function VolumeViewer({
       return shouldAllowPlaybackAdvanceWithWarmup({
         nextIndex,
         requiredLayerKeys,
-        playbackWarmupLayers,
-        resources: resourcesRef.current,
+        getWarmupStatus: getPlaybackWarmupStatusRef.current,
         fps,
         nowMs: Date.now(),
         gateState: playbackWarmupGateRef.current,
       });
     };
-  }, [canAdvancePlayback, fps, layers, playbackWarmupLayers]);
+  }, [canAdvancePlayback, fps, layers]);
 
   useEffect(() => {
     if (!isPlaying) {
@@ -1141,9 +1144,10 @@ function VolumeViewer({
     cameraRef,
     hoverRaycasterRef,
   });
-  useVolumeViewerResources({
+  const { getPlaybackWarmupStatus } = useVolumeViewerResources({
     layers,
     playbackWarmupLayers,
+    playbackWarmupFrames,
     primaryVolume,
     isAdditiveBlending,
     zClipFrontFraction,
@@ -1178,6 +1182,9 @@ function VolumeViewer({
     applyVolumeStepScaleToResources,
     applyHoverHighlightToResources,
   });
+  useEffect(() => {
+    getPlaybackWarmupStatusRef.current = getPlaybackWarmupStatus;
+  }, [getPlaybackWarmupStatus]);
   const {
     updateVoxelHover,
     resetHoverState,

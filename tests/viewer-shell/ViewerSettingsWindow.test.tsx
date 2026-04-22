@@ -9,6 +9,7 @@ console.log('Starting ViewerSettingsWindow tests');
 function createProps(isOpen: boolean) {
   let densityCalls = 0;
   let mipCalls = 0;
+  let playbackBufferCalls = 0;
   return {
     layout: {
       windowMargin: 16,
@@ -30,6 +31,10 @@ function createProps(isOpen: boolean) {
     playbackControls: {
       fps: 12,
       onFpsChange: () => {},
+      playbackBufferFrames: 3,
+      onPlaybackBufferFramesChange: () => {
+        playbackBufferCalls += 1;
+      },
       volumeTimepointCount: 3
     },
     viewerSettings: {
@@ -66,6 +71,9 @@ function createProps(isOpen: boolean) {
     },
     get mipCalls() {
       return mipCalls;
+    },
+    get playbackBufferCalls() {
+      return playbackBufferCalls;
     }
   };
 }
@@ -81,10 +89,12 @@ function createProps(isOpen: boolean) {
     <ViewerSettingsWindow {...(createProps(true) as any)} />
   );
   const fpsSlider = openRenderer.root.findByProps({ id: 'fps-slider' });
+  const playbackBufferSlider = openRenderer.root.findByProps({ id: 'playback-buffer-slider' });
   const qualitySlider = openRenderer.root.findByProps({ id: 'volume-steps-slider' });
   const mipSlider = openRenderer.root.findByProps({ id: 'global-mip-early-exit' });
   assert.equal(fpsSlider.props.disabled, false);
   assert.equal(fpsSlider.props.max, 30);
+  assert.equal(playbackBufferSlider.props.value, 2);
   assert.equal(qualitySlider.props.value, 1);
   assert.equal(mipSlider.props.value, 0.875);
   assert.equal(
@@ -124,11 +134,17 @@ function createProps(isOpen: boolean) {
   assert.equal(props.densityCalls, 1);
 
   const mipInput = renderer.root.findByProps({ id: 'global-mip-early-exit' });
+  const playbackBufferInput = renderer.root.findByProps({ id: 'playback-buffer-slider' });
 
   act(() => {
     mipInput?.props.onChange({ target: { value: '0.91' } });
   });
   assert.equal(props.mipCalls, 1);
+
+  act(() => {
+    playbackBufferInput?.props.onChange({ target: { value: '2' } });
+  });
+  assert.equal(props.playbackBufferCalls, 1);
 
   renderer.unmount();
 })();

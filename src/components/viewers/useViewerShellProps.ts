@@ -22,6 +22,7 @@ function mapVolumeViewerProps({
   return {
     layers: viewerPanels.layers,
     playbackWarmupLayers: viewerPanels.playbackWarmupLayers ?? [],
+    playbackWarmupFrames: viewerPanels.playbackWarmupFrames ?? [],
     isLoading: viewerPanels.loading.isLoading,
     loadingProgress: viewerPanels.loading.loadingProgress,
     loadedVolumes: viewerPanels.loading.loadedVolumes,

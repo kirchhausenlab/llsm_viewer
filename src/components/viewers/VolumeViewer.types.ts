@@ -6,10 +6,13 @@ import type { LineSegments2 } from 'three/examples/jsm/lines/LineSegments2';
 import type { LineSegmentsGeometry } from 'three/examples/jsm/lines/LineSegmentsGeometry';
 
 import type {
+  VolumeBackgroundMask,
+  VolumeBrickAtlas,
   VolumeBrickPageTable,
   VolumeProviderDiagnostics
 } from '../../core/volumeProvider';
 import type { LODPolicyDiagnosticsSnapshot } from '../../core/lodPolicyDiagnostics';
+import type { NormalizedVolume } from '../../core/volumeProcessing';
 import type { ViewerLayer } from '../../ui/contracts/viewerLayer';
 import type { FollowedVoxelTarget } from '../../types/follow';
 import type { HoveredVoxelInfo, HoverSettings } from '../../types/hover';
@@ -170,9 +173,20 @@ export type ViewerRoiConfig = {
   onSavedRoiActivate: (roiId: string) => void;
 };
 
+export type PlaybackWarmupFrame = {
+  slotIndex: number;
+  timeIndex: number;
+  scaleSignature: string;
+  layerVolumes: Record<string, NormalizedVolume | null>;
+  layerPageTables: Record<string, VolumeBrickPageTable | null>;
+  layerBrickAtlases: Record<string, VolumeBrickAtlas | null>;
+  backgroundMasksByScale: Record<number, VolumeBackgroundMask | null>;
+};
+
 export type VolumeViewerProps = {
   layers: ViewerLayer[];
   playbackWarmupLayers?: ViewerLayer[];
+  playbackWarmupFrames?: PlaybackWarmupFrame[];
   projectionMode?: ViewerProjectionMode;
   timeIndex: number;
   totalTimepoints: number;
@@ -285,6 +299,7 @@ export type VolumeResources = {
   brickAtlasSourcePageTable?: VolumeBrickPageTable | null;
   brickAtlasSlotGrid?: { x: number; y: number; z: number } | null;
   brickAtlasBuildVersion?: number;
+  usesPrepackedPlaybackResidentAtlas?: boolean;
   backgroundMaskSourceToken?: object | null;
   proxyGeometrySignature?: string | null;
   playbackWarmupForLayerKey?: string | null;

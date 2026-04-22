@@ -70,6 +70,7 @@ type ViewerPanelsTrackInput = Pick<
 export type ViewerShellContainerViewerPanelsProps = {
   layers: ViewerLayerConfig[];
   playbackWarmupLayers?: ViewerLayerConfig[];
+  playbackWarmupFrames?: ViewerShellProps['volumeViewerProps']['playbackWarmupFrames'];
   temporalResolution?: ViewerShellProps['volumeViewerProps']['temporalResolution'];
   voxelResolution?: ViewerShellProps['volumeViewerProps']['voxelResolution'];
   loading: ViewerPanelsLoadingInput;

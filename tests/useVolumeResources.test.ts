@@ -2605,18 +2605,20 @@ const createLayer = (
 
     const currentAtlas = createAtlasForTimepoint(0);
     const warmupAtlas = createAtlasForTimepoint(1);
+    const currentLayer = createLayer(null, currentAtlas.pageTable, currentAtlas, 'linear');
+    const warmupLayer = createLayer(null, warmupAtlas.pageTable, warmupAtlas, 'linear');
     let visibleLayers = [{
-      ...createLayer(null, currentAtlas.pageTable, currentAtlas, 'linear'),
+      ...currentLayer,
       playbackRole: 'active' as const
     }];
-    let warmupLayers: ViewerLayer[] = [{
-      ...createLayer(null, warmupAtlas.pageTable, warmupAtlas, 'linear'),
-      key: 'layer-3d::playback-warmup:slot:0',
-      visible: false,
-      playbackWarmupForLayerKey: 'layer-3d',
-      playbackWarmupTimeIndex: 1,
-      playbackRole: 'warmup',
-      playbackSlotIndex: 0,
+    let warmupFrames = [{
+      slotIndex: 0,
+      timeIndex: 1,
+      scaleSignature: 'layer-3d:1:atlas',
+      layerVolumes: { 'layer-3d': null },
+      layerPageTables: { 'layer-3d': warmupLayer.brickPageTable ?? null },
+      layerBrickAtlases: { 'layer-3d': warmupLayer.brickAtlas ?? null },
+      backgroundMasksByScale: {},
     }];
 
     const sceneRef = { current: new THREE.Scene() };
@@ -2636,7 +2638,7 @@ const createLayer = (
     const hook = renderHook(() =>
       useVolumeResources({
         layers: visibleLayers,
-        playbackWarmupLayers: warmupLayers,
+        playbackWarmupFrames: warmupFrames,
         primaryVolume: null,
         isAdditiveBlending: false,
         renderContextRevision: 0,
@@ -2667,36 +2669,29 @@ const createLayer = (
       })
     );
 
-    const warmupKey = 'layer-3d::playback-warmup:slot:0';
-    const initialWarmupResource = resourcesRef.current.get(warmupKey);
-    assert.ok(initialWarmupResource);
-    assert.equal(initialWarmupResource.mesh.visible, false);
-    assert.ok(initialWarmupResource.gpuBrickResidencyMetrics);
-    assert.equal(initialWarmupResource.playbackPinnedResidency, true);
+    assert.equal(resourcesRef.current.has('layer-3d::playback-warmup:slot:0'), false);
     assert.equal(
-      initialWarmupResource.gpuBrickResidencyMetrics?.residentBricks,
-      initialWarmupResource.gpuBrickResidencyMetrics?.totalBricks
+      hook.result.getPlaybackWarmupStatus(1, ['layer-3d']),
+      'ready',
+      'offscreen playback cache should prepare the next frame without creating a hidden warmup resource'
     );
-    const initialWarmupResidentBricks = initialWarmupResource.gpuBrickResidencyMetrics?.residentBricks ?? 0;
-    assert.equal(typeof initialWarmupResource.updateGpuBrickResidencyForCamera, 'function');
-    initialWarmupResource.updateGpuBrickResidencyForCamera?.(new THREE.Vector3(brickCount - 1, 0, 0));
-    const warmedWarmupResource = resourcesRef.current.get(warmupKey);
-    assert.ok(warmedWarmupResource);
 
     visibleLayers = [{
-      ...createLayer(null, warmupAtlas.pageTable, warmupAtlas, 'linear'),
+      ...warmupLayer,
       playbackRole: 'active'
     }];
-    warmupLayers = [];
+    warmupFrames = [];
     hook.rerender();
 
     const promotedResource = resourcesRef.current.get('layer-3d');
     assert.ok(promotedResource);
-    assert.strictEqual(promotedResource, warmedWarmupResource);
-    assert.equal(resourcesRef.current.has(warmupKey), false);
     assert.equal(promotedResource.mesh.visible, true);
     assert.equal(promotedResource.playbackPinnedResidency, true);
-    assert.equal(promotedResource.gpuBrickResidencyMetrics?.residentBricks, initialWarmupResidentBricks);
+    assert.equal(
+      promotedResource.gpuBrickResidencyMetrics?.residentBricks,
+      promotedResource.gpuBrickResidencyMetrics?.totalBricks
+    );
+    assert.equal(hook.result.getPlaybackWarmupStatus(1, ['layer-3d']), 'missing');
     hook.unmount();
   } finally {
     if (previousBudget === undefined) {

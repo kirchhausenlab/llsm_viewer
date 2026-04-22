@@ -86,6 +86,7 @@ export function useVolumeViewerDataState({
 export function useVolumeViewerResources({
   layers,
   playbackWarmupLayers,
+  playbackWarmupFrames,
   primaryVolume,
   isAdditiveBlending,
   zClipFrontFraction,
@@ -121,6 +122,7 @@ export function useVolumeViewerResources({
 }: {
   layers: VolumeViewerProps['layers'];
   playbackWarmupLayers?: VolumeViewerProps['playbackWarmupLayers'];
+  playbackWarmupFrames?: VolumeViewerProps['playbackWarmupFrames'];
   primaryVolume: ReturnType<typeof useVolumeViewerDataState>['primaryVolume'];
   isAdditiveBlending: boolean;
   zClipFrontFraction: number;
@@ -155,9 +157,10 @@ export function useVolumeViewerResources({
   applyVolumeStepScaleToResources: (value: number) => void;
   applyHoverHighlightToResources: () => void;
 }) {
-  const { getColormapTexture } = useVolumeResources({
+  const { getColormapTexture, getPlaybackWarmupStatus } = useVolumeResources({
     layers,
     playbackWarmupLayers,
+    playbackWarmupFrames,
     primaryVolume,
     isAdditiveBlending,
     zClipFrontFraction,
@@ -192,5 +195,5 @@ export function useVolumeViewerResources({
     applyHoverHighlightToResources,
   });
 
-  return { getColormapTexture } as const;
+  return { getColormapTexture, getPlaybackWarmupStatus } as const;
 }

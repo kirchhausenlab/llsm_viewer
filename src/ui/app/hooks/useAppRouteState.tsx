@@ -55,6 +55,7 @@ import {
   collectInitialHttpLaunchTrackedTargets
 } from './initialHttpLaunch';
 import { getTrackPlaybackIndexWindow, snapTimeIndexToWindow } from '../../../shared/utils';
+import { clampPlaybackBufferFrames, DEFAULT_PLAYBACK_BUFFER_FRAMES } from '../../../shared/utils/viewerPlayback';
 import type { AppRouteState } from '../../contracts/routes';
 
 function selectDeterministicId(values: ReadonlyArray<string>): string | null {
@@ -241,6 +242,7 @@ export function useAppRouteState(): AppRouteState {
   const [isInitialHttpLaunchLoading, setIsInitialHttpLaunchLoading] = useState(false);
   const playback = useViewerPlayback();
   const { selectedIndex, setSelectedIndex, isPlaying, fps, setFps, stopPlayback, setIsPlaying } = playback;
+  const [playbackBufferFrames, setPlaybackBufferFrames] = useState(DEFAULT_PLAYBACK_BUFFER_FRAMES);
   const [zSliderValue, setZSliderValue] = useState(1);
   const is3dViewerAvailable = true;
   const preferBrickResidency = true;
@@ -685,6 +687,7 @@ export function useAppRouteState(): AppRouteState {
     projectionMode,
     viewerCameraSample,
     volumeTimepointCount,
+    playbackBufferFrameCount: playbackBufferFrames,
     selectedIndex: resolvedSelectedIndex,
     playbackWindow: followedTrackPlaybackWindow,
     clearDatasetError,
@@ -1422,6 +1425,7 @@ export function useAppRouteState(): AppRouteState {
       viewerPanels: {
         layers: viewerLayers,
         playbackWarmupLayers: viewerPlaybackWarmupLayers,
+        playbackWarmupFrames,
         zClipFrontFraction,
         loading: {
           isLoading,
@@ -1542,6 +1546,8 @@ export function useAppRouteState(): AppRouteState {
       playbackControls: {
         fps,
         onFpsChange: setFps,
+        playbackBufferFrames,
+        onPlaybackBufferFramesChange: (value: number) => setPlaybackBufferFrames(clampPlaybackBufferFrames(value)),
         zSliderValue,
         zSliderMax,
         onZSliderChange: handleZSliderChange,

@@ -924,7 +924,9 @@ export function updateGpuBrickResidency({
   };
 }
 
-export function clearGpuBrickResidencyState(resource: VolumeResources): void {
-  resource.gpuBrickResidencyMetrics = null;
-  gpuBrickResidencyStateByResource.delete(resource);
+export function clearGpuBrickResidencyState(resource: object): void {
+  if ('gpuBrickResidencyMetrics' in (resource as { gpuBrickResidencyMetrics?: unknown })) {
+    (resource as { gpuBrickResidencyMetrics?: VolumeResources['gpuBrickResidencyMetrics'] }).gpuBrickResidencyMetrics = null;
+  }
+  gpuBrickResidencyStateByResource.delete(resource as VolumeResources);
 }

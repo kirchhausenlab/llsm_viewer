@@ -50,6 +50,7 @@ export type UseRouteLayerVolumesOptions = {
   projectionMode?: ViewerProjectionMode;
   viewerCameraSample?: ViewerCameraNavigationSample | null;
   volumeTimepointCount: number;
+  playbackBufferFrameCount?: number;
   selectedIndex: number;
   playbackWindow?: PlaybackIndexWindow | null;
   clearDatasetError: () => void;

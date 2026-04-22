@@ -7,6 +7,7 @@ import {
 } from 'react';
 
 import { clearTextureCache } from '../../../core/textureCache';
+import { DEFAULT_PLAYBACK_BUFFER_FRAMES } from '../../../shared/utils/viewerPlayback';
 import type { LODPolicyDiagnosticsSnapshot } from '../../../core/lodPolicyDiagnostics';
 import { getLod0FeatureFlags } from '../../../config/lod0Flags';
 import type {
@@ -26,7 +27,6 @@ import {
   MAX_BRICK_ATLAS_BYTES_HINT,
   MAX_BRICK_ATLAS_DEPTH_HINT,
   MAX_VOLUME_BYTES_HINT,
-  PLAYBACK_WARMUP_SLOT_COUNT,
   arePlaybackWarmupFramesEquivalent,
   buildLayerResidencyModeMap,
   collectActiveScaleLevels,
@@ -64,6 +64,7 @@ export function useRouteLayerVolumes({
   projectionMode = 'perspective',
   viewerCameraSample = null,
   volumeTimepointCount,
+  playbackBufferFrameCount = DEFAULT_PLAYBACK_BUFFER_FRAMES,
   selectedIndex,
   playbackWindow = null,
   clearDatasetError,
@@ -111,6 +112,7 @@ export function useRouteLayerVolumes({
   const lod0Flags = useMemo(() => getLod0FeatureFlags(), []);
   const canUseAtlas = typeof volumeProvider?.getBrickAtlas === 'function';
   const forceVolumeResidency = projectionMode === 'orthographic';
+  const normalizedPlaybackBufferFrameCount = Math.max(0, Math.floor(playbackBufferFrameCount));
   useEffect(() => {
     playbackWarmupFramesRef.current = playbackWarmupFrames;
   }, [playbackWarmupFrames]);
@@ -894,7 +896,7 @@ export function useRouteLayerVolumes({
       clampedIndex,
       volumeTimepointCount,
       playbackWindow,
-      PLAYBACK_WARMUP_SLOT_COUNT
+      normalizedPlaybackBufferFrameCount
     );
     if (warmupTimeIndices.length === 0) {
       cancelAllWarmupRequests();
@@ -918,7 +920,7 @@ export function useRouteLayerVolumes({
     );
     const retainedByTimeIndex = new Map(retainedFrames.map((frame) => [frame.timeIndex, frame]));
     const usedSlots = new Set(retainedFrames.map((frame) => frame.slotIndex));
-    const availableSlots = Array.from({ length: PLAYBACK_WARMUP_SLOT_COUNT }, (_value, index) => index).filter(
+    const availableSlots = Array.from({ length: normalizedPlaybackBufferFrameCount }, (_value, index) => index).filter(
       (slotIndex) => !usedSlots.has(slotIndex)
     );
     const assignments = warmupTimeIndices.flatMap((timeIndex) => {
@@ -1062,6 +1064,7 @@ export function useRouteLayerVolumes({
     isPlaying,
     loadBackgroundMasksForScaleLevels,
     loadLayerTimepointResources,
+    normalizedPlaybackBufferFrameCount,
     playbackLayerKeySignature,
     playbackWarmupFrames,
     playbackWindow,

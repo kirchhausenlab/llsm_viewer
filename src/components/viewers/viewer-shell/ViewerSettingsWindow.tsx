@@ -2,6 +2,11 @@ import {
   DEFAULT_WINDOW_MAX,
   DEFAULT_WINDOW_MIN,
 } from '../../../state/layerSettings';
+import {
+  clampPlaybackBufferFrames,
+  MAX_PLAYBACK_BUFFER_FRAMES,
+  MIN_PLAYBACK_BUFFER_FRAMES,
+} from '../../../shared/utils/viewerPlayback';
 import FloatingWindow from '../../widgets/FloatingWindow';
 import type { GlobalRenderControls, LayoutProps, PlaybackControlsProps } from './types';
 import type { ModeToggleState, ViewerSettingsControls } from './hooks/useViewerModeControls';
@@ -24,7 +29,10 @@ const formatBlControlValue = (value: number): string => {
 export type ViewerSettingsWindowProps = {
   layout: Pick<LayoutProps, 'windowMargin' | 'controlWindowWidth' | 'viewerSettingsWindowInitialPosition' | 'resetToken'>;
   modeToggle: ModeToggleState;
-  playbackControls: Pick<PlaybackControlsProps, 'fps' | 'onFpsChange' | 'volumeTimepointCount'>;
+  playbackControls: Pick<
+    PlaybackControlsProps,
+    'fps' | 'onFpsChange' | 'playbackBufferFrames' | 'onPlaybackBufferFramesChange' | 'volumeTimepointCount'
+  >;
   viewerSettings: ViewerSettingsControls;
   isOpen: boolean;
   onClose: () => void;
@@ -49,6 +57,8 @@ export default function ViewerSettingsWindow({
   const {
     fps,
     onFpsChange,
+    playbackBufferFrames,
+    onPlaybackBufferFramesChange,
     volumeTimepointCount
   } = playbackControls;
   const {
@@ -70,6 +80,11 @@ export default function ViewerSettingsWindow({
     onBlEarlyExitAlphaChange,
     onMipEarlyExitThresholdChange
   } = globalRenderControls;
+  const playbackBufferSliderMax = Math.min(
+    MAX_PLAYBACK_BUFFER_FRAMES,
+    Math.max(MIN_PLAYBACK_BUFFER_FRAMES, volumeTimepointCount - 1)
+  );
+  const displayedPlaybackBufferFrames = Math.min(playbackBufferFrames, playbackBufferSliderMax);
 
   if (!isOpen) {
     return null;
@@ -160,6 +175,30 @@ export default function ViewerSettingsWindow({
               />
             </div>
           )}
+
+          <div className="control-group control-group--slider">
+            <label htmlFor="playback-buffer-slider">playback buffer frames</label>
+            <div className="double-range-input">
+              <input
+                id="playback-buffer-slider"
+                type="range"
+                min={MIN_PLAYBACK_BUFFER_FRAMES}
+                max={playbackBufferSliderMax}
+                step={1}
+                value={displayedPlaybackBufferFrames}
+                onChange={(event) => onPlaybackBufferFramesChange(clampPlaybackBufferFrames(Number(event.target.value)))}
+                disabled={volumeTimepointCount <= 1}
+              />
+              <input
+                type="number"
+                min={MIN_PLAYBACK_BUFFER_FRAMES}
+                max={playbackBufferSliderMax}
+                value={displayedPlaybackBufferFrames}
+                onChange={(event) => onPlaybackBufferFramesChange(clampPlaybackBufferFrames(Number(event.target.value)))}
+                disabled={volumeTimepointCount <= 1}
+              />
+            </div>
+          </div>
 
           <div className="render-settings-section">
             <span className="control-label control-label--compact">Global MIP / BL</span>

@@ -756,14 +756,16 @@ await (async () => {
 
   assert.deepStrictEqual(hook.result.playbackLayerKeys, ['layer-a-1']);
 
-  await flushAsyncWork();
+  await flushAsyncWork(16);
   assert.ok(hook.result.currentLayerVolumes['layer-a-1']);
   assert.strictEqual(hook.result.currentLayerPageTables['layer-a-1'], null);
   assert.deepStrictEqual(getVolumeCalls[0], { layerKey: 'layer-a-1', timeIndex: 1 });
 
   selectedIndex = 3;
   hook.rerender();
-  await flushAsyncWork();
+  for (let attempt = 0; attempt < 12 && hook.result.playbackWarmupFrames.length < 2; attempt += 1) {
+    await flushAsyncWork();
+  }
   assert.deepStrictEqual(getVolumeCalls[getVolumeCalls.length - 1], { layerKey: 'layer-a-1', timeIndex: 3 });
 
   hook.unmount();
@@ -848,6 +850,7 @@ await (async () => {
       layerChannelMap: new Map<string, string>([['layer-a', 'channel-a']]),
       preferBrickResidency: true,
       volumeTimepointCount: 4,
+      playbackBufferFrameCount: 2,
       selectedIndex,
       clearDatasetError: () => {},
       beginLaunchSession: () => {},
@@ -1400,16 +1403,26 @@ await (async () => {
     getBrickAtlasCalls.filter((call) => call.layerKey === 'layer-a' && call.timeIndex === 1 && call.scaleLevel === 1).length,
     1
   );
+  assert.strictEqual(
+    getBrickAtlasCalls.filter((call) => call.layerKey === 'layer-a' && call.timeIndex === 2 && call.scaleLevel === 1).length,
+    1
+  );
 
   selectedIndex = 1;
   hook.rerender();
-  await flushAsyncWork();
+  for (let attempt = 0; attempt < 12 && hook.result.playbackWarmupFrames.length < 2; attempt += 1) {
+    await flushAsyncWork();
+  }
   assert.strictEqual(hook.result.currentLayerBrickAtlases['layer-a'], warmedAtlas);
   assert.strictEqual(
     getBrickAtlasCalls.filter((call) => call.layerKey === 'layer-a' && call.timeIndex === 1 && call.scaleLevel === 1).length,
     1
   );
   assert.strictEqual(hook.result.playbackWarmupTimeIndex, 2);
+  assert.ok(
+    getBrickAtlasCalls.filter((call) => call.layerKey === 'layer-a' && call.timeIndex === 3 && call.scaleLevel === 1).length >= 1,
+    'expected buffered playback warmup to request the second future frame'
+  );
   hook.unmount();
 })();
 

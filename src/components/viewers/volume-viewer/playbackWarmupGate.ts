@@ -1,5 +1,3 @@
-import type { ViewerLayer, VolumeResources } from '../VolumeViewer.types';
-
 export type PlaybackWarmupGateState = {
   blockedNextIndex: number | null;
   blockedAtMs: number | null;
@@ -8,20 +6,6 @@ export type PlaybackWarmupGateState = {
 const PLAYBACK_WARMUP_GATE_MIN_WAIT_MS = 150;
 const PLAYBACK_WARMUP_GATE_MAX_WAIT_MS = 350;
 const PLAYBACK_WARMUP_GATE_FRAME_MULTIPLIER = 2.5;
-
-function isWarmupResourceReady(resource: VolumeResources | undefined): boolean {
-  if (!resource) {
-    return false;
-  }
-  if (typeof resource.playbackWarmupReady === 'boolean') {
-    return resource.playbackWarmupReady;
-  }
-  const metrics = resource.gpuBrickResidencyMetrics;
-  if (!metrics) {
-    return false;
-  }
-  return (metrics.pendingBricks ?? 0) <= 0 && (metrics.scheduledUploads ?? 0) <= 0;
-}
 
 export function resetPlaybackWarmupGateState(state: PlaybackWarmupGateState): void {
   state.blockedNextIndex = null;
@@ -40,16 +24,14 @@ export function resolvePlaybackWarmupGateWaitMs(fps: number): number {
 export function shouldAllowPlaybackAdvanceWithWarmup({
   nextIndex,
   requiredLayerKeys,
-  playbackWarmupLayers,
-  resources,
+  getWarmupStatus,
   fps,
   nowMs,
   gateState
 }: {
   nextIndex: number;
   requiredLayerKeys: string[];
-  playbackWarmupLayers: ViewerLayer[];
-  resources: Map<string, VolumeResources>;
+  getWarmupStatus: (nextIndex: number, requiredLayerKeys: string[]) => 'ready' | 'pending' | 'missing';
   fps: number;
   nowMs: number;
   gateState: PlaybackWarmupGateState;
@@ -59,27 +41,13 @@ export function shouldAllowPlaybackAdvanceWithWarmup({
     return true;
   }
 
-  const warmupLayerByBaseKey = new Map(
-    playbackWarmupLayers
-      .filter((layer) => layer.playbackWarmupTimeIndex === nextIndex && layer.playbackWarmupForLayerKey)
-      .map((layer) => [layer.playbackWarmupForLayerKey as string, layer])
-  );
-
-  // If the route-level playback state says the next frame is ready but the hidden
-  // viewer warmup layer is missing entirely, fail open instead of wedging playback.
-  if (!requiredLayerKeys.every((layerKey) => warmupLayerByBaseKey.has(layerKey))) {
+  const warmupStatus = getWarmupStatus(nextIndex, requiredLayerKeys);
+  if (warmupStatus === 'missing') {
     resetPlaybackWarmupGateState(gateState);
     return true;
   }
 
-  const allWarmupResourcesReady = requiredLayerKeys.every((layerKey) => {
-    const warmupLayer = warmupLayerByBaseKey.get(layerKey);
-    if (!warmupLayer) {
-      return false;
-    }
-    return isWarmupResourceReady(resources.get(warmupLayer.key));
-  });
-  if (allWarmupResourcesReady) {
+  if (warmupStatus === 'ready') {
     resetPlaybackWarmupGateState(gateState);
     return true;
   }
