@@ -1,4 +1,4 @@
-import { useCallback, useMemo, type Dispatch, type SetStateAction } from 'react';
+import { useCallback, useMemo, useRef, type Dispatch, type SetStateAction } from 'react';
 import { fromBlob } from 'geotiff';
 
 import { DEFAULT_LAYER_COLOR, normalizeHexColor } from '../../shared/colorMaps/layerColors';
@@ -15,7 +15,7 @@ import {
   type ChannelSource,
   type TrackSetSource
 } from './useChannelSources';
-import { detectVolumeDataTypeFromTypedArray, type VolumeDataType } from '../../types/volume';
+import type { VolumeDataType } from '../../types/volume';
 import {
   collectFilesFromDataTransfer,
   dedupeFiles,
@@ -55,7 +55,7 @@ export type DatasetSetupParams = {
   computeLayerTimepointCount: (files: File[]) => Promise<number>;
   createChannelSource: (name: string, channelType?: ChannelSource['channelType']) => ChannelSource;
   createVolumeSource: (files: File[]) => { id: string; files: File[]; isSegmentation: boolean };
-  probeVolumeSourceMetadata?: (files: File[]) => Promise<{ channels: number; dataType: VolumeDataType }>;
+  probeVolumeSourceMetadata?: (files: File[]) => Promise<{ channels: number; dataType?: VolumeDataType }>;
 };
 
 export type DatasetSetupHook = {
@@ -76,97 +76,31 @@ export type DatasetSetupHook = {
 
 async function probeVolumeSourceMetadataDefault(
   files: File[]
-): Promise<{ channels: number; dataType: VolumeDataType }> {
-  let expectedChannels: number | null = null;
-  let expectedDataType: VolumeDataType | null = null;
+): Promise<{ channels: number; dataType?: VolumeDataType }> {
+  const firstFile = files[0] ?? null;
+  if (!firstFile) {
+    return { channels: 1 };
+  }
 
-  for (const file of files) {
-    const tiff = await fromBlob(file);
-    const imageCount = await tiff.getImageCount();
-    if (imageCount <= 0) {
-      throw new Error(`File "${file.name}" does not contain any images.`);
-    }
+  const tiff = await fromBlob(firstFile);
+  const imageCount = await tiff.getImageCount();
+  if (imageCount <= 0) {
+    throw new Error(`File "${firstFile.name}" does not contain any images.`);
+  }
 
-    const firstImage = await tiff.getImage(0);
-    const firstImageChannels =
-      resolveImagejPageChannelLayout({
-        samplesPerPixel: firstImage.getSamplesPerPixel(),
-        imageCount,
-        imageDescription: firstImage.fileDirectory.ImageDescription ?? null
-      })?.channels ?? firstImage.getSamplesPerPixel();
-    if (!Number.isFinite(firstImageChannels) || firstImageChannels <= 0) {
-      throw new Error(`File "${file.name}" has an invalid channel count.`);
-    }
-    const firstRasterRaw = (await firstImage.readRasters({ interleave: true })) as unknown;
-    if (!ArrayBuffer.isView(firstRasterRaw)) {
-      throw new Error(`File "${file.name}" does not provide raster data as a typed array.`);
-    }
-    const firstRaster = firstRasterRaw as
-      | Uint8Array
-      | Int8Array
-      | Uint16Array
-      | Int16Array
-      | Uint32Array
-      | Int32Array
-      | Float32Array
-      | Float64Array;
-    const firstImageDataType = detectVolumeDataTypeFromTypedArray(firstRaster);
-
-    if (expectedChannels === null) {
-      expectedChannels = firstImageChannels;
-    } else if (firstImageChannels !== expectedChannels) {
-      throw new Error(
-        `TIFF channel counts must match across the uploaded selection. File "${file.name}" has ${firstImageChannels} channels, expected ${expectedChannels}.`
-      );
-    }
-    if (expectedDataType === null) {
-      expectedDataType = firstImageDataType;
-    } else if (firstImageDataType !== expectedDataType) {
-      throw new Error(
-        `TIFF sample types must match across the uploaded selection. File "${file.name}" has ${firstImageDataType}, expected ${expectedDataType}.`
-      );
-    }
-
-    if (firstImageChannels > 1 && imageCount > 1) {
-      continue;
-    }
-
-    for (let imageIndex = 1; imageIndex < imageCount; imageIndex += 1) {
-      const image = await tiff.getImage(imageIndex);
-      const channels = image.getSamplesPerPixel();
-      if (!Number.isFinite(channels) || channels <= 0) {
-        throw new Error(`File "${file.name}" has an invalid channel count at image ${imageIndex + 1}.`);
-      }
-      if (channels !== firstImage.getSamplesPerPixel()) {
-        throw new Error(
-          `TIFF channel counts must match across the uploaded selection. File "${file.name}" image ${imageIndex + 1} has ${channels} channels, expected ${firstImage.getSamplesPerPixel()}.`
-        );
-      }
-      const rasterRaw = (await image.readRasters({ interleave: true })) as unknown;
-      if (!ArrayBuffer.isView(rasterRaw)) {
-        throw new Error(`File "${file.name}" image ${imageIndex + 1} does not provide raster data as a typed array.`);
-      }
-      const raster = rasterRaw as
-        | Uint8Array
-        | Int8Array
-        | Uint16Array
-        | Int16Array
-        | Uint32Array
-        | Int32Array
-        | Float32Array
-        | Float64Array;
-      const sliceDataType = detectVolumeDataTypeFromTypedArray(raster);
-      if (sliceDataType !== firstImageDataType) {
-        throw new Error(
-          `TIFF sample types must match across the uploaded selection. File "${file.name}" image ${imageIndex + 1} has ${sliceDataType}, expected ${firstImageDataType}.`
-        );
-      }
-    }
+  const firstImage = await tiff.getImage(0);
+  const firstImageChannels =
+    resolveImagejPageChannelLayout({
+      samplesPerPixel: firstImage.getSamplesPerPixel(),
+      imageCount,
+      imageDescription: firstImage.fileDirectory.ImageDescription ?? null
+    })?.channels ?? firstImage.getSamplesPerPixel();
+  if (!Number.isFinite(firstImageChannels) || firstImageChannels <= 0) {
+    throw new Error(`File "${firstFile.name}" has an invalid channel count.`);
   }
 
   return {
-    channels: expectedChannels ?? 1,
-    dataType: expectedDataType ?? 'uint8'
+    channels: firstImageChannels
   };
 }
 
@@ -188,6 +122,8 @@ export function useDatasetSetup({
   const voxelResolution = useVoxelResolution(DEFAULT_VOXEL_RESOLUTION);
   const datasetErrors = useDatasetErrors();
   const { reportDatasetError, clearDatasetError } = datasetErrors;
+  const layerTimepointRequestCounterRef = useRef(0);
+  const layerTimepointRequestByLayerIdRef = useRef(new Map<string, number>());
   const showInteractionWarning = useCallback(
     (message: string) => {
       reportDatasetError(message, 'interaction');
@@ -357,6 +293,35 @@ export function useDatasetSetup({
     [setTracks]
   );
 
+  const clearPendingLayerTimepointRequests = useCallback((layerIds: string[]) => {
+    if (layerIds.length === 0) {
+      return;
+    }
+    const requests = layerTimepointRequestByLayerIdRef.current;
+    for (const layerId of layerIds) {
+      requests.delete(layerId);
+    }
+  }, []);
+
+  const beginLayerTimepointRequest = useCallback(
+    (addedLayerIds: string[], removedLayerIds: string[]): number => {
+      clearPendingLayerTimepointRequests(removedLayerIds);
+      const nextRequestId = layerTimepointRequestCounterRef.current + 1;
+      layerTimepointRequestCounterRef.current = nextRequestId;
+      const requests = layerTimepointRequestByLayerIdRef.current;
+      for (const layerId of addedLayerIds) {
+        requests.set(layerId, nextRequestId);
+      }
+      return nextRequestId;
+    },
+    [clearPendingLayerTimepointRequests]
+  );
+
+  const resolveActiveLayerIdsForRequest = useCallback((layerIds: string[], requestId: number): string[] => {
+    const requests = layerTimepointRequestByLayerIdRef.current;
+    return layerIds.filter((layerId) => requests.get(layerId) === requestId);
+  }, []);
+
   const handleChannelLayerFilesAdded = useCallback(
     async (channelId: string, incomingFiles: File[]) => {
       const tiffFiles = dedupeFiles(incomingFiles.filter((file) => hasTiffExtension(file.name)));
@@ -388,7 +353,7 @@ export function useDatasetSetup({
 
       const targetIsSegmentation = isSegmentationChannelSource(targetChannel);
       let sourceChannels: number;
-      let sourceDataType: VolumeDataType;
+      let sourceDataType: VolumeDataType | undefined;
       try {
         const sourceMetadata = await probeVolumeSourceMetadata(sorted);
         sourceChannels = sourceMetadata.channels;
@@ -493,22 +458,27 @@ export function useDatasetSetup({
 
       clearLayerDerivedState(removedVolumeIds);
       clearTrackBindingsForRemovedChannels(removedChannelIds);
+      const addedLayerIds = addedVolumes.map((entry) => entry.id);
+      const timepointRequestId = beginLayerTimepointRequest(addedLayerIds, removedVolumeIds);
 
-      let hasTimepointCountError = false;
+      if (ignoredExtraGroups) {
+        showInteractionWarning('Only the first TIFF sequence was added. Additional sequences were ignored.');
+      } else {
+        clearDatasetError();
+      }
+
       try {
         const timepointCount = await computeLayerTimepointCount(sorted);
+        const activeLayerIds = resolveActiveLayerIdsForRequest(addedLayerIds, timepointRequestId);
+        if (activeLayerIds.length === 0) {
+          return;
+        }
         setLayerTimepointCounts((current) => {
           let changed = false;
           const next: Record<string, number> = { ...current };
-          for (const entry of addedVolumes) {
-            if (next[entry.id] !== timepointCount) {
-              next[entry.id] = timepointCount;
-              changed = true;
-            }
-          }
-          for (const layerId of removedVolumeIds) {
-            if (layerId in next) {
-              delete next[layerId];
+          for (const layerId of activeLayerIds) {
+            if (next[layerId] !== timepointCount) {
+              next[layerId] = timepointCount;
               changed = true;
             }
           }
@@ -517,13 +487,7 @@ export function useDatasetSetup({
         setLayerTimepointCountErrors((current) => {
           let changed = false;
           const next = { ...current };
-          for (const entry of addedVolumes) {
-            if (entry.id in next) {
-              delete next[entry.id];
-              changed = true;
-            }
-          }
-          for (const layerId of removedVolumeIds) {
+          for (const layerId of activeLayerIds) {
             if (layerId in next) {
               delete next[layerId];
               changed = true;
@@ -533,20 +497,17 @@ export function useDatasetSetup({
         });
       } catch (error) {
         console.error('Failed to compute timepoint count for layer', error);
-        hasTimepointCountError = true;
         const message = `Failed to read TIFF timepoint count: ${
           error instanceof Error ? error.message : 'The dropped files could not be parsed as a TIFF sequence.'
         }`;
+        const activeLayerIds = resolveActiveLayerIdsForRequest(addedLayerIds, timepointRequestId);
+        if (activeLayerIds.length === 0) {
+          return;
+        }
         setLayerTimepointCounts((current) => {
           let changed = false;
           const next = { ...current };
-          for (const entry of addedVolumes) {
-            if (entry.id in next) {
-              delete next[entry.id];
-              changed = true;
-            }
-          }
-          for (const layerId of removedVolumeIds) {
+          for (const layerId of activeLayerIds) {
             if (layerId in next) {
               delete next[layerId];
               changed = true;
@@ -557,15 +518,9 @@ export function useDatasetSetup({
         setLayerTimepointCountErrors((current) => {
           let changed = false;
           const next: Record<string, string> = { ...current };
-          for (const entry of addedVolumes) {
-            if (next[entry.id] !== message) {
-              next[entry.id] = message;
-              changed = true;
-            }
-          }
-          for (const layerId of removedVolumeIds) {
-            if (layerId in next) {
-              delete next[layerId];
+          for (const layerId of activeLayerIds) {
+            if (next[layerId] !== message) {
+              next[layerId] = message;
               changed = true;
             }
           }
@@ -573,14 +528,9 @@ export function useDatasetSetup({
         });
         showInteractionWarning(message);
       }
-
-      if (ignoredExtraGroups && !hasTimepointCountError) {
-        showInteractionWarning('Only the first TIFF sequence was added. Additional sequences were ignored.');
-      } else if (!hasTimepointCountError) {
-        clearDatasetError();
-      }
     },
     [
+      beginLayerTimepointRequest,
       channels,
       clearDatasetError,
       clearLayerDerivedState,
@@ -592,6 +542,7 @@ export function useDatasetSetup({
       setLayerTimepointCounts,
       setLayerTimepointCountErrors,
       probeVolumeSourceMetadata,
+      resolveActiveLayerIdsForRequest,
       showInteractionWarning
     ]
   );
@@ -677,9 +628,17 @@ export function useDatasetSetup({
       });
       clearLayerDerivedState(removedLayerIds);
       clearTrackBindingsForRemovedChannels(removedChannelIds);
+      clearPendingLayerTimepointRequests(removedLayerIds);
       clearDatasetError();
     },
-    [channels, clearDatasetError, clearLayerDerivedState, clearTrackBindingsForRemovedChannels, setChannels]
+    [
+      channels,
+      clearDatasetError,
+      clearLayerDerivedState,
+      clearPendingLayerTimepointRequests,
+      clearTrackBindingsForRemovedChannels,
+      setChannels
+    ]
   );
 
   return {

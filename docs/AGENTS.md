@@ -26,6 +26,8 @@ Agents: You may freely modify `docs/PROJECT_STRUCTURE.md` to reflect code change
   - Refactor or re-run preprocessing logic, as long as you do **not** regress visualization performance.
 - For playback/streaming changes, follow invariants in:
   - `docs/playback-invariants.md`
+- For hover readout/sampling changes, follow invariants in:
+  - `docs/hover-invariants.md`
 
 ---
 

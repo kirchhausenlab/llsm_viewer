@@ -125,6 +125,70 @@ await (async () => {
 })();
 
 await (async () => {
+  let resolveTimepointCount: ((value: number) => void) | null = null;
+  const pendingTimepointCount = new Promise<number>((resolve) => {
+    resolveTimepointCount = resolve;
+  });
+
+  const hook = renderHook(() => {
+    const [channels, setChannels] = React.useState([
+      {
+        id: 'channel-1',
+        name: 'Channel 1',
+        volume: null
+      }
+    ]);
+    const [layerTimepointCounts, setLayerTimepointCounts] = React.useState<Record<string, number>>({});
+    const [layerTimepointCountErrors, setLayerTimepointCountErrors] = React.useState<Record<string, string>>({});
+    const layerCounter = React.useRef(1);
+
+    const datasetSetup = useDatasetSetup({
+      channels,
+      setTracks: React.useState<TrackSetSource[]>([])[1],
+      loadedLayers: [],
+      layerSettings: {},
+      setChannels,
+      setLayerSettings: React.useState<Record<string, ReturnType<typeof createDefaultLayerSettings>>>({})[1],
+      setLayerAutoThresholds: React.useState<Record<string, number>>({})[1],
+      setLayerTimepointCounts,
+      setLayerTimepointCountErrors,
+      computeLayerTimepointCount: async () => pendingTimepointCount,
+      createChannelSource: (name, channelType = 'channel') => ({ id: `channel-generated-${name || 'empty'}`, name, volume: null, channelType }),
+      createVolumeSource: (files) => ({ id: `layer-${layerCounter.current++}`, files, isSegmentation: false }),
+      probeVolumeSourceMetadata: async () => ({ channels: 1 })
+    });
+
+    return {
+      ...datasetSetup,
+      channels,
+      layerTimepointCounts,
+      layerTimepointCountErrors
+    };
+  });
+
+  const { act } = hook;
+  let pendingUpload: Promise<void> | null = null;
+
+  await act(async () => {
+    pendingUpload = hook.result.handleChannelLayerFilesAdded('channel-1', [createFile('slow.tif')]);
+    await Promise.resolve();
+  });
+
+  const volume = hook.result.channels[0]?.volume;
+  assert.ok(volume);
+  assert.deepEqual(volume.files.map((file) => file.name), ['slow.tif']);
+  assert.deepEqual(hook.result.layerTimepointCounts, {});
+  assert.deepEqual(hook.result.layerTimepointCountErrors, {});
+
+  await act(async () => {
+    resolveTimepointCount?.(7);
+    await pendingUpload;
+  });
+
+  assert.equal(hook.result.layerTimepointCounts[volume.id], 7);
+})();
+
+await (async () => {
   const hook = renderHook(() => {
     const [channels, setChannels] = React.useState([
       {

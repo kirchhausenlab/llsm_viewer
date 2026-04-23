@@ -24,12 +24,19 @@ If you change hover sampling, layer selection, atlas residency, or viewer-space 
    - Do not reintroduce full-volume loads in atlas playback paths just to support hover.
    - Hover sampling must operate on atlas/page-table data when in atlas mode.
 
+5. Hover intensity readout must be discrete after the hover position is resolved.
+   - The 3D hover finder may still choose a continuous/sub-voxel position along the ray.
+   - After that position is chosen, the displayed hover intensity must come from exactly one voxel, not a trilinear blend of neighbors.
+   - The voxel used for the readout must match the displayed hover coordinates in the top menu.
+   - If render-space hover coordinates and layer data-space dimensions differ (for example atlas/downsampled layers), map the displayed render-space voxel deterministically to one data voxel before reading the stored value.
+   - Rationale: if the UI says the pointer is still on the same voxel, the reported intensity must stay stable for that voxel. "One displayed voxel -> one denormalized raw value" is the contract.
+
 ## Regression Coverage
 
 These tests are intended to fail if the above behavior regresses:
 
 - `tests/volumeHoverSampling.test.ts`
-  - Atlas and volume sampling behavior, channel mapping, and denormalization.
+  - Atlas and volume sampling behavior, channel mapping, denormalization, and discrete post-resolution hover readout behavior.
 - `tests/volumeHoverTargetLayer.test.ts`
   - Hover target selection priorities and atlas-only layer eligibility.
 - `tests/volumeHoverDimensions.test.ts`
