@@ -55,6 +55,7 @@ import {
   computeRuntimeDiagnosticsWindowRecenterPosition,
   RUNTIME_DIAGNOSTICS_WINDOW_WIDTH,
 } from '../../shared/utils/windowLayout';
+import { computeLoopedNextTimeIndex } from '../../shared/utils';
 import { RENDER_STYLE_BL, RENDER_STYLE_SLICE } from '../../state/layerSettings';
 import FloatingWindow from '../widgets/FloatingWindow';
 import { DEFAULT_HOVER_SETTINGS, normalizeHoverSettings } from '../../shared/utils/hoverSettings';
@@ -341,8 +342,18 @@ function isPlaybackWarmupEligibleLayer(layer: VolumeViewerProps['layers'][number
   if (layer.renderStyle === RENDER_STYLE_SLICE) {
     return false;
   }
-  const scaleLevel = layer.brickAtlas?.scaleLevel ?? layer.scaleLevel ?? 0;
-  return Boolean(layer.brickAtlas?.enabled && scaleLevel > 0);
+  const depth =
+    layer.volume?.depth ??
+    layer.brickAtlas?.pageTable.volumeShape[0] ??
+    layer.fullResolutionDepth ??
+    0;
+  const viewerMode =
+    layer.mode === 'slice' || layer.mode === '3d'
+      ? layer.mode
+      : depth > 1
+        ? '3d'
+        : 'slice';
+  return viewerMode === '3d';
 }
 
 function VolumeViewer({
@@ -356,21 +367,25 @@ function VolumeViewer({
   expectedVolumes,
   runtimeDiagnostics,
   lodPolicyDiagnostics,
+  residencyDecisions = {},
   isDiagnosticsWindowOpen = false,
   onCloseDiagnosticsWindow,
   windowResetSignal,
   timeIndex,
   totalTimepoints,
   isPlaying,
+  isPlaybackStartPending = false,
   playbackDisabled,
   playbackLabel,
   fps,
+  playbackBufferFrames,
   blendingMode,
   zClipFrontFraction = 0,
   onTogglePlayback,
   onTimeIndexChange,
   playbackWindow = null,
   canAdvancePlayback,
+  onBufferedPlaybackStart,
   onFpsChange,
   onRegisterVolumeStepScaleChange,
   onCameraNavigationSample,
@@ -612,9 +627,15 @@ function VolumeViewer({
   const getPlaybackWarmupStatusRef = useRef<
     (nextIndex: number, requiredLayerKeys: string[]) => 'ready' | 'pending' | 'missing'
   >(() => 'missing');
+  const playbackRequiredLayerKeys = useMemo(
+    () =>
+      layers
+        .filter((layer) => isPlaybackWarmupEligibleLayer(layer) && (residencyDecisions[layer.key] ?? null) !== null)
+        .map((layer) => layer.key),
+    [layers, residencyDecisions]
+  );
 
   const canAdvancePlaybackWithWarmup = useMemo(() => {
-    const requiredLayerKeys = layers.filter(isPlaybackWarmupEligibleLayer).map((layer) => layer.key);
     return (nextIndex: number) => {
       if (canAdvancePlayback && !canAdvancePlayback(nextIndex)) {
         resetPlaybackWarmupGateState(playbackWarmupGateRef.current);
@@ -622,14 +643,14 @@ function VolumeViewer({
       }
       return shouldAllowPlaybackAdvanceWithWarmup({
         nextIndex,
-        requiredLayerKeys,
+        requiredLayerKeys: playbackRequiredLayerKeys,
         getWarmupStatus: getPlaybackWarmupStatusRef.current,
         fps,
         nowMs: Date.now(),
         gateState: playbackWarmupGateRef.current,
       });
     };
-  }, [canAdvancePlayback, fps, layers]);
+  }, [canAdvancePlayback, fps, playbackRequiredLayerKeys]);
 
   useEffect(() => {
     if (!isPlaying) {
@@ -660,6 +681,30 @@ function VolumeViewer({
   const isAdditiveBlending = blendingMode === 'additive';
   const preservedViewStateRef = useRef(createEmptyDesktopViewStateMap());
   const gpuResidencySummary = summarizeGpuResidency(resourcesRef.current);
+  const residencyDecisionSummary = useMemo(
+    () =>
+      layers
+        .filter((layer) => layer.visible)
+        .map((layer) => {
+          const decision = residencyDecisions[layer.key] ?? null;
+          return decision ? `${layer.key}: ${decision.mode} s${decision.scaleLevel}` : null;
+        })
+        .filter((value): value is string => value !== null)
+        .join(', '),
+    [layers, residencyDecisions]
+  );
+  const residencyRationaleSummary = useMemo(
+    () =>
+      layers
+        .filter((layer) => layer.visible)
+        .map((layer) => {
+          const decision = residencyDecisions[layer.key] ?? null;
+          return decision ? `${layer.key}: ${decision.rationale}` : null;
+        })
+        .filter((value): value is string => value !== null)
+        .join(', '),
+    [layers, residencyDecisions]
+  );
   const [runtimeDiagnosticsWindowInitialPosition, setRuntimeDiagnosticsWindowInitialPosition] = useState(
     () => computeRuntimeDiagnosticsWindowDefaultPosition()
   );
@@ -1146,6 +1191,7 @@ function VolumeViewer({
   });
   const { getPlaybackWarmupStatus } = useVolumeViewerResources({
     layers,
+    timeIndex: clampedTimeIndex,
     playbackWarmupLayers,
     playbackWarmupFrames,
     primaryVolume,
@@ -1185,6 +1231,49 @@ function VolumeViewer({
   useEffect(() => {
     getPlaybackWarmupStatusRef.current = getPlaybackWarmupStatus;
   }, [getPlaybackWarmupStatus]);
+  useEffect(() => {
+    if (!isPlaybackStartPending || playbackDisabled) {
+      return;
+    }
+    const requiredLayerKeys = playbackRequiredLayerKeys;
+    if (requiredLayerKeys.length === 0 || playbackBufferFrames <= 0) {
+      onBufferedPlaybackStart?.();
+      return;
+    }
+
+    const startupGateFrameCount = Math.min(1, playbackBufferFrames);
+    const targetIndices: number[] = [];
+    let candidate = clampedTimeIndex;
+    const seen = new Set<number>([clampedTimeIndex]);
+    for (let bufferIndex = 0; bufferIndex < startupGateFrameCount; bufferIndex += 1) {
+      candidate = computeLoopedNextTimeIndex(candidate, totalTimepoints, playbackWindow);
+      if (seen.has(candidate)) {
+        break;
+      }
+      seen.add(candidate);
+      targetIndices.push(candidate);
+    }
+
+    const allReady = targetIndices.every((timeIndex) => {
+      const warmupStatus = getPlaybackWarmupStatusRef.current(timeIndex, requiredLayerKeys);
+      return warmupStatus === 'ready';
+    });
+    if (allReady) {
+      onBufferedPlaybackStart?.();
+    }
+  }, [
+    clampedTimeIndex,
+    getPlaybackWarmupStatus,
+    isPlaying,
+    isPlaybackStartPending,
+    onBufferedPlaybackStart,
+    playbackBufferFrames,
+    playbackDisabled,
+    playbackRequiredLayerKeys,
+    playbackWarmupFrames,
+    playbackWindow,
+    totalTimepoints,
+  ]);
   const {
     updateVoxelHover,
     resetHoverState,
@@ -1887,6 +1976,18 @@ function VolumeViewer({
                 <li className="runtime-diagnostics-item">
                   <span className="runtime-diagnostics-label">LOD fallback</span>
                   <span className="runtime-diagnostics-value">adaptive selector auto-disabled</span>
+                </li>
+              ) : null}
+              {residencyDecisionSummary ? (
+                <li className="runtime-diagnostics-item">
+                  <span className="runtime-diagnostics-label">Residency policy</span>
+                  <span className="runtime-diagnostics-value">{residencyDecisionSummary}</span>
+                </li>
+              ) : null}
+              {residencyRationaleSummary ? (
+                <li className="runtime-diagnostics-item">
+                  <span className="runtime-diagnostics-label">Residency reason</span>
+                  <span className="runtime-diagnostics-value">{residencyRationaleSummary}</span>
                 </li>
               ) : null}
               {gpuResidencySummary ? (

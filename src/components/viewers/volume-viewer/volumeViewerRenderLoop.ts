@@ -81,6 +81,7 @@ export function createVolumeViewerRenderLoop({
 }: CreateVolumeViewerRenderLoopOptions): (timestamp: number) => void {
   let lastRenderTickSummary: { presenting: boolean; hoveredByController: string | null } | null = null;
   const cameraWorldPosition = new THREE.Vector3();
+  const cameraWorldDirection = new THREE.Vector3();
   const fallbackProjectionTarget = new THREE.Vector3();
   const previousCameraPosition = new THREE.Vector3(Number.NaN, Number.NaN, Number.NaN);
   const previousTarget = new THREE.Vector3(Number.NaN, Number.NaN, Number.NaN);
@@ -130,12 +131,19 @@ export function createVolumeViewerRenderLoop({
 
     const resources = resourcesRef.current;
     cameraWorldPosition.setFromMatrixPosition(camera.matrixWorld);
+    camera.getWorldDirection(cameraWorldDirection);
     let nearestVisibleVolumeDistance = Number.POSITIVE_INFINITY;
     let nearestVisibleVolumeTarget: THREE.Vector3 | null = null;
     for (const resource of resources.values()) {
       const { mesh } = resource;
       mesh.updateMatrixWorld();
-      resource.updateGpuBrickResidencyForCamera?.(cameraWorldPosition);
+      resource.updateGpuBrickResidencyForCamera?.({
+        cameraWorldPosition,
+        projectionMode: getProjectionModeForCamera(camera),
+        targetWorldPosition: controls.target,
+        viewDirectionWorld: cameraWorldDirection,
+        zoom: camera.zoom ?? 1,
+      });
 
       if (mesh.visible) {
         const geometry = mesh.geometry as THREE.BufferGeometry;

@@ -243,6 +243,7 @@ export function useAppRouteState(): AppRouteState {
   const playback = useViewerPlayback();
   const { selectedIndex, setSelectedIndex, isPlaying, fps, setFps, stopPlayback, setIsPlaying } = playback;
   const [playbackBufferFrames, setPlaybackBufferFrames] = useState(DEFAULT_PLAYBACK_BUFFER_FRAMES);
+  const [isPlaybackStartPending, setIsPlaybackStartPending] = useState(false);
   const [zSliderValue, setZSliderValue] = useState(1);
   const is3dViewerAvailable = true;
   const preferBrickResidency = true;
@@ -656,6 +657,7 @@ export function useAppRouteState(): AppRouteState {
   }, [resolvedSelectedIndex, volumeTimepointCount]);
 
   const {
+    currentLayerResidencyDecisions,
     currentLayerVolumes,
     currentLayerPageTables,
     currentLayerBrickAtlases,
@@ -670,6 +672,7 @@ export function useAppRouteState(): AppRouteState {
     lodPolicyDiagnostics,
     setCurrentLayerVolumes,
     playbackLayerKeys,
+    playbackResidencyDecisionByLayerKey,
     playbackAtlasScaleLevelByLayerKey,
     handleLaunchViewer: handleRouteLaunchViewer
   } = useRouteLayerVolumes({
@@ -677,6 +680,7 @@ export function useAppRouteState(): AppRouteState {
     isLaunchingViewer,
     isPerformanceMode,
     isPlaying,
+    isPlaybackStartPending,
     preprocessedExperiment,
     volumeProvider,
     loadedChannelIds,
@@ -716,14 +720,6 @@ export function useAppRouteState(): AppRouteState {
     () => handleRouteLaunchViewer({ performanceMode: true }),
     [handleRouteLaunchViewer]
   );
-  const brickResidencyLayerKeys = useMemo(() => {
-    if (!preferBrickResidency) {
-      return [] as string[];
-    }
-    return loadedDatasetLayers
-      .filter((layer) => !layer.isSegmentation && layer.depth > 1)
-      .map((layer) => layer.key);
-  }, [loadedDatasetLayers, preferBrickResidency]);
   const layerDownsampleFactorByLevelByKey = useMemo(() => {
     const byLayer = new Map<string, Map<number, [number, number, number]>>();
     const manifest = preprocessedExperiment?.manifest;
@@ -910,9 +906,7 @@ export function useAppRouteState(): AppRouteState {
     isViewerLaunched,
     isPlaying,
     fps,
-    preferBrickResidency,
-    brickResidencyLayerKeys,
-    playbackAtlasScaleLevelByLayerKey,
+    playbackResidencyDecisionByLayerKey,
     playbackWarmupFrames,
     volumeProvider,
     volumeTimepointCount,
@@ -932,8 +926,60 @@ export function useAppRouteState(): AppRouteState {
     onViewerModeChange: resetHoveredVoxel,
     volumeTimepointCount,
     isLoading,
+    isPlaybackStartPending,
+    bufferBeforePlayDefault: true,
+    onPlaybackStartRequest: () => {
+      setIsPlaybackStartPending(true);
+    },
+    onPlaybackStartCancel: () => setIsPlaybackStartPending(false),
     playbackWindow: followedTrackPlaybackWindow
   });
+
+  useEffect(() => {
+    if (!playbackDisabled) {
+      return;
+    }
+    setIsPlaybackStartPending(false);
+    setIsPlaying(false);
+  }, [playbackDisabled]);
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+    const buildPlaybackDebugSummary = () => ({
+      isViewerLaunched,
+      isPlaying,
+      isPlaybackStartPending,
+      playbackDisabled,
+      playbackBufferFrames,
+      selectedIndex: resolvedSelectedIndex,
+      volumeTimepointCount,
+      loadedChannelIds,
+      playbackLayerKeys,
+      playbackWarmupFrameCount: playbackWarmupFrames.length,
+    });
+    (window as Window & { __LLSM_ROUTE_PLAYBACK_DEBUG__?: (() => unknown) | null }).__LLSM_ROUTE_PLAYBACK_DEBUG__ =
+      buildPlaybackDebugSummary;
+    return () => {
+      if (
+        (window as Window & { __LLSM_ROUTE_PLAYBACK_DEBUG__?: (() => unknown) | null }).__LLSM_ROUTE_PLAYBACK_DEBUG__ ===
+        buildPlaybackDebugSummary
+      ) {
+        delete (window as Window & { __LLSM_ROUTE_PLAYBACK_DEBUG__?: (() => unknown) | null }).__LLSM_ROUTE_PLAYBACK_DEBUG__;
+      }
+    };
+  }, [
+    isPlaybackStartPending,
+    isPlaying,
+    isViewerLaunched,
+    loadedChannelIds,
+    playbackBufferFrames,
+    playbackDisabled,
+    playbackLayerKeys,
+    playbackWarmupFrames.length,
+    resolvedSelectedIndex,
+    volumeTimepointCount,
+  ]);
 
   const canRecord = volumeTimepointCount > 0 && !isLoading;
 
@@ -1454,6 +1500,7 @@ export function useAppRouteState(): AppRouteState {
         },
         runtimeDiagnostics: volumeProviderDiagnostics,
         lodPolicyDiagnostics,
+        residencyDecisions: currentLayerResidencyDecisions,
         canAdvancePlayback: canAdvancePlaybackToIndex,
         onRegisterReset: handleRegisterReset,
         onVolumeStepScaleChange: handleVolumeStepScaleChange,
@@ -1548,6 +1595,11 @@ export function useAppRouteState(): AppRouteState {
         onFpsChange: setFps,
         playbackBufferFrames,
         onPlaybackBufferFramesChange: (value: number) => setPlaybackBufferFrames(clampPlaybackBufferFrames(value)),
+        isPlaybackStartPending,
+        onBufferedPlaybackStart: () => {
+          setIsPlaybackStartPending(false);
+          setIsPlaying(true);
+        },
         zSliderValue,
         zSliderMax,
         onZSliderChange: handleZSliderChange,

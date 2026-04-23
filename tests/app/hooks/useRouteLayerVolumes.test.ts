@@ -932,8 +932,9 @@ await (async () => {
   );
 
   await flushAsyncWork();
-  assert.strictEqual(getBrickAtlasCalls.length, 0);
-  assert.deepStrictEqual(getVolumeCalls, [{ layerKey: 'layer-a', timeIndex: 1, scaleLevel: 0 }]);
+  assert.deepStrictEqual(getBrickAtlasCalls, [{ layerKey: 'layer-a', timeIndex: 1, scaleLevel: 0 }]);
+  assert.strictEqual(getVolumeCalls.length, 0);
+  assert.equal(hook.result.playbackResidencyDecisionByLayerKey['layer-a']?.mode, 'atlas');
   hook.unmount();
 })();
 
@@ -993,7 +994,9 @@ await (async () => {
   hook.rerender();
   await flushAsyncWork();
 
-  assert.deepStrictEqual(getVolumeCalls, [{ layerKey: 'layer-a', timeIndex: 1, scaleLevel: 0 }]);
+  assert.strictEqual(getVolumeCalls.length, 0);
+  assert.deepStrictEqual(getBrickAtlasCalls, [{ layerKey: 'layer-a', timeIndex: 1, scaleLevel: 0 }]);
+  assert.equal(hook.result.playbackResidencyDecisionByLayerKey['layer-a']?.mode, 'atlas');
   hook.unmount();
 })();
 
@@ -1088,6 +1091,100 @@ await (async () => {
   assert.ok(hook.result.currentLayerVolumes['layer-a']);
   assert.ok(hook.result.currentLayerPageTables['layer-a']);
   assert.strictEqual(hook.result.currentLayerBrickAtlases['layer-a'] ?? null, null);
+  hook.unmount();
+})();
+
+await (async () => {
+  const getVolumeCalls: Array<{ layerKey: string; timeIndex: number; scaleLevel: number | undefined }> = [];
+  const getBrickAtlasCalls: Array<{ layerKey: string; timeIndex: number; scaleLevel: number | undefined }> = [];
+  const getBrickPageTableCalls: Array<{ layerKey: string; timeIndex: number; scaleLevel: number | undefined }> = [];
+  const targetScaleLevel = 1;
+
+  const provider = {
+    getVolume: async (layerKey: string, timeIndex: number, options?: { scaleLevel?: number }) => {
+      getVolumeCalls.push({ layerKey, timeIndex, scaleLevel: options?.scaleLevel });
+      return {
+        ...createVolume(timeIndex + 61),
+        scaleLevel: options?.scaleLevel ?? 0
+      };
+    },
+    getBrickPageTable: async (layerKey: string, timeIndex: number, options?: { scaleLevel?: number }) => {
+      getBrickPageTableCalls.push({ layerKey, timeIndex, scaleLevel: options?.scaleLevel });
+      return createDenseL0BrickPageTable(timeIndex, {
+        layerKey,
+        scaleLevel: options?.scaleLevel ?? targetScaleLevel
+      });
+    },
+    getBrickAtlas: async (layerKey: string, timeIndex: number, options?: { scaleLevel?: number }) => {
+      getBrickAtlasCalls.push({ layerKey, timeIndex, scaleLevel: options?.scaleLevel });
+      return createBrickAtlas(timeIndex, options?.scaleLevel ?? targetScaleLevel);
+    },
+  } as unknown as VolumeProvider;
+
+  const preprocessedExperiment = {
+    manifest: {
+      dataset: {
+        channels: [
+          {
+            id: 'channel-a',
+            layers: [
+              {
+                key: 'layer-a',
+                zarr: {
+                  scales: [
+                    {
+                      level: targetScaleLevel,
+                      width: 256,
+                      height: 256,
+                      depth: 128,
+                      channels: 1,
+                      zarr: {
+                        playbackAtlas: {} as Record<string, never>,
+                      },
+                    }
+                  ]
+                }
+              }
+            ]
+          }
+        ]
+      }
+    }
+  } as StagedPreprocessedExperiment;
+
+  const hook = renderHook(() =>
+    useRouteLayerVolumes({
+      isViewerLaunched: true,
+      isLaunchingViewer: false,
+      isPlaying: false,
+      isPlaybackStartPending: true,
+      preprocessedExperiment,
+      volumeProvider: provider,
+      loadedChannelIds: ['channel-a'],
+      channelLayersMap: new Map<string, LoadedDatasetLayer[]>([
+        ['channel-a', [createLoadedLayer('layer-a', 'channel-a')]],
+      ]),
+      channelVisibility: { 'channel-a': true },
+      layerChannelMap: new Map<string, string>([['layer-a', 'channel-a']]),
+      preferBrickResidency: true,
+      volumeTimepointCount: 4,
+      selectedIndex: 1,
+      clearDatasetError: () => {},
+      beginLaunchSession: () => {},
+      setLaunchExpectedVolumeCount: () => {},
+      setLaunchProgress: () => {},
+      completeLaunchSession: () => {},
+      failLaunchSession: () => {},
+      finishLaunchSessionAttempt: () => {},
+      setSelectedIndex: () => {},
+      setIsPlaying: () => {},
+      showLaunchError: () => {}
+    })
+  );
+
+  await flushAsyncWork();
+  assert.equal(hook.result.playbackResidencyDecisionByLayerKey['layer-a']?.mode, 'atlas');
+  assert.equal(hook.result.playbackResidencyDecisionByLayerKey['layer-a']?.scaleLevel, targetScaleLevel);
   hook.unmount();
 })();
 
@@ -1323,14 +1420,23 @@ await (async () => {
   ));
 
   isPlaying = false;
+  const brickAtlasCallCountBeforePause = getBrickAtlasCalls.length;
   hook.rerender();
   await flushAsyncWork();
   assert.strictEqual(getVolumeCalls.length, 0);
-  assert.deepStrictEqual(getBrickAtlasCalls[getBrickAtlasCalls.length - 1], {
-    layerKey: 'layer-a',
-    timeIndex: 2,
-    scaleLevel: 0
-  });
+  assert.ok(
+    getBrickAtlasCalls.length >= brickAtlasCallCountBeforePause + 1,
+    'pausing should trigger a paused-policy reload of the current frame'
+  );
+  assert.ok(
+    getBrickAtlasCalls.some((call, index) =>
+      index >= brickAtlasCallCountBeforePause &&
+      call.layerKey === 'layer-a' &&
+      call.timeIndex === 2 &&
+      call.scaleLevel === 0
+    ),
+    'pausing should request the current frame at the paused-policy scale'
+  );
   hook.unmount();
 })();
 
@@ -1504,13 +1610,14 @@ await (async () => {
     isMoving: false,
     capturedAtMs: 2
   };
+  const brickAtlasCallCountBeforeCameraUpdate = getBrickAtlasCalls.length;
   hook.rerender();
   await flushAsyncWork();
-  assert.deepStrictEqual(getBrickAtlasCalls[getBrickAtlasCalls.length - 1], {
-    layerKey: 'layer-a',
-    timeIndex: 1,
-    scaleLevel: 0
-  });
+  assert.strictEqual(
+    getBrickAtlasCalls.length,
+    brickAtlasCallCountBeforeCameraUpdate,
+    'paused current-frame refinement should stay stable for the already-loaded frame'
+  );
 
   hook.unmount();
 })();
@@ -1689,13 +1796,22 @@ await (async () => {
     isMoving: false,
     capturedAtMs: 3
   };
+  const brickAtlasCallCountBeforePause = getBrickAtlasCalls.length;
   hook.rerender();
   await flushAsyncWork();
-  assert.deepStrictEqual(getBrickAtlasCalls[getBrickAtlasCalls.length - 1], {
-    layerKey: 'layer-a',
-    timeIndex: 1,
-    scaleLevel: 0
-  });
+  assert.ok(
+    getBrickAtlasCalls.length >= brickAtlasCallCountBeforePause + 1,
+    'stopping playback should restore the current frame to the paused-policy scale'
+  );
+  assert.ok(
+    getBrickAtlasCalls.some((call, index) =>
+      index >= brickAtlasCallCountBeforePause &&
+      call.layerKey === 'layer-a' &&
+      call.timeIndex === 1 &&
+      call.scaleLevel === 0
+    ),
+    'stopping playback should request the current frame at the paused-policy scale'
+  );
   hook.unmount();
 })();
 
@@ -1925,6 +2041,177 @@ await (async () => {
   await flushAsyncWork();
   assert.deepStrictEqual(Array.from(hook.result.currentLayerVolumes['layer-a']?.normalized ?? []), Array(8).fill(80));
   assert.strictEqual(showLaunchErrorCalls, 0);
+  hook.unmount();
+})();
+
+await (async () => {
+  let isPlaying = true;
+  const getBrickAtlasCalls: Array<{ layerKey: string; timeIndex: number; scaleLevel: number | undefined }> = [];
+
+  const provider = {
+    getVolume: async (_layerKey: string, timeIndex: number) => createVolume(timeIndex + 70),
+    getBrickAtlas: async (layerKey: string, timeIndex: number, options?: { scaleLevel?: number }) => {
+      getBrickAtlasCalls.push({ layerKey, timeIndex, scaleLevel: options?.scaleLevel });
+      return createBrickAtlas(timeIndex, options?.scaleLevel ?? 0);
+    }
+  } as unknown as VolumeProvider;
+
+  const preprocessedExperiment = {
+    manifest: {
+      dataset: {
+        channels: [
+          {
+            id: 'channel-a',
+            layers: [
+              {
+                key: 'layer-a',
+                zarr: {
+                  scales: [
+                    { level: 0, downsampleFactor: [1, 1, 1] },
+                    { level: 1, downsampleFactor: [2, 2, 2] }
+                  ]
+                }
+              }
+            ]
+          }
+        ]
+      }
+    }
+  } as StagedPreprocessedExperiment;
+
+  const hook = renderHook(() =>
+    useRouteLayerVolumes({
+      isViewerLaunched: true,
+      isLaunchingViewer: false,
+      isPlaying,
+      preprocessedExperiment,
+      volumeProvider: provider,
+      loadedChannelIds: ['channel-a'],
+      channelLayersMap: new Map<string, LoadedDatasetLayer[]>([
+        ['channel-a', [createLoadedLayer('layer-a', 'channel-a')]],
+      ]),
+      channelVisibility: { 'channel-a': true },
+      layerChannelMap: new Map<string, string>([['layer-a', 'channel-a']]),
+      preferBrickResidency: true,
+      volumeTimepointCount: 4,
+      playbackBufferFrameCount: 1,
+      selectedIndex: 0,
+      clearDatasetError: () => {},
+      beginLaunchSession: () => {},
+      setLaunchExpectedVolumeCount: () => {},
+      setLaunchProgress: () => {},
+      completeLaunchSession: () => {},
+      failLaunchSession: () => {},
+      finishLaunchSessionAttempt: () => {},
+      setSelectedIndex: () => {},
+      setIsPlaying: () => {},
+      showLaunchError: () => {}
+    })
+  );
+
+  await flushAsyncWork();
+  assert.ok(
+    hook.result.playbackWarmupFrames.some((frame) => frame.timeIndex === 1),
+    'expected next playback frame to be warmed while playing'
+  );
+  assert.strictEqual(
+    getBrickAtlasCalls.filter((call) => call.layerKey === 'layer-a' && call.timeIndex === 1 && call.scaleLevel === 1).length,
+    1
+  );
+
+  isPlaying = false;
+  hook.rerender();
+  await flushAsyncWork();
+  assert.ok(
+    hook.result.playbackWarmupFrames.some((frame) => frame.timeIndex === 1),
+    'pausing should retain completed warmup frames for reuse'
+  );
+
+  isPlaying = true;
+  hook.rerender();
+  await flushAsyncWork();
+  assert.strictEqual(
+    getBrickAtlasCalls.filter((call) => call.layerKey === 'layer-a' && call.timeIndex === 1 && call.scaleLevel === 1).length,
+    1,
+    'resuming playback should reuse the retained warmup frame instead of reloading it'
+  );
+  hook.unmount();
+})();
+
+await (async () => {
+  const getBrickAtlasCalls: Array<{ layerKey: string; timeIndex: number; scaleLevel: number | undefined }> = [];
+
+  const provider = {
+    getBrickAtlas: async (layerKey: string, timeIndex: number, options?: { scaleLevel?: number }) => {
+      getBrickAtlasCalls.push({ layerKey, timeIndex, scaleLevel: options?.scaleLevel });
+      return createBrickAtlas(timeIndex, options?.scaleLevel ?? 0);
+    },
+  } as unknown as VolumeProvider;
+
+  const preprocessedExperiment = {
+    manifest: {
+      dataset: {
+        channels: [
+          {
+            id: 'channel-a',
+            layers: [
+              {
+                key: 'layer-a',
+                zarr: {
+                  scales: [
+                    { level: 0, downsampleFactor: [1, 1, 1] },
+                    { level: 1, downsampleFactor: [2, 2, 2] }
+                  ]
+                }
+              }
+            ]
+          }
+        ]
+      }
+    }
+  } as StagedPreprocessedExperiment;
+
+  const hook = renderHook(() =>
+    useRouteLayerVolumes({
+      isViewerLaunched: true,
+      isLaunchingViewer: false,
+      isPlaying: false,
+      isPlaybackStartPending: true,
+      preprocessedExperiment,
+      volumeProvider: provider,
+      loadedChannelIds: ['channel-a'],
+      channelLayersMap: new Map<string, LoadedDatasetLayer[]>([
+        ['channel-a', [createLoadedLayer('layer-a', 'channel-a')]],
+      ]),
+      channelVisibility: { 'channel-a': true },
+      layerChannelMap: new Map<string, string>([['layer-a', 'channel-a']]),
+      preferBrickResidency: true,
+      volumeTimepointCount: 4,
+      playbackBufferFrameCount: 1,
+      selectedIndex: 0,
+      clearDatasetError: () => {},
+      beginLaunchSession: () => {},
+      setLaunchExpectedVolumeCount: () => {},
+      setLaunchProgress: () => {},
+      completeLaunchSession: () => {},
+      failLaunchSession: () => {},
+      finishLaunchSessionAttempt: () => {},
+      setSelectedIndex: () => {},
+      setIsPlaying: () => {},
+      showLaunchError: () => {}
+    })
+  );
+
+  await flushAsyncWork();
+  assert.ok(
+    hook.result.playbackWarmupFrames.some((frame) => frame.timeIndex === 1),
+    'pending buffered-start should warm the next playback frame before play begins'
+  );
+  assert.strictEqual(
+    getBrickAtlasCalls.filter((call) => call.layerKey === 'layer-a' && call.timeIndex === 1 && call.scaleLevel === 1).length,
+    1,
+    'pending buffered-start should use playback-scale warming, not paused-view scale warming'
+  );
   hook.unmount();
 })();
 

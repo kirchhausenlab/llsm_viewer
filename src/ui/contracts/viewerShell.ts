@@ -78,6 +78,7 @@ export type ViewerShellContainerViewerPanelsProps = {
   zClipFrontFraction: number;
   runtimeDiagnostics?: VolumeProviderDiagnostics | null;
   lodPolicyDiagnostics?: LODPolicyDiagnosticsSnapshot | null;
+  residencyDecisions?: ViewerShellProps['volumeViewerProps']['residencyDecisions'];
   canAdvancePlayback?: ViewerShellProps['volumeViewerProps']['canAdvancePlayback'];
   onRegisterReset: ViewerShellProps['volumeViewerProps']['onRegisterReset'];
   onVolumeStepScaleChange?: ViewerShellProps['volumeViewerProps']['onVolumeStepScaleChange'];

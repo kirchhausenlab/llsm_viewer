@@ -91,6 +91,7 @@ export type TopMenuProps = TopMenuChromeProps &
     vrButtonLabel: string;
     volumeTimepointCount: number;
     isPlaying: boolean;
+    isPlaybackStartPending: boolean;
     selectedIndex: number;
     onTimeIndexChange: (index: number) => void;
     playbackDisabled: boolean;
@@ -133,6 +134,8 @@ export type PlaybackControlsProps = {
   onFpsChange: (value: number) => void;
   playbackBufferFrames: number;
   onPlaybackBufferFramesChange: (value: number) => void;
+  isPlaybackStartPending: boolean;
+  onBufferedPlaybackStart: () => void;
   zSliderValue?: number;
   zSliderMax?: number;
   onZSliderChange?: (value: number) => void;

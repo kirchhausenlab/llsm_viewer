@@ -10,6 +10,10 @@ type UseViewerModePlaybackParams = {
   onViewerModeChange?: (viewerMode: ViewerMode) => void;
   volumeTimepointCount: number;
   isLoading: boolean;
+  isPlaybackStartPending?: boolean;
+  bufferBeforePlayDefault?: boolean;
+  onPlaybackStartRequest?: () => void;
+  onPlaybackStartCancel?: () => void;
   playback?: ViewerPlaybackHook;
   playbackWindow?: PlaybackIndexWindow | null;
 };
@@ -20,6 +24,10 @@ export function useViewerModePlayback({
   onViewerModeChange,
   volumeTimepointCount,
   isLoading,
+  isPlaybackStartPending = false,
+  bufferBeforePlayDefault = false,
+  onPlaybackStartRequest,
+  onPlaybackStartCancel,
   playback: providedPlayback,
   playbackWindow
 }: UseViewerModePlaybackParams) {
@@ -48,13 +56,32 @@ export function useViewerModePlayback({
   const playbackDisabled = isLoading || volumeTimepointCount <= 1;
 
   const handleTogglePlayback = useCallback(() => {
-    playback.setIsPlaying((current) => {
-      if (!current && playbackDisabled) {
-        return current;
-      }
-      return !current;
-    });
-  }, [playback.setIsPlaying, playbackDisabled]);
+    if (playback.isPlaying) {
+      onPlaybackStartCancel?.();
+      playback.setIsPlaying(false);
+      return;
+    }
+    if (isPlaybackStartPending) {
+      onPlaybackStartCancel?.();
+      return;
+    }
+    if (playbackDisabled) {
+      return;
+    }
+    if (bufferBeforePlayDefault) {
+      onPlaybackStartRequest?.();
+      return;
+    }
+    playback.setIsPlaying(true);
+  }, [
+    bufferBeforePlayDefault,
+    isPlaybackStartPending,
+    onPlaybackStartCancel,
+    onPlaybackStartRequest,
+    playback.isPlaying,
+    playback.setIsPlaying,
+    playbackDisabled
+  ]);
 
   const handleTimeIndexChange = useCallback(
     (nextIndex: number) => {

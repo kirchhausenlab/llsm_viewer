@@ -6,6 +6,7 @@ import {
 } from '../../../core/volumeProvider';
 import { getLod0FeatureFlags } from '../../../config/lod0Flags';
 import type { PlaybackWarmupFrameState } from './useRouteLayerVolumes';
+import type { ResidencyDecision } from '../volume-loading/residencyPolicy';
 
 const MIN_CACHED_VOLUMES = 6;
 const PLAYBACK_CACHE_ENTRY_CAP = 64;
@@ -31,9 +32,7 @@ type UseRoutePlaybackPrefetchOptions = {
   isViewerLaunched: boolean;
   isPlaying: boolean;
   fps: number;
-  preferBrickResidency: boolean;
-  brickResidencyLayerKeys: string[];
-  playbackAtlasScaleLevelByLayerKey?: Record<string, number>;
+  playbackResidencyDecisionByLayerKey?: Record<string, ResidencyDecision | null>;
   playbackWarmupFrames?: PlaybackWarmupFrameState[];
   volumeProvider: VolumeProvider | null;
   volumeTimepointCount: number;
@@ -109,9 +108,7 @@ export function useRoutePlaybackPrefetch({
   isViewerLaunched,
   isPlaying,
   fps,
-  preferBrickResidency,
-  brickResidencyLayerKeys,
-  playbackAtlasScaleLevelByLayerKey,
+  playbackResidencyDecisionByLayerKey,
   playbackWarmupFrames = [],
   volumeProvider,
   volumeTimepointCount,
@@ -119,48 +116,39 @@ export function useRoutePlaybackPrefetch({
   selectedIndex
 }: UseRoutePlaybackPrefetchOptions): UseRoutePlaybackPrefetchResult {
   const lod0Flags = useMemo(() => getLod0FeatureFlags(), []);
-  const brickResidencyLayerKeySet = useMemo(() => new Set(brickResidencyLayerKeys), [brickResidencyLayerKeys]);
-  const fallbackAtlasScaleLevel = 0;
-  const atlasScaleLevelByLayerKey = useMemo(() => {
-    const map = new Map<string, number>();
+  const playbackDecisionByLayerKey = useMemo(() => {
+    const map = new Map<string, ResidencyDecision>();
     for (const layerKey of playbackLayerKeys) {
-      const hasConfiguredScaleLevel = Boolean(
-        playbackAtlasScaleLevelByLayerKey && Object.prototype.hasOwnProperty.call(playbackAtlasScaleLevelByLayerKey, layerKey)
-      );
-      const configuredScaleLevel = playbackAtlasScaleLevelByLayerKey?.[layerKey];
-      if (hasConfiguredScaleLevel) {
-        const resolvedScaleLevel = configuredScaleLevel;
-        if (resolvedScaleLevel === undefined || !Number.isFinite(resolvedScaleLevel)) {
-          throw new Error(`Invalid playback atlas scale level for layer "${layerKey}": ${String(configuredScaleLevel)}`);
-        }
-        map.set(layerKey, Math.max(0, Math.floor(resolvedScaleLevel)));
-        continue;
+      const decision = playbackResidencyDecisionByLayerKey?.[layerKey] ?? null;
+      if (decision !== null) {
+        map.set(layerKey, decision);
       }
-      map.set(layerKey, fallbackAtlasScaleLevel);
     }
     return map;
-  }, [fallbackAtlasScaleLevel, playbackAtlasScaleLevelByLayerKey, playbackLayerKeys]);
-  const resolveAtlasScaleLevelForLayer = useCallback(
-    (layerKey: string) => atlasScaleLevelByLayerKey.get(layerKey) ?? fallbackAtlasScaleLevel,
-    [atlasScaleLevelByLayerKey, fallbackAtlasScaleLevel]
+  }, [playbackLayerKeys, playbackResidencyDecisionByLayerKey]);
+  const resolvePlaybackDecisionForLayer = useCallback(
+    (layerKey: string): ResidencyDecision => playbackDecisionByLayerKey.get(layerKey) ?? {
+      mode: 'volume',
+      scaleLevel: 0,
+      rationale: 'direct-volume-default',
+    },
+    [playbackDecisionByLayerKey]
   );
   const playbackScaleSignature = useMemo(
     () =>
       playbackLayerKeys
-        .map((layerKey) => `${layerKey}:${resolveAtlasScaleLevelForLayer(layerKey)}`)
+        .map((layerKey) => {
+          const decision = resolvePlaybackDecisionForLayer(layerKey);
+          return `${layerKey}:${decision.scaleLevel}:${decision.mode}`;
+        })
         .join('|'),
-    [playbackLayerKeys, resolveAtlasScaleLevelForLayer]
+    [playbackLayerKeys, resolvePlaybackDecisionForLayer]
   );
 
-  const useBrickResidencyPrefetch = useMemo(
-    () =>
-      Boolean(
-        preferBrickResidency &&
-          volumeProvider &&
-          typeof volumeProvider.getBrickAtlas === 'function' &&
-          typeof volumeProvider.hasBrickAtlas === 'function'
-      ),
-    [preferBrickResidency, volumeProvider]
+  const canPrefetchAtlases = Boolean(
+    volumeProvider &&
+    typeof volumeProvider.getBrickAtlas === 'function' &&
+    typeof volumeProvider.hasBrickAtlas === 'function'
   );
 
   const playbackPrefetchLookahead = useMemo(() => {
@@ -279,19 +267,19 @@ export function useRoutePlaybackPrefetch({
         nextState.inFlightByClass[priorityClass] += 1;
 
         const atlasLayerKeys =
-          useBrickResidencyPrefetch
-            ? nextState.layerKeys.filter((layerKey) => brickResidencyLayerKeySet.has(layerKey))
+          canPrefetchAtlases
+            ? nextState.layerKeys.filter((layerKey) => resolvePlaybackDecisionForLayer(layerKey).mode === 'atlas')
             : [];
         const volumeLayerKeys =
           atlasLayerKeys.length > 0
-            ? nextState.layerKeys.filter((layerKey) => !brickResidencyLayerKeySet.has(layerKey))
+            ? nextState.layerKeys.filter((layerKey) => resolvePlaybackDecisionForLayer(layerKey).mode !== 'atlas')
             : nextState.layerKeys;
         const prefetchTasks: Promise<void>[] = [];
 
         if (atlasLayerKeys.length > 0) {
           const layerKeysByScaleLevel = new Map<number, string[]>();
           for (const layerKey of atlasLayerKeys) {
-            const scaleLevel = resolveAtlasScaleLevelForLayer(layerKey);
+            const scaleLevel = resolvePlaybackDecisionForLayer(layerKey).scaleLevel;
             const bucket = layerKeysByScaleLevel.get(scaleLevel) ?? [];
             bucket.push(layerKey);
             layerKeysByScaleLevel.set(scaleLevel, bucket);
@@ -314,7 +302,7 @@ export function useRoutePlaybackPrefetch({
                 : Promise.all(
                     atlasLayerKeys.map((layerKey) =>
                       volumeProvider.getBrickAtlas!(layerKey, idx, {
-                        scaleLevel: resolveAtlasScaleLevelForLayer(layerKey),
+                        scaleLevel: resolvePlaybackDecisionForLayer(layerKey).scaleLevel,
                         signal: prefetchSignal
                       })
                     )
@@ -324,13 +312,26 @@ export function useRoutePlaybackPrefetch({
         }
 
         if (volumeLayerKeys.length > 0) {
+          const volumeLayerKeysByScaleLevel = new Map<number, string[]>();
+          for (const layerKey of volumeLayerKeys) {
+            const scaleLevel = resolvePlaybackDecisionForLayer(layerKey).scaleLevel;
+            const bucket = volumeLayerKeysByScaleLevel.get(scaleLevel) ?? [];
+            bucket.push(layerKey);
+            volumeLayerKeysByScaleLevel.set(scaleLevel, bucket);
+          }
           prefetchTasks.push(
-            volumeProvider.prefetch(volumeLayerKeys, idx, {
-              policy: 'missing-only',
-              reason: 'playback',
-              signal: prefetchSignal,
-              maxConcurrentLayerLoads: PLAYBACK_LAYER_LOAD_CONCURRENCY
-            })
+            Promise.all(
+              Array.from(volumeLayerKeysByScaleLevel.entries()).map(([scaleLevel, layerKeysForScale]) =>
+              volumeProvider.prefetch(layerKeysForScale, idx, {
+                  policy: 'missing-only',
+                  reason: 'playback',
+                  signal: prefetchSignal,
+                  maxConcurrentLayerLoads: PLAYBACK_LAYER_LOAD_CONCURRENCY,
+                  scaleLevels: [scaleLevel],
+                  includeHistogram: false,
+                })
+              )
+            ).then(() => {})
           );
         }
 
@@ -358,7 +359,7 @@ export function useRoutePlaybackPrefetch({
           });
       }
     });
-  }, [brickResidencyLayerKeySet, resolveAtlasScaleLevelForLayer, useBrickResidencyPrefetch, volumeProvider]);
+  }, [canPrefetchAtlases, resolvePlaybackDecisionForLayer, volumeProvider]);
 
   const schedulePlaybackPrefetch = useCallback(
     (baseIndex: number) => {
@@ -385,12 +386,14 @@ export function useRoutePlaybackPrefetch({
 
       const isTimepointReady = (idx: number): boolean =>
         playbackLayerKeys.every((layerKey) => {
-          const useLayerBrickResidency = useBrickResidencyPrefetch && brickResidencyLayerKeySet.has(layerKey);
-          return useLayerBrickResidency
+          const decision = resolvePlaybackDecisionForLayer(layerKey);
+          return decision.mode === 'atlas' && canPrefetchAtlases
             ? volumeProvider.hasBrickAtlas?.(layerKey, idx, {
-                scaleLevel: resolveAtlasScaleLevelForLayer(layerKey)
+                scaleLevel: decision.scaleLevel
               }) ?? false
-            : volumeProvider.hasVolume(layerKey, idx);
+            : volumeProvider.hasVolume(layerKey, idx, {
+                scaleLevel: decision.scaleLevel
+              });
         });
 
       if (!lod0Flags.advancedPrefetchScheduler) {
@@ -507,9 +510,8 @@ export function useRoutePlaybackPrefetch({
       lod0Flags.advancedPrefetchScheduler,
       playbackLayerKeys,
       playbackPrefetchLookahead,
-      brickResidencyLayerKeySet,
-      resolveAtlasScaleLevelForLayer,
-      useBrickResidencyPrefetch,
+      canPrefetchAtlases,
+      resolvePlaybackDecisionForLayer,
       volumeProvider,
       volumeTimepointCount
     ]
@@ -549,12 +551,14 @@ export function useRoutePlaybackPrefetch({
 
       const clampedIndex = Math.max(0, Math.min(volumeTimepointCount - 1, nextIndex));
       const ready = playbackLayerKeys.every((layerKey) => {
-        const useLayerBrickResidency = useBrickResidencyPrefetch && brickResidencyLayerKeySet.has(layerKey);
-        return useLayerBrickResidency
+        const decision = resolvePlaybackDecisionForLayer(layerKey);
+        return decision.mode === 'atlas' && canPrefetchAtlases
           ? volumeProvider.hasBrickAtlas?.(layerKey, clampedIndex, {
-              scaleLevel: resolveAtlasScaleLevelForLayer(layerKey)
+              scaleLevel: decision.scaleLevel
             }) ?? false
-          : volumeProvider.hasVolume(layerKey, clampedIndex);
+          : volumeProvider.hasVolume(layerKey, clampedIndex, {
+              scaleLevel: decision.scaleLevel
+            });
       });
       const hasWarmupFrameReady =
         playbackWarmupFrames.some(
@@ -577,9 +581,8 @@ export function useRoutePlaybackPrefetch({
       isViewerLaunched,
       playbackLayerKeys,
       schedulePlaybackPrefetch,
-      brickResidencyLayerKeySet,
-      useBrickResidencyPrefetch,
-      resolveAtlasScaleLevelForLayer,
+      canPrefetchAtlases,
+      resolvePlaybackDecisionForLayer,
       volumeProvider,
       volumeTimepointCount,
       playbackScaleSignature,

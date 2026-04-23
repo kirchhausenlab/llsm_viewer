@@ -3,6 +3,7 @@ import * as THREE from 'three';
 
 import { getLod0FeatureFlags } from '../../../config/lod0Flags';
 import type { VolumeBrickPageTable } from '../../../core/volumeProvider';
+import type { ViewerProjectionMode } from '../../../hooks/useVolumeRenderSetup';
 import type { VolumeResources } from '../VolumeViewer.types';
 
 type TextureFormat = THREE.Data3DTexture['format'];
@@ -57,6 +58,14 @@ type GpuBrickResidencyResult = {
   atlasIndices: Float32Array;
   metrics: BrickResidencyMetrics;
   texturesDirty: boolean;
+};
+
+export type GpuResidencyViewPriority = {
+  projectionMode: ViewerProjectionMode;
+  cameraPosition: THREE.Vector3 | null;
+  targetPosition: THREE.Vector3 | null;
+  viewDirection: THREE.Vector3 | null;
+  zoom: number;
 };
 
 const DEFAULT_MAX_GPU_BRICK_BYTES = 48 * 1024 * 1024;
@@ -480,14 +489,14 @@ function copyBrickIntoResidentAtlas({
 
 function buildViewPrioritySourceIndices({
   pageTable,
-  cameraPosition,
+  viewPriority,
   fullResolutionSize
 }: {
   pageTable: VolumeBrickPageTable;
-  cameraPosition: THREE.Vector3 | null;
+  viewPriority: GpuResidencyViewPriority | null;
   fullResolutionSize: { width: number; height: number; depth: number };
-}): Array<{ sourceIndex: number; distanceSq: number }> {
-  const entries: Array<{ sourceIndex: number; distanceSq: number }> = [];
+}): Array<{ sourceIndex: number; priorityScore: number; metricDistanceSq: number }> {
+  const entries: Array<{ sourceIndex: number; priorityScore: number; metricDistanceSq: number }> = [];
   const [gridZ, gridY, gridX] = pageTable.gridShape;
   const [chunkDepth, chunkHeight, chunkWidth] = pageTable.chunkShape;
   const [scaleDepth, scaleHeight, scaleWidth] = pageTable.volumeShape;
@@ -495,9 +504,35 @@ function buildViewPrioritySourceIndices({
   const ratioX = fullResolutionSize.width > 0 ? scaleWidth / fullResolutionSize.width : 1;
   const ratioY = fullResolutionSize.height > 0 ? scaleHeight / fullResolutionSize.height : 1;
   const ratioZ = fullResolutionSize.depth > 0 ? scaleDepth / fullResolutionSize.depth : 1;
-  const scaledCamera = cameraPosition
-    ? new THREE.Vector3(cameraPosition.x * ratioX, cameraPosition.y * ratioY, cameraPosition.z * ratioZ)
+  const scaledCamera = viewPriority?.cameraPosition
+    ? new THREE.Vector3(
+        viewPriority.cameraPosition.x * ratioX,
+        viewPriority.cameraPosition.y * ratioY,
+        viewPriority.cameraPosition.z * ratioZ
+      )
     : null;
+  const scaledTarget = viewPriority?.targetPosition
+    ? new THREE.Vector3(
+        viewPriority.targetPosition.x * ratioX,
+        viewPriority.targetPosition.y * ratioY,
+        viewPriority.targetPosition.z * ratioZ
+      )
+    : null;
+  const scaledViewDirection = viewPriority?.viewDirection
+    ? new THREE.Vector3(
+        viewPriority.viewDirection.x * ratioX,
+        viewPriority.viewDirection.y * ratioY,
+        viewPriority.viewDirection.z * ratioZ
+      )
+    : null;
+  if (scaledViewDirection && scaledViewDirection.lengthSq() > 1e-12) {
+    scaledViewDirection.normalize();
+  }
+  const useOrthographicPriority =
+    viewPriority?.projectionMode === 'orthographic' &&
+    scaledTarget !== null &&
+    scaledViewDirection !== null &&
+    scaledViewDirection.lengthSq() > 1e-12;
 
   for (let flatBrickIndex = 0; flatBrickIndex < pageTable.brickAtlasIndices.length; flatBrickIndex += 1) {
     const sourceIndex = pageTable.brickAtlasIndices[flatBrickIndex] ?? -1;
@@ -514,18 +549,41 @@ function buildViewPrioritySourceIndices({
     const centerX = brickX * chunkWidth + chunkWidth * 0.5;
     const centerY = brickY * chunkHeight + chunkHeight * 0.5;
     const centerZ = brickZ * chunkDepth + chunkDepth * 0.5;
-    const distanceSq =
-      scaledCamera
-        ? (centerX - scaledCamera.x) * (centerX - scaledCamera.x) +
-          (centerY - scaledCamera.y) * (centerY - scaledCamera.y) +
-          (centerZ - scaledCamera.z) * (centerZ - scaledCamera.z)
-        : sourceIndex;
-    entries.push({ sourceIndex, distanceSq });
+    let priorityScore = sourceIndex;
+    let metricDistanceSq = sourceIndex;
+    if (useOrthographicPriority && scaledTarget && scaledViewDirection) {
+      const offsetX = centerX - scaledTarget.x;
+      const offsetY = centerY - scaledTarget.y;
+      const offsetZ = centerZ - scaledTarget.z;
+      const depthOffset =
+        offsetX * scaledViewDirection.x +
+        offsetY * scaledViewDirection.y +
+        offsetZ * scaledViewDirection.z;
+      const projectedX = offsetX - scaledViewDirection.x * depthOffset;
+      const projectedY = offsetY - scaledViewDirection.y * depthOffset;
+      const projectedZ = offsetZ - scaledViewDirection.z * depthOffset;
+      const projectedDistanceSq =
+        projectedX * projectedX +
+        projectedY * projectedY +
+        projectedZ * projectedZ;
+      // Orthographic motion along the view direction should not reshuffle
+      // residency priorities. Use only projected centerline distance here so
+      // W/S translation preserves the prioritized brick set.
+      priorityScore = projectedDistanceSq;
+      metricDistanceSq = projectedDistanceSq;
+    } else if (scaledCamera) {
+      priorityScore =
+        (centerX - scaledCamera.x) * (centerX - scaledCamera.x) +
+        (centerY - scaledCamera.y) * (centerY - scaledCamera.y) +
+        (centerZ - scaledCamera.z) * (centerZ - scaledCamera.z);
+      metricDistanceSq = priorityScore;
+    }
+    entries.push({ sourceIndex, priorityScore, metricDistanceSq });
   }
 
   entries.sort((left, right) => {
-    if (left.distanceSq !== right.distanceSq) {
-      return left.distanceSq - right.distanceSq;
+    if (left.priorityScore !== right.priorityScore) {
+      return left.priorityScore - right.priorityScore;
     }
     return left.sourceIndex - right.sourceIndex;
   });
@@ -538,7 +596,7 @@ export function updateGpuBrickResidency({
   sourceData,
   sourceToken,
   textureFormat,
-  cameraPosition,
+  viewPriority,
   atlasSize,
   max3DTextureSize,
   layerKey,
@@ -552,7 +610,7 @@ export function updateGpuBrickResidency({
   sourceData: Uint8Array;
   sourceToken: object | null;
   textureFormat: TextureFormat;
-  cameraPosition: THREE.Vector3 | null;
+  viewPriority: GpuResidencyViewPriority | null;
   atlasSize: { width: number; height: number; depth: number };
   max3DTextureSize: number | null;
   layerKey: string;
@@ -767,7 +825,7 @@ export function updateGpuBrickResidency({
 
   const priorityEntries = buildViewPrioritySourceIndices({
     pageTable,
-    cameraPosition,
+    viewPriority,
     fullResolutionSize: {
       width: resource.dimensions.width,
       height: resource.dimensions.height,
@@ -892,7 +950,7 @@ export function updateGpuBrickResidency({
     state.residentAtlasIndices[flatBrickIndex] = slot === undefined ? 0 : slot + 1;
   }
 
-  const nearestDistanceSq = priorityEntries[0]?.distanceSq;
+  const nearestDistanceSq = priorityEntries[0]?.metricDistanceSq;
   state.lastCameraDistance =
     nearestDistanceSq !== undefined && Number.isFinite(nearestDistanceSq) ? Math.sqrt(nearestDistanceSq) : null;
   if (state.bootstrapUpdatesRemaining > 0) {

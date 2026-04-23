@@ -81,6 +81,7 @@ export default function TopMenu(props: TopMenuProps) {
     isHelpMenuOpen,
     volumeTimepointCount,
     isPlaying,
+    isPlaybackStartPending = false,
     selectedIndex,
     onTimeIndexChange,
     playbackDisabled,
@@ -556,7 +557,7 @@ export default function TopMenu(props: TopMenuProps) {
                   ? 'playback-button playback-toggle playing viewer-top-menu-playback-button'
                   : 'playback-button playback-toggle viewer-top-menu-playback-button'
               }
-              aria-label={isPlaying ? 'Pause playback' : 'Start playback'}
+              aria-label={isPlaying ? 'Pause playback' : isPlaybackStartPending ? 'Cancel playback buffering' : 'Start playback'}
             >
               {isPlaying ? (
                 <svg className="playback-button-icon" viewBox="0 0 24 24" role="img" aria-hidden="true" focusable="false">

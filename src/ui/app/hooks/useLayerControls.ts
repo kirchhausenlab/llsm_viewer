@@ -201,6 +201,7 @@ export function useLayerControls({
               slotIndex: 0,
               timeIndex: playbackWarmupTimeIndex,
               scaleSignature: '',
+              layerResidencyDecisions: {},
               layerVolumes: playbackWarmupLayerVolumes,
               layerPageTables: playbackWarmupLayerPageTables,
               layerBrickAtlases: playbackWarmupLayerBrickAtlases,

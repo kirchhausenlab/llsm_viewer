@@ -1625,6 +1625,7 @@ function ViewerShell({
       vrButtonLabel: modeToggle.vrButtonLabel,
       volumeTimepointCount: playbackState.volumeTimepointCount,
       isPlaying: playbackState.isPlaying,
+      isPlaybackStartPending: playbackState.isPlaybackStartPending,
       selectedIndex: playbackState.selectedIndex,
       onTimeIndexChange: playbackState.onTimeIndexChange,
       playbackDisabled: playbackState.playbackDisabled,

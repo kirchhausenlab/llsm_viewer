@@ -28,6 +28,7 @@ import type { TemporalResolutionMetadata, VoxelResolutionValues } from '../../ty
 import type { RenderStyle, SamplingMode } from '../../state/layerSettings';
 import type { TrackSetState } from '../../types/channelTracks';
 import type { PlaybackIndexWindow } from '../../shared/utils';
+import type { ResidencyDecision } from '../../ui/app/volume-loading/residencyPolicy';
 import type {
   CameraWindowController,
   CameraWindowState,
@@ -177,6 +178,7 @@ export type PlaybackWarmupFrame = {
   slotIndex: number;
   timeIndex: number;
   scaleSignature: string;
+  layerResidencyDecisions: Record<string, ResidencyDecision | null>;
   layerVolumes: Record<string, NormalizedVolume | null>;
   layerPageTables: Record<string, VolumeBrickPageTable | null>;
   layerBrickAtlases: Record<string, VolumeBrickAtlas | null>;
@@ -196,6 +198,8 @@ export type VolumeViewerProps = {
   playbackDisabled: boolean;
   playbackLabel: string;
   fps: number;
+  playbackBufferFrames: number;
+  isPlaybackStartPending?: boolean;
   blendingMode: 'alpha' | 'additive';
   zClipFrontFraction?: number;
   isLoading: boolean;
@@ -204,6 +208,7 @@ export type VolumeViewerProps = {
   expectedVolumes: number;
   runtimeDiagnostics?: VolumeProviderDiagnostics | null;
   lodPolicyDiagnostics?: LODPolicyDiagnosticsSnapshot | null;
+  residencyDecisions?: Record<string, ResidencyDecision | null>;
   isDiagnosticsWindowOpen?: boolean;
   onCloseDiagnosticsWindow?: () => void;
   windowResetSignal?: number;
@@ -211,6 +216,7 @@ export type VolumeViewerProps = {
   onTimeIndexChange: (nextIndex: number) => void;
   playbackWindow?: PlaybackIndexWindow | null;
   canAdvancePlayback?: (nextIndex: number) => boolean;
+  onBufferedPlaybackStart?: () => void;
   onFpsChange: (value: number) => void;
   onVolumeStepScaleChange?: (value: number) => void;
   onRegisterVolumeStepScaleChange?: (handler: ((value: number) => void) | null) => void;
@@ -340,7 +346,15 @@ export type VolumeResources = {
     invalidRangeBricks: number;
     occupancyMetadataMismatchBricks: number;
   } | null;
-  updateGpuBrickResidencyForCamera?: ((cameraWorldPosition: THREE.Vector3) => void) | null;
+  updateGpuBrickResidencyForCamera?: ((
+    viewPriority: {
+      cameraWorldPosition: THREE.Vector3;
+      projectionMode: ViewerProjectionMode;
+      targetWorldPosition: THREE.Vector3;
+      viewDirectionWorld: THREE.Vector3;
+      zoom: number;
+    }
+  ) => void) | null;
 };
 
 export type VrHistogramShape = {

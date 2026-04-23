@@ -23,6 +23,14 @@ import { renderHook } from './hooks/renderHook.ts';
 
 console.log('Starting useVolumeResources tests');
 
+async function flushAsyncWork(iterations = 8): Promise<void> {
+  for (let index = 0; index < iterations; index += 1) {
+    await new Promise<void>((resolve) => {
+      setImmediate(resolve);
+    });
+  }
+}
+
 function withSuppressedConsoleError(
   matchers: ReadonlyArray<string | RegExp>,
   run: () => void,
@@ -337,7 +345,7 @@ const createLayer = (
   };
 };
 
-(() => {
+await (async () => {
   const resourcesRef = { current: new Map<string, VolumeResources>([['resource', createFakeResource()]]) };
   const currentDimensionsRef = { current: { width: 1, height: 1, depth: 1 } };
   const applyVolumeRootTransformArgs: Array<{ width: number; height: number; depth: number } | null> = [];
@@ -395,7 +403,7 @@ const createLayer = (
   assert.ok(renderListDisposeCalls >= 1);
 })();
 
-(() => {
+await (async () => {
   const volume: NormalizedVolume = {
     width: 2,
     height: 2,
@@ -456,7 +464,7 @@ const createLayer = (
   assert.strictEqual(volumeUserScaleRef.current, 1);
 })();
 
-(() => {
+await (async () => {
   const volume: NormalizedVolume = {
     width: 4,
     height: 6,
@@ -527,7 +535,7 @@ const createLayer = (
   assert.strictEqual(saveStateCalls, 1);
 })();
 
-(() => {
+await (async () => {
   const volume: NormalizedVolume = {
     width: 2,
     height: 2,
@@ -2438,7 +2446,13 @@ const createLayer = (
     const resource = resourcesRef.current.get('layer-3d');
     assert.ok(resource);
     assert.equal(typeof resource.updateGpuBrickResidencyForCamera, 'function');
-    resource.updateGpuBrickResidencyForCamera?.(new THREE.Vector3(brickCount - 1, 0, 0));
+    resource.updateGpuBrickResidencyForCamera?.({
+      cameraWorldPosition: new THREE.Vector3(brickCount - 1, 0, 0),
+      projectionMode: 'perspective',
+      targetWorldPosition: new THREE.Vector3(),
+      viewDirectionWorld: new THREE.Vector3(0, 0, -1),
+      zoom: 1,
+    });
 
     const updated = resourcesRef.current.get('layer-3d');
     assert.ok(updated?.gpuBrickResidencyMetrics);
@@ -2566,7 +2580,7 @@ const createLayer = (
   }
 })();
 
-(() => {
+await (async () => {
   const previousBudget = process.env.VITE_MAX_GPU_BRICK_BYTES;
   const previousMaxUploads = process.env.VITE_MAX_BRICK_UPLOADS_PER_UPDATE;
   process.env.VITE_MAX_GPU_BRICK_BYTES = '4';
@@ -2615,6 +2629,7 @@ const createLayer = (
       slotIndex: 0,
       timeIndex: 1,
       scaleSignature: 'layer-3d:1:atlas',
+      layerResidencyDecisions: { 'layer-3d': { mode: 'atlas', scaleLevel: 1, rationale: 'atlas-eligible' } },
       layerVolumes: { 'layer-3d': null },
       layerPageTables: { 'layer-3d': warmupLayer.brickPageTable ?? null },
       layerBrickAtlases: { 'layer-3d': warmupLayer.brickAtlas ?? null },
@@ -2638,6 +2653,7 @@ const createLayer = (
     const hook = renderHook(() =>
       useVolumeResources({
         layers: visibleLayers,
+        timeIndex: 0,
         playbackWarmupFrames: warmupFrames,
         primaryVolume: null,
         isAdditiveBlending: false,
@@ -2669,6 +2685,7 @@ const createLayer = (
       })
     );
 
+    await flushAsyncWork();
     assert.equal(resourcesRef.current.has('layer-3d::playback-warmup:slot:0'), false);
     assert.equal(
       hook.result.getPlaybackWarmupStatus(1, ['layer-3d']),
@@ -2682,6 +2699,7 @@ const createLayer = (
     }];
     warmupFrames = [];
     hook.rerender();
+    await flushAsyncWork();
 
     const promotedResource = resourcesRef.current.get('layer-3d');
     assert.ok(promotedResource);
@@ -2705,6 +2723,121 @@ const createLayer = (
       process.env.VITE_MAX_BRICK_UPLOADS_PER_UPDATE = previousMaxUploads;
     }
   }
+})();
+
+await (async () => {
+  const currentVolume: NormalizedVolume = {
+    kind: 'intensity',
+    width: 3,
+    height: 1,
+    depth: 1,
+    channels: 1,
+    dataType: 'uint8',
+    normalizedDataType: 'uint8',
+    normalized: new Uint8Array([1, 2, 3]),
+    min: 0,
+    max: 1,
+    scaleLevel: 1,
+  };
+  const nextVolume: NormalizedVolume = {
+    kind: 'intensity',
+    width: 3,
+    height: 1,
+    depth: 1,
+    channels: 1,
+    dataType: 'uint8',
+    normalizedDataType: 'uint8',
+    normalized: new Uint8Array([11, 12, 13]),
+    min: 0,
+    max: 1,
+    scaleLevel: 1,
+  };
+
+  const currentLayer = createLayer(currentVolume, null, null, 'linear');
+  const nextLayer = createLayer(nextVolume, null, null, 'linear');
+  let visibleLayers = [{
+    ...currentLayer,
+    playbackRole: 'active' as const
+  }];
+  let warmupFrames = [{
+    slotIndex: 0,
+    timeIndex: 1,
+    scaleSignature: 'layer-3d:1:volume',
+    layerResidencyDecisions: { 'layer-3d': { mode: 'volume', scaleLevel: 1, rationale: 'direct-volume-default' } },
+    layerVolumes: { 'layer-3d': nextVolume },
+    layerPageTables: { 'layer-3d': nextLayer.brickPageTable ?? null },
+    layerBrickAtlases: { 'layer-3d': null },
+    backgroundMasksByScale: {},
+  }];
+
+  const sceneRef = { current: new THREE.Scene() };
+  const camera = new THREE.PerspectiveCamera(75, 1, 0.1, 100);
+  camera.position.set(0, 0, 2);
+  camera.updateMatrixWorld(true);
+  const resourcesRef = { current: new Map<string, VolumeResources>() };
+
+  const hook = renderHook(() =>
+    useVolumeResources({
+      layers: visibleLayers,
+      timeIndex: 0,
+      playbackWarmupFrames: warmupFrames,
+      primaryVolume: currentVolume,
+      isAdditiveBlending: false,
+      renderContextRevision: 0,
+      sceneRef,
+      cameraRef: { current: camera },
+      controlsRef: {
+        current: {
+          target: new THREE.Vector3(),
+          update: () => {},
+          saveState: () => {},
+        } as unknown as THREE.OrbitControls
+      },
+      rotationTargetRef: { current: new THREE.Vector3() },
+      defaultViewStateRef: { current: null },
+      trackGroupRef: { current: new THREE.Group() },
+      resourcesRef,
+      currentDimensionsRef: { current: { width: 3, height: 1, depth: 1 } },
+      colormapCacheRef: { current: new Map() },
+      volumeRootGroupRef: { current: new THREE.Group() },
+      volumeRootBaseOffsetRef: { current: new THREE.Vector3() },
+      volumeRootCenterOffsetRef: { current: new THREE.Vector3() },
+      volumeRootCenterUnscaledRef: { current: new THREE.Vector3() },
+      volumeRootHalfExtentsRef: { current: new THREE.Vector3() },
+      volumeNormalizationScaleRef: { current: 1 },
+      volumeUserScaleRef: { current: 1 },
+      volumeStepScaleRef: { current: 1 },
+      volumeYawRef: { current: 0 },
+      volumePitchRef: { current: 0 },
+      volumeRootRotatedCenterTempRef: { current: new THREE.Vector3() },
+      applyTrackGroupTransform: () => {},
+      applyVolumeRootTransform: () => {},
+      applyVolumeStepScaleToResources: () => {},
+      applyHoverHighlightToResources: () => {},
+    })
+  );
+
+  await flushAsyncWork();
+  assert.equal(hook.result.getPlaybackWarmupStatus(1, ['layer-3d']), 'ready');
+
+  visibleLayers = [{
+    ...nextLayer,
+    playbackRole: 'active'
+  }];
+  warmupFrames = [];
+  hook.rerender();
+  await flushAsyncWork();
+
+  const promotedResource = resourcesRef.current.get('layer-3d');
+  assert.ok(promotedResource);
+  assert.equal(promotedResource.mesh.visible, true);
+  assert.equal(promotedResource.playbackPinnedResidency, true);
+  assert.deepEqual(
+    Array.from((promotedResource.texture as THREE.Data3DTexture).image.data as Uint8Array),
+    Array.from(nextVolume.normalized)
+  );
+  assert.equal(hook.result.getPlaybackWarmupStatus(1, ['layer-3d']), 'missing');
+  hook.unmount();
 })();
 
 (() => {

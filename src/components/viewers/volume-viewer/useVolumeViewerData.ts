@@ -85,6 +85,7 @@ export function useVolumeViewerDataState({
 
 export function useVolumeViewerResources({
   layers,
+  timeIndex,
   playbackWarmupLayers,
   playbackWarmupFrames,
   primaryVolume,
@@ -121,6 +122,7 @@ export function useVolumeViewerResources({
   applyHoverHighlightToResources,
 }: {
   layers: VolumeViewerProps['layers'];
+  timeIndex: VolumeViewerProps['timeIndex'];
   playbackWarmupLayers?: VolumeViewerProps['playbackWarmupLayers'];
   playbackWarmupFrames?: VolumeViewerProps['playbackWarmupFrames'];
   primaryVolume: ReturnType<typeof useVolumeViewerDataState>['primaryVolume'];
@@ -159,6 +161,7 @@ export function useVolumeViewerResources({
 }) {
   const { getColormapTexture, getPlaybackWarmupStatus } = useVolumeResources({
     layers,
+    timeIndex,
     playbackWarmupLayers,
     playbackWarmupFrames,
     primaryVolume,
