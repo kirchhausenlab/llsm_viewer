@@ -308,9 +308,10 @@ function createMockCanvasContext(): MockCanvasContext {
   renderVrChannelsHud(hud, state);
 
   assert.ok(
-    ctx.__fillTextCalls.includes('Mode: Slice'),
-    'expected segmentation layers to keep Slice mode visible in the VR HUD',
+    ctx.__fillTextCalls.includes('Mode: 3D'),
+    'expected segmentation layers to remain locked to 3D mode in the VR HUD',
   );
+  assert.ok(!ctx.__fillTextCalls.includes('Mode: Slice'));
 })();
 
 (() => {
@@ -386,6 +387,16 @@ function createMockCanvasContext(): MockCanvasContext {
   );
   assert.ok(hud.regions.some((region) => region.targetType === 'channels-tab'));
   assert.ok(hud.regions.some((region) => region.targetType === 'channels-slider'));
+  assert.ok(
+    hud.regions.some(
+      (region) => region.targetType === 'channels-slider' && region.sliderKey === 'mipEarlyExitThreshold',
+    ),
+  );
+  assert.ok(
+    hud.regions.some(
+      (region) => region.targetType === 'channels-slider' && region.sliderKey === 'blDensityScale',
+    ),
+  );
   assert.ok(hud.regions.some((region) => region.targetType === 'channels-color'));
   assert.ok(hud.regions.some((region) => region.targetType === 'channels-render-style'));
   assert.ok(!hud.regions.some((region) => region.targetType === 'channels-sampling'));

@@ -22,10 +22,12 @@ import {
   updateLayerSettings
 } from '../../../state/layerSettings';
 import type { LoadedDatasetLayer } from '../../../hooks/dataset';
+import { normalizeLayerSettingsForVr } from '../../../shared/utils/vrRenderStyle';
 import type { PlaybackWarmupFrameState } from './useRouteLayerVolumes';
 
 export type LayerControlsParams = {
   layers: LoadedDatasetLayer[];
+  isVrActive?: boolean;
   selectedIndex: number;
   isPlaying?: boolean;
   layerVolumes: Record<string, NormalizedVolume | null>;
@@ -157,6 +159,7 @@ function stabilizeViewerLayerArray(
 
 export function useLayerControls({
   layers,
+  isVrActive = false,
   selectedIndex,
   isPlaying = false,
   layerVolumes,
@@ -782,9 +785,12 @@ export function useLayerControls({
   const viewerLayers = useMemo(() => {
     const nextLayers: ViewerLayerConfig[] = activeLayers.map((layer) => {
       const settings = layerSettings[layer.key] ?? createLayerDefaultSettings(layer.key);
+      const effectiveSettings = isVrActive
+        ? normalizeLayerSettingsForVr(settings, layer.isSegmentation)
+        : settings;
       const effectiveSamplingMode = resolveLayerSamplingMode(
-        settings.renderStyle,
-        settings.samplingMode,
+        effectiveSettings.renderStyle,
+        effectiveSettings.samplingMode,
         layer.isSegmentation
       );
       const channelVisible = channelVisibility[layer.channelId];
@@ -807,24 +813,24 @@ export function useLayerControls({
         min: layer.min,
         max: layer.max,
         visible: channelVisible ?? true,
-        sliderRange: settings.sliderRange,
-        minSliderIndex: settings.minSliderIndex,
-        maxSliderIndex: settings.maxSliderIndex,
-        brightnessSliderIndex: settings.brightnessSliderIndex,
-        contrastSliderIndex: settings.contrastSliderIndex,
-        windowMin: settings.windowMin,
-        windowMax: settings.windowMax,
-        color: normalizeHexColor(settings.color, DEFAULT_LAYER_COLOR),
-        offsetX: settings.xOffset,
-        offsetY: settings.yOffset,
-        renderStyle: settings.renderStyle,
+        sliderRange: effectiveSettings.sliderRange,
+        minSliderIndex: effectiveSettings.minSliderIndex,
+        maxSliderIndex: effectiveSettings.maxSliderIndex,
+        brightnessSliderIndex: effectiveSettings.brightnessSliderIndex,
+        contrastSliderIndex: effectiveSettings.contrastSliderIndex,
+        windowMin: effectiveSettings.windowMin,
+        windowMax: effectiveSettings.windowMax,
+        color: normalizeHexColor(effectiveSettings.color, DEFAULT_LAYER_COLOR),
+        offsetX: effectiveSettings.xOffset,
+        offsetY: effectiveSettings.yOffset,
+        renderStyle: effectiveSettings.renderStyle,
         mode: undefined,
-        blDensityScale: settings.blDensityScale,
-        blBackgroundCutoff: settings.blBackgroundCutoff,
-        blOpacityScale: settings.blOpacityScale,
-        blEarlyExitAlpha: settings.blEarlyExitAlpha,
-        mipEarlyExitThreshold: settings.mipEarlyExitThreshold,
-        invert: settings.invert,
+        blDensityScale: effectiveSettings.blDensityScale,
+        blBackgroundCutoff: effectiveSettings.blBackgroundCutoff,
+        blOpacityScale: effectiveSettings.blOpacityScale,
+        blEarlyExitAlpha: effectiveSettings.blEarlyExitAlpha,
+        mipEarlyExitThreshold: effectiveSettings.mipEarlyExitThreshold,
+        invert: effectiveSettings.invert,
         samplingMode: effectiveSamplingMode,
         isSegmentation: layer.isSegmentation,
         scaleLevel,
@@ -844,6 +850,7 @@ export function useLayerControls({
     channelVisibility,
     createLayerDefaultSettings,
     isPlaying,
+    isVrActive,
     layerBrickAtlases,
     layerPageTables,
     layerVolumes,
@@ -862,13 +869,16 @@ export function useLayerControls({
     const nextLayers = normalizedPlaybackWarmupFrames.flatMap((frame) =>
       activeLayers.flatMap((layer): ViewerLayerConfig[] => {
         const settings = layerSettings[layer.key] ?? createLayerDefaultSettings(layer.key);
+        const effectiveSettings = isVrActive
+          ? normalizeLayerSettingsForVr(settings, layer.isSegmentation)
+          : settings;
         const effectiveSamplingMode = resolveLayerSamplingMode(
-          settings.renderStyle,
-          settings.samplingMode,
+          effectiveSettings.renderStyle,
+          effectiveSettings.samplingMode,
           layer.isSegmentation
         );
         const channelVisible = channelVisibility[layer.channelId];
-        if (!(channelVisible ?? true) || settings.renderStyle === RENDER_STYLE_SLICE) {
+        if (!(channelVisible ?? true) || effectiveSettings.renderStyle === RENDER_STYLE_SLICE) {
           return [];
         }
         const brickAtlas = frame.layerBrickAtlases[layer.key] ?? null;
@@ -893,24 +903,24 @@ export function useLayerControls({
           min: layer.min,
           max: layer.max,
           visible: false,
-          sliderRange: settings.sliderRange,
-          minSliderIndex: settings.minSliderIndex,
-          maxSliderIndex: settings.maxSliderIndex,
-          brightnessSliderIndex: settings.brightnessSliderIndex,
-          contrastSliderIndex: settings.contrastSliderIndex,
-          windowMin: settings.windowMin,
-          windowMax: settings.windowMax,
-          color: normalizeHexColor(settings.color, DEFAULT_LAYER_COLOR),
-          offsetX: settings.xOffset,
-          offsetY: settings.yOffset,
-          renderStyle: settings.renderStyle,
+          sliderRange: effectiveSettings.sliderRange,
+          minSliderIndex: effectiveSettings.minSliderIndex,
+          maxSliderIndex: effectiveSettings.maxSliderIndex,
+          brightnessSliderIndex: effectiveSettings.brightnessSliderIndex,
+          contrastSliderIndex: effectiveSettings.contrastSliderIndex,
+          windowMin: effectiveSettings.windowMin,
+          windowMax: effectiveSettings.windowMax,
+          color: normalizeHexColor(effectiveSettings.color, DEFAULT_LAYER_COLOR),
+          offsetX: effectiveSettings.xOffset,
+          offsetY: effectiveSettings.yOffset,
+          renderStyle: effectiveSettings.renderStyle,
           mode: undefined,
-          blDensityScale: settings.blDensityScale,
-          blBackgroundCutoff: settings.blBackgroundCutoff,
-          blOpacityScale: settings.blOpacityScale,
-          blEarlyExitAlpha: settings.blEarlyExitAlpha,
-          mipEarlyExitThreshold: settings.mipEarlyExitThreshold,
-          invert: settings.invert,
+          blDensityScale: effectiveSettings.blDensityScale,
+          blBackgroundCutoff: effectiveSettings.blBackgroundCutoff,
+          blOpacityScale: effectiveSettings.blOpacityScale,
+          blEarlyExitAlpha: effectiveSettings.blEarlyExitAlpha,
+          mipEarlyExitThreshold: effectiveSettings.mipEarlyExitThreshold,
+          invert: effectiveSettings.invert,
           samplingMode: effectiveSamplingMode,
           isSegmentation: layer.isSegmentation,
           scaleLevel,
@@ -932,6 +942,7 @@ export function useLayerControls({
     channelNameMap,
     channelVisibility,
     createLayerDefaultSettings,
+    isVrActive,
     layerSettings,
     normalizedPlaybackWarmupFrames,
   ]);

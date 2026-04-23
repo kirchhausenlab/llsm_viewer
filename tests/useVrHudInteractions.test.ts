@@ -22,6 +22,7 @@ type HudHarness = {
   renderChannelsCalls: number;
   renderTracksCalls: number;
   layerOffsetCalls: Array<{ layerKey: string; axis: 'x' | 'y'; value: number }>;
+  layerBlDensityCalls: Array<{ layerKey: string; value: number }>;
   trackOpacityCalls: Array<{ channelId: string; value: number }>;
 };
 
@@ -29,6 +30,7 @@ const createHarness = (): HudHarness => {
   let renderChannelsCalls = 0;
   let renderTracksCalls = 0;
   const layerOffsetCalls: Array<{ layerKey: string; axis: 'x' | 'y'; value: number }> = [];
+  const layerBlDensityCalls: Array<{ layerKey: string; value: number }> = [];
   const trackOpacityCalls: Array<{ channelId: string; value: number }> = [];
 
   const vrChannelsStateRef = {
@@ -105,6 +107,9 @@ const createHarness = (): HudHarness => {
       onLayerOffsetChange: (layerKey, axis, value) => {
         layerOffsetCalls.push({ layerKey, axis, value });
       },
+      onLayerBlDensityScaleChange: (layerKey, value) => {
+        layerBlDensityCalls.push({ layerKey, value });
+      },
       onTrackOpacityChange: (channelId, value) => {
         trackOpacityCalls.push({ channelId, value });
       },
@@ -122,6 +127,7 @@ const createHarness = (): HudHarness => {
       return renderTracksCalls;
     },
     layerOffsetCalls,
+    layerBlDensityCalls,
     trackOpacityCalls,
   };
 };
@@ -159,6 +165,33 @@ const createHarness = (): HudHarness => {
 
   assert.strictEqual(harness.channelsStateRef.current.channels[0]?.layers[0]?.settings.xOffset, 0.5);
   assert.strictEqual(harness.renderChannelsCalls, 1);
+  harness.hook.unmount();
+})();
+
+(() => {
+  const harness = createHarness();
+  const sliderRegion: VrChannelsInteractiveRegion = {
+    targetType: 'channels-slider',
+    channelId: 'channel-1',
+    layerKey: 'layer-1',
+    sliderKey: 'blDensityScale',
+    min: 0,
+    max: 8,
+    step: 0.05,
+    bounds: { minX: 0, maxX: 1, minY: -0.1, maxY: 0.1 },
+    sliderTrack: { minX: 0, maxX: 1, y: 0 },
+  };
+
+  harness.hook.act(() => {
+    harness.hook.result.applyVrChannelsSliderFromPoint(sliderRegion, new THREE.Vector3(0.5, 0, 0));
+  });
+
+  assert.strictEqual(harness.channelsStateRef.current.channels[0]?.layers[0]?.settings.blDensityScale, 4);
+  assert.deepStrictEqual(harness.layerBlDensityCalls, [
+    { layerKey: 'layer-1', value: 4 },
+  ]);
+  assert.strictEqual(harness.renderChannelsCalls, 1);
+
   harness.hook.unmount();
 })();
 

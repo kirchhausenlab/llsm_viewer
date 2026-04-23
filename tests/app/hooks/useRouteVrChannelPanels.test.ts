@@ -1,7 +1,11 @@
 import assert from 'node:assert/strict';
 
 import type { LoadedDatasetLayer } from '../../../src/hooks/dataset/useDatasetSetup.ts';
-import { createDefaultLayerSettings } from '../../../src/state/layerSettings.ts';
+import {
+  createDefaultLayerSettings,
+  RENDER_STYLE_MIP,
+  RENDER_STYLE_SLICE,
+} from '../../../src/state/layerSettings.ts';
 import { useRouteVrChannelPanels } from '../../../src/ui/app/hooks/useRouteVrChannelPanels.ts';
 import { renderHook } from '../../hooks/renderHook.ts';
 
@@ -80,6 +84,35 @@ const createLayer = (key: string, channelId: string, options?: Partial<LoadedDat
   assert.strictEqual(panelB?.layers[0]?.isGrayscale, false);
   assert.strictEqual(panelB?.layers[0]?.isSegmentation, true);
   assert.deepStrictEqual(defaultSettingsCalls, ['layer-a', 'layer-b']);
+
+  hook.unmount();
+})();
+
+(() => {
+  const sliceSettings = {
+    ...createDefaultLayerSettings(),
+    renderStyle: RENDER_STYLE_SLICE,
+    samplingMode: 'nearest' as const,
+  };
+
+  const hook = renderHook(() =>
+    useRouteVrChannelPanels({
+      trackSets: [],
+      isVrActive: true,
+      loadedChannelIds: ['channel-a'],
+      channelNameMap: new Map<string, string>(),
+      channelLayersMap: new Map<string, LoadedDatasetLayer[]>([
+        ['channel-a', [createLayer('layer-a', 'channel-a')]],
+      ]),
+      channelVisibility: {},
+      layerSettings: { 'layer-a': sliceSettings },
+      currentLayerVolumes: {},
+      createLayerDefaultSettings: () => sliceSettings,
+    }),
+  );
+
+  assert.equal(hook.result.vrChannelPanels[0]?.layers[0]?.settings.renderStyle, RENDER_STYLE_MIP);
+  assert.equal(hook.result.vrChannelPanels[0]?.layers[0]?.settings.samplingMode, 'nearest');
 
   hook.unmount();
 })();

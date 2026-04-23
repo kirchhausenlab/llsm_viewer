@@ -30,6 +30,67 @@ export function renderLayerControls(params: {
 }): number {
   const { hud, ctx, activeChannel, selectedLayer, regions, layout, canvasWidth } = params;
   const { paddingX } = layout;
+  const sliderColumnWidth = (canvasWidth - paddingX * 2 - 32) / 2;
+  const sliderColumnSpacing = 32;
+
+  const drawPairedSliderRow = (
+    leftKey: VrChannelsSliderDefinition['key'],
+    rightKey: VrChannelsSliderDefinition['key'],
+  ) => {
+    const leftSlider = sliderByKey.get(leftKey);
+    const rightSlider = sliderByKey.get(rightKey);
+    if (!leftSlider || !rightSlider) {
+      return;
+    }
+
+    const rowTop = layout.currentY;
+    const leftBottom = drawSliderControl({
+      hud,
+      ctx,
+      activeChannel,
+      selectedLayer,
+      regions,
+      layout,
+      slider: leftSlider,
+      x: paddingX,
+      width: sliderColumnWidth,
+      y: rowTop,
+    });
+    const rightBottom = drawSliderControl({
+      hud,
+      ctx,
+      activeChannel,
+      selectedLayer,
+      regions,
+      layout,
+      slider: rightSlider,
+      x: paddingX + sliderColumnWidth + sliderColumnSpacing,
+      width: sliderColumnWidth,
+      y: rowTop,
+    });
+    layout.currentY = Math.max(leftBottom, rightBottom) + 64;
+  };
+
+  const drawFullWidthSlider = (key: VrChannelsSliderDefinition['key']) => {
+    const slider = sliderByKey.get(key);
+    if (!slider) {
+      return;
+    }
+
+    const sliderBottom = drawSliderControl({
+      hud,
+      ctx,
+      activeChannel,
+      selectedLayer,
+      regions,
+      layout,
+      slider,
+      x: paddingX,
+      width: canvasWidth - paddingX * 2,
+      y: layout.currentY,
+    });
+    layout.currentY = sliderBottom + 64;
+  };
 
   layout.currentY = drawLayerToggleButtons({
     hud,
@@ -55,71 +116,8 @@ export function renderLayerControls(params: {
   for (const slider of sliderDefs) {
     sliderByKey.set(slider.key, slider);
   }
-
-  const sliderColumnWidth = (canvasWidth - paddingX * 2 - 32) / 2;
-  const sliderColumnSpacing = 32;
-
-  const windowMinSlider = sliderByKey.get('windowMin');
-  const windowMaxSlider = sliderByKey.get('windowMax');
-  if (windowMinSlider && windowMaxSlider) {
-    const rowTop = layout.currentY;
-    const minBottom = drawSliderControl({
-      hud,
-      ctx,
-      activeChannel,
-      selectedLayer,
-      regions,
-      layout,
-      slider: windowMinSlider,
-      x: paddingX,
-      width: sliderColumnWidth,
-      y: rowTop,
-    });
-    const maxBottom = drawSliderControl({
-      hud,
-      ctx,
-      activeChannel,
-      selectedLayer,
-      regions,
-      layout,
-      slider: windowMaxSlider,
-      x: paddingX + sliderColumnWidth + sliderColumnSpacing,
-      width: sliderColumnWidth,
-      y: rowTop,
-    });
-    layout.currentY = Math.max(minBottom, maxBottom) + 64;
-  }
-
-  const brightnessSlider = sliderByKey.get('brightness');
-  const contrastSlider = sliderByKey.get('contrast');
-  if (brightnessSlider && contrastSlider) {
-    const rowTop = layout.currentY;
-    const brightnessBottom = drawSliderControl({
-      hud,
-      ctx,
-      activeChannel,
-      selectedLayer,
-      regions,
-      layout,
-      slider: brightnessSlider,
-      x: paddingX,
-      width: sliderColumnWidth,
-      y: rowTop,
-    });
-    const contrastBottom = drawSliderControl({
-      hud,
-      ctx,
-      activeChannel,
-      selectedLayer,
-      regions,
-      layout,
-      slider: contrastSlider,
-      x: paddingX + sliderColumnWidth + sliderColumnSpacing,
-      width: sliderColumnWidth,
-      y: rowTop,
-    });
-    layout.currentY = Math.max(brightnessBottom, contrastBottom) + 64;
-  }
+  drawPairedSliderRow('windowMin', 'windowMax');
+  drawPairedSliderRow('brightness', 'contrast');
 
   const availableRowWidth = canvasWidth - paddingX * 2;
   layout.currentY = drawResetRows({
@@ -165,6 +163,15 @@ export function renderLayerControls(params: {
     });
     layout.currentY = sliderBottom + 64;
   }
+
+  ctx.fillStyle = '#9fb2c8';
+  ctx.font = '500 26px "Inter", "Segoe UI", sans-serif';
+  ctx.fillText('Global MIP / BL', paddingX, layout.currentY);
+  layout.currentY += 44;
+
+  drawFullWidthSlider('mipEarlyExitThreshold');
+  drawPairedSliderRow('blDensityScale', 'blBackgroundCutoff');
+  drawPairedSliderRow('blOpacityScale', 'blEarlyExitAlpha');
 
   if (selectedLayer.isGrayscale) {
     layout.currentY = drawGrayscaleColorSwatches({

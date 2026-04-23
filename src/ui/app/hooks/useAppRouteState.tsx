@@ -56,6 +56,7 @@ import {
 } from './initialHttpLaunch';
 import { getTrackPlaybackIndexWindow, snapTimeIndexToWindow } from '../../../shared/utils';
 import { clampPlaybackBufferFrames, DEFAULT_PLAYBACK_BUFFER_FRAMES } from '../../../shared/utils/viewerPlayback';
+import { getNextVrCompatibleRenderStyle } from '../../../shared/utils/vrRenderStyle';
 import type { AppRouteState } from '../../contracts/routes';
 
 function selectDeterministicId(values: ReadonlyArray<string>): string | null {
@@ -1115,6 +1116,7 @@ export function useAppRouteState(): AppRouteState {
 
   const { trackChannels, vrChannelPanels } = useRouteVrChannelPanels({
     trackSets,
+    isVrActive,
     loadedChannelIds,
     channelNameMap,
     channelLayersMap,
@@ -1318,7 +1320,6 @@ export function useAppRouteState(): AppRouteState {
     handleLayerOffsetChange,
     handleLayerColorChange,
     handleLayerRenderStyleChange,
-    handleLayerRenderStyleToggle,
     handleLayerBlDensityScaleChange,
     handleLayerBlBackgroundCutoffChange,
     handleLayerBlOpacityScaleChange,
@@ -1328,6 +1329,7 @@ export function useAppRouteState(): AppRouteState {
     handleLayerInvertToggle
   } = useLayerControls({
     layers: loadedDatasetLayers,
+    isVrActive,
     selectedIndex: resolvedSelectedIndex,
     isPlaying,
     layerVolumes: currentLayerVolumes,
@@ -1360,6 +1362,34 @@ export function useAppRouteState(): AppRouteState {
     setGlobalBlEarlyExitAlpha,
     setGlobalMipEarlyExitThreshold
   });
+
+  const handleVrLayerRenderStyleToggle = useCallback(
+    (layerKey?: string) => {
+      if (!layerKey) {
+        return;
+      }
+
+      const targetLayer = loadedDatasetLayers.find((layer) => layer.key === layerKey);
+      if (!targetLayer) {
+        return;
+      }
+
+      const currentSettings = layerSettings[layerKey] ?? createLayerDefaultSettings(layerKey);
+      const nextStyle = getNextVrCompatibleRenderStyle(currentSettings, targetLayer.isSegmentation);
+      if (!nextStyle) {
+        return;
+      }
+
+      handleLayerRenderStyleChange(layerKey, nextStyle.renderStyle, nextStyle.samplingMode);
+    },
+    [
+      createLayerDefaultSettings,
+      handleLayerRenderStyleChange,
+      layerSettings,
+      loadedDatasetLayers,
+    ]
+  );
+
   const zSliderMax = useMemo(() => {
     let depth = 1;
     for (const layer of viewerLayers) {
@@ -1534,9 +1564,14 @@ export function useAppRouteState(): AppRouteState {
         onLayerAutoContrast: handleLayerAutoContrast,
         onLayerOffsetChange: handleLayerOffsetChange,
         onLayerColorChange: handleLayerColorChange,
-        onLayerRenderStyleToggle: handleLayerRenderStyleToggle,
+        onLayerRenderStyleToggle: handleVrLayerRenderStyleToggle,
         onLayerSamplingModeToggle: handleLayerSamplingModeToggle,
         onLayerInvertToggle: handleLayerInvertToggle,
+        onLayerBlDensityScaleChange: handleLayerBlDensityScaleChange,
+        onLayerBlBackgroundCutoffChange: handleLayerBlBackgroundCutoffChange,
+        onLayerBlOpacityScaleChange: handleLayerBlOpacityScaleChange,
+        onLayerBlEarlyExitAlphaChange: handleLayerBlEarlyExitAlphaChange,
+        onLayerMipEarlyExitThresholdChange: handleLayerMipEarlyExitThresholdChange,
         onRegisterVrSession: registerSessionHandlers,
         onVrSessionStarted: handleSessionStarted,
         onVrSessionEnded: handleSessionEnded

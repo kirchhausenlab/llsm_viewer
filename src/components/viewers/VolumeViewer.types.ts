@@ -114,6 +114,11 @@ export type VolumeViewerVrProps = {
   onLayerRenderStyleToggle: (layerKey?: string) => void;
   onLayerSamplingModeToggle: (layerKey?: string) => void;
   onLayerInvertToggle: (layerKey: string) => void;
+  onLayerBlDensityScaleChange?: (layerKey: string, value: number) => void;
+  onLayerBlBackgroundCutoffChange?: (layerKey: string, value: number) => void;
+  onLayerBlOpacityScaleChange?: (layerKey: string, value: number) => void;
+  onLayerBlEarlyExitAlphaChange?: (layerKey: string, value: number) => void;
+  onLayerMipEarlyExitThresholdChange?: (layerKey: string, value: number) => void;
   onRegisterVrSession?: (
     handlers:
       | {

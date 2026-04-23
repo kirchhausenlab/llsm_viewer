@@ -1527,7 +1527,12 @@ export function createVolumeProvider({
     let storageBytesRead = 0;
     const promise = (async () => {
       stats.chunkReadsStarted += 1;
-      if (shardLocation && shouldReuseWholeShardBytes(descriptor)) {
+      if (
+        shardLocation &&
+        shouldReuseWholeShardBytes(descriptor) &&
+        typeof storage.readFileRange !== 'function'
+      ) {
+        assertShardFallbackIsSafe(descriptor, chunkPath);
         const { bytes: rawShardBytes, bytesRead: shardBytesRead } = await readShardBytesWithCache(chunkPath, signal);
         storageBytesRead += shardBytesRead;
         let shardEntryIndex = shardEntryIndexCache.get(chunkPath);
@@ -1545,7 +1550,19 @@ export function createVolumeProvider({
         if (byteEnd > rawShardBytes.byteLength) {
           throw new Error(`Shard entry range for ${targetKey} exceeds shard payload bounds.`);
         }
-        const decodedChunkBytes = rawShardBytes.slice(byteStart, byteEnd);
+        const workerDecodedBytes = await decodeShardSliceInWorker({
+          shardBytes: rawShardBytes,
+          byteStart,
+          byteEnd
+        });
+        const decodedChunkBytes =
+          workerDecodedBytes ??
+          decodeShardEntryFromIndex({
+            shardBytes: rawShardBytes,
+            rank: descriptor.shape.length,
+            localChunkCoords: shardLocation.localChunkCoords,
+            entryIndex: shardEntryIndex
+          });
         stats.chunkReadsCompleted += 1;
         stats.chunkBytesRead += storageBytesRead;
         return decodedChunkBytes;

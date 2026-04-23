@@ -8,6 +8,11 @@ import type {
   VrChannelsSliderDefinition,
 } from './types';
 import {
+  DEFAULT_BL_BACKGROUND_CUTOFF,
+  DEFAULT_BL_DENSITY_SCALE,
+  DEFAULT_BL_EARLY_EXIT_ALPHA,
+  DEFAULT_BL_OPACITY_SCALE,
+  DEFAULT_MIP_EARLY_EXIT_THRESHOLD,
   brightnessContrastModel,
   computeContrastMultiplier,
   formatContrastMultiplier,
@@ -23,7 +28,7 @@ import type {
 } from './hudRenderersChannelsShared';
 
 export function buildChannelSliderDefinitions(
-  activeChannel: ActiveChannel,
+  _activeChannel: ActiveChannel,
   selectedLayer: ActiveLayer
 ): VrChannelsSliderDefinition[] {
   return [
@@ -83,7 +88,7 @@ export function buildChannelSliderDefinitions(
       max: 10,
       step: 0.1,
       formatter: (value: number) => `${value >= 0 ? '+' : ''}${value.toFixed(2)} px`,
-      disabled: !selectedLayer.hasData || activeChannel.id !== activeChannel.id,
+      disabled: !selectedLayer.hasData,
       axis: 'x',
     },
     {
@@ -94,8 +99,58 @@ export function buildChannelSliderDefinitions(
       max: 10,
       step: 0.1,
       formatter: (value: number) => `${value >= 0 ? '+' : ''}${value.toFixed(2)} px`,
-      disabled: !selectedLayer.hasData || activeChannel.id !== activeChannel.id,
+      disabled: !selectedLayer.hasData,
       axis: 'y',
+    },
+    {
+      key: 'mipEarlyExitThreshold',
+      label: 'MIP early exit',
+      value: selectedLayer.settings.mipEarlyExitThreshold ?? DEFAULT_MIP_EARLY_EXIT_THRESHOLD,
+      min: 0,
+      max: 1,
+      step: 0.001,
+      formatter: (value: number) => formatNormalizedIntensity(value),
+      disabled: !selectedLayer.hasData,
+    },
+    {
+      key: 'blDensityScale',
+      label: 'BL density',
+      value: selectedLayer.settings.blDensityScale ?? DEFAULT_BL_DENSITY_SCALE,
+      min: 0,
+      max: 8,
+      step: 0.05,
+      formatter: (value: number) => value.toFixed(2).replace(/(\.\d*?[1-9])0+$/, '$1').replace(/\.0+$/, ''),
+      disabled: !selectedLayer.hasData,
+    },
+    {
+      key: 'blBackgroundCutoff',
+      label: 'BL cutoff',
+      value: selectedLayer.settings.blBackgroundCutoff ?? DEFAULT_BL_BACKGROUND_CUTOFF,
+      min: 0,
+      max: 1,
+      step: 0.005,
+      formatter: (value: number) => formatNormalizedIntensity(value),
+      disabled: !selectedLayer.hasData,
+    },
+    {
+      key: 'blOpacityScale',
+      label: 'BL opacity',
+      value: selectedLayer.settings.blOpacityScale ?? DEFAULT_BL_OPACITY_SCALE,
+      min: 0,
+      max: 8,
+      step: 0.05,
+      formatter: (value: number) => value.toFixed(2).replace(/(\.\d*?[1-9])0+$/, '$1').replace(/\.0+$/, ''),
+      disabled: !selectedLayer.hasData,
+    },
+    {
+      key: 'blEarlyExitAlpha',
+      label: 'BL early exit',
+      value: selectedLayer.settings.blEarlyExitAlpha ?? DEFAULT_BL_EARLY_EXIT_ALPHA,
+      min: 0,
+      max: 1,
+      step: 0.005,
+      formatter: (value: number) => formatNormalizedIntensity(value),
+      disabled: !selectedLayer.hasData,
     },
   ];
 }
