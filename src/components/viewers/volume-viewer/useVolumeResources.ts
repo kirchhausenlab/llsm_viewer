@@ -4334,6 +4334,7 @@ export function useVolumeResources({
     trackGroupRef,
     rendererRef,
     sceneRef,
+    projectionMode,
     zClipFrontFraction,
   ]);
 

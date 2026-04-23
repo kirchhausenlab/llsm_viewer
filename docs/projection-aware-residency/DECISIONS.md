@@ -80,3 +80,13 @@ If any of these decisions change, update this file first and then update the dep
 - Why:
   - Leaving the old rule in place means the root cause was not actually fixed.
 
+## D-RES-011: Storage hot paths are part of the residency architecture
+
+- Decision:
+  - Directory/OPFS range-read behavior is treated as a residency/playback architectural dependency, not as an unrelated storage implementation detail.
+- Why:
+  - Atlas/page-table and direct-volume playback both depend on repeated shard slice reads.
+  - A regression in `readFileRange` caching can look like a residency-policy failure, a playback failure, or a viewer-loop failure even when the actual root cause is lower in the stack.
+- Immediate consequence:
+  - Playback/residency investigations must verify storage hot-path behavior before adding UI-layer or viewer-loop workarounds.
+

@@ -85,3 +85,13 @@ This document records the initial architectural decisions for orthographic proje
     - orthographic acceptability
 - Why:
   - This program changes camera, shader, and policy layers where regressions can hide behind apparently working UI behavior.
+
+## D-ORTHO-010: Projection-only switches must refresh live resource state
+
+- Decision:
+  - Changing `projectionMode` must rerun the live volume-resource/material update path even if no layer set, timepoint, or visibility change occurred.
+- Why:
+  - Orthographic bugs can hide behind unrelated reload triggers.
+  - A viewer can switch cameras correctly while the active material/uniform state remains in perspective configuration until some unrelated event forces a refresh.
+- Immediate consequence:
+  - Projection propagation must be treated as a first-class dependency in the live resource update path, not as an incidental side effect of other changes.

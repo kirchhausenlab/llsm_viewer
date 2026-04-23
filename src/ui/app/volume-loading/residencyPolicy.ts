@@ -118,7 +118,7 @@ export function buildPreferredResidencyDecision({
   if (preference?.mode === 'atlas' && scale) {
     const directVolumeBytes = scale.width * scale.height * scale.depth * Math.max(1, scale.channels);
     const estimatedPlaybackAtlasBytes =
-      ((scale as { zarr?: PreprocessedLayerScaleManifestEntry['zarr'] }).zarr?.playbackAtlas?.data.sharding?.estimatedShardBytes) ??
+      ((scale as { zarr?: PreprocessedLayerScaleManifestEntry['zarr'] }).zarr?.playbackAtlas?.data?.sharding?.estimatedShardBytes) ??
       null;
     const estimatedManifestAtlasBytes = estimateManifestAtlasBytes(scale);
     if (

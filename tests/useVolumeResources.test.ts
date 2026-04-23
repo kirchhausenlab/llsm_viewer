@@ -1458,6 +1458,94 @@ await (async () => {
   assert.equal(uniforms.u_adaptiveLodEnabled?.value, 0);
 })();
 
+await (async () => {
+  const volume: NormalizedVolume = {
+    width: 4,
+    height: 6,
+    depth: 8,
+    channels: 1,
+    dataType: 'uint8',
+    normalized: new Uint8Array(4 * 6 * 8),
+    min: 0,
+    max: 1,
+  };
+
+  let projectionMode: 'perspective' | 'orthographic' = 'perspective';
+  const layer = {
+    key: 'layer-switch',
+    visible: true,
+    renderStyle: 'mip' as const,
+    samplingMode: 'linear' as const,
+    windowMin: 0.1,
+    windowMax: 0.9,
+    invert: false,
+    mode: '3d' as const,
+    offsetX: 0,
+    offsetY: 0,
+    volume,
+    channels: 1,
+  } as any;
+
+  const resourcesRef = { current: new Map<string, VolumeResources>() };
+  const cameraRef = { current: new THREE.PerspectiveCamera(75, 1, 0.1, 10) };
+  const controlsRef = { current: { target: new THREE.Vector3(), update: () => {}, saveState: () => {} } as any };
+
+  const hook = renderHook(() =>
+    useVolumeResources({
+      layers: [layer],
+      primaryVolume: volume,
+      isAdditiveBlending: false,
+      projectionMode,
+      renderContextRevision: 0,
+      sceneRef: { current: new THREE.Scene() },
+      cameraRef,
+      controlsRef,
+      rotationTargetRef: { current: new THREE.Vector3() },
+      defaultViewStateRef: { current: { perspective: null, orthographic: null } as any },
+      trackGroupRef: { current: new THREE.Group() },
+      resourcesRef,
+      currentDimensionsRef: { current: null },
+      colormapCacheRef: { current: new Map() },
+      volumeRootGroupRef: { current: new THREE.Group() },
+      volumeRootBaseOffsetRef: { current: new THREE.Vector3() },
+      volumeRootCenterOffsetRef: { current: new THREE.Vector3() },
+      volumeRootCenterUnscaledRef: { current: new THREE.Vector3() },
+      volumeRootHalfExtentsRef: { current: new THREE.Vector3() },
+      volumeNormalizationScaleRef: { current: 1 },
+      volumeUserScaleRef: { current: 1 },
+      volumeStepScaleRef: { current: 1 },
+      volumeYawRef: { current: 0 },
+      volumePitchRef: { current: 0 },
+      volumeRootRotatedCenterTempRef: { current: new THREE.Vector3() },
+      applyTrackGroupTransform: () => {},
+      applyVolumeRootTransform: () => {},
+      applyVolumeStepScaleToResources: () => {},
+      applyHoverHighlightToResources: () => {},
+    }),
+  );
+
+  let resource = resourcesRef.current.get('layer-switch');
+  assert.ok(resource);
+  let uniforms = (resource.mesh.material as THREE.ShaderMaterial).uniforms as Record<string, { value: unknown }>;
+  assert.equal(uniforms.u_adaptiveLodEnabled?.value, 1);
+  assert.doesNotMatch((resource.mesh.material as THREE.ShaderMaterial).fragmentShader, /^#define VOLUME_CAMERA_ORTHOGRAPHIC/m);
+
+  projectionMode = 'orthographic';
+  hook.rerender();
+  await flushAsyncWork();
+
+  resource = resourcesRef.current.get('layer-switch');
+  assert.ok(resource);
+  uniforms = (resource.mesh.material as THREE.ShaderMaterial).uniforms as Record<string, { value: unknown }>;
+  assert.equal(
+    uniforms.u_adaptiveLodEnabled?.value,
+    0,
+    'projection-only switches must update the live resource uniforms to the orthographic state',
+  );
+  assert.match((resource.mesh.material as THREE.ShaderMaterial).fragmentShader, /^#define VOLUME_CAMERA_ORTHOGRAPHIC/m);
+  hook.unmount();
+})();
+
 (() => {
   const volume: NormalizedVolume = {
     kind: 'segmentation',
