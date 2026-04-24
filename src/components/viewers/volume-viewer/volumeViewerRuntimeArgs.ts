@@ -101,6 +101,7 @@ export type VolumeViewerLifecycleOptionGroups = {
     | 'updateCameraFrustum'
     | 'renderBackgroundPass'
     | 'advancePlaybackFrame'
+    | 'refreshInitialVrPlacement'
     | 'updateControllerRays'
     | 'controllersRef'
     | 'vrLog'

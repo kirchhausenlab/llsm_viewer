@@ -1153,6 +1153,7 @@ function VolumeViewer({
     onRendererInitialized,
     endVrSessionRequestRef,
     updateControllerRays,
+    refreshInitialVrPlacement,
   } = vrApi;
 
   useEffect(() => {
@@ -1661,6 +1662,7 @@ function VolumeViewer({
       updateCameraFrustum,
       renderBackgroundPass,
       advancePlaybackFrame,
+      refreshInitialVrPlacement,
       updateControllerRays,
       controllersRef,
       vrLog,

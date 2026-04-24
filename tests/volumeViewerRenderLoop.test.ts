@@ -114,3 +114,73 @@ import { createVolumeViewerRenderLoop } from '../src/components/viewers/volume-v
   assert.equal(sample?.projectionMode, 'orthographic');
   assert.ok((sample?.projectedPixelsPerVoxel ?? 0) > 0);
 })();
+
+(() => {
+  const calls: string[] = [];
+  const controls = {
+    target: new THREE.Vector3(),
+    update: () => {
+      calls.push('controls.update');
+    },
+  };
+  const camera = new THREE.PerspectiveCamera();
+  camera.position.set(0, 0, 2);
+  camera.updateMatrixWorld(true);
+  const xrCamera = new THREE.PerspectiveCamera();
+  xrCamera.position.set(0, 1.6, 0);
+  xrCamera.lookAt(new THREE.Vector3(0, 1.6, -1));
+  xrCamera.updateMatrixWorld(true);
+
+  const renderer = {
+    domElement: { clientHeight: 800 },
+    xr: {
+      isPresenting: true,
+      updateCamera: (targetCamera: THREE.PerspectiveCamera) => {
+        calls.push('xr.updateCamera');
+        targetCamera.position.copy(xrCamera.position);
+        targetCamera.quaternion.copy(xrCamera.quaternion);
+        targetCamera.updateMatrixWorld(true);
+      },
+    },
+    render: () => {
+      calls.push('renderer.render');
+    },
+  };
+
+  const renderLoop = createVolumeViewerRenderLoop({
+    renderer: renderer as any,
+    scene: new THREE.Scene(),
+    camera,
+    controls: controls as any,
+    applyKeyboardRotation: () => {
+      calls.push('applyKeyboardRotation');
+    },
+    applyKeyboardMovement: () => {
+      calls.push('applyKeyboardMovement');
+    },
+    rotationTargetRef: { current: new THREE.Vector3() } as any,
+    updateTrackAppearance: () => {},
+    refreshViewerProps: () => {},
+    followTargetActiveRef: { current: false },
+    followTargetOffsetRef: { current: null },
+    resourcesRef: { current: new Map() },
+    currentDimensionsRef: { current: { width: 100, height: 100, depth: 100 } },
+    advancePlaybackFrame: () => {},
+    refreshVrHudPlacements: () => {},
+    refreshInitialVrPlacement: () => {
+      calls.push('refreshInitialVrPlacement');
+    },
+    updateControllerRays: () => {},
+    controllersRef: { current: [] },
+    vrLog: () => {},
+  });
+
+  renderLoop(0);
+
+  assert.ok(calls.includes('xr.updateCamera'));
+  assert.ok(calls.indexOf('xr.updateCamera') < calls.indexOf('refreshInitialVrPlacement'));
+  assert.ok(!calls.includes('controls.update'));
+  assert.ok(!calls.includes('applyKeyboardRotation'));
+  assert.ok(!calls.includes('applyKeyboardMovement'));
+  assert.equal(camera.position.y, 1.6);
+})();

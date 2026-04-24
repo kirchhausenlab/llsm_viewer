@@ -49,6 +49,7 @@ type UseVolumeViewerLifecycleParams = {
   updateCameraFrustum: RenderLoopOptions['updateCameraFrustum'];
   renderBackgroundPass: RenderLoopOptions['renderBackgroundPass'];
   advancePlaybackFrame: RenderLoopOptions['advancePlaybackFrame'];
+  refreshInitialVrPlacement: RenderLoopOptions['refreshInitialVrPlacement'];
   updateControllerRays: RenderLoopOptions['updateControllerRays'];
   controllersRef: MutableRefObject<ControllerEntry[]>;
   vrLog: RenderLoopOptions['vrLog'];
@@ -160,6 +161,7 @@ export function useVolumeViewerLifecycle({
   updateCameraFrustum,
   renderBackgroundPass,
   advancePlaybackFrame,
+  refreshInitialVrPlacement,
   updateControllerRays,
   controllersRef,
   vrLog,
@@ -268,6 +270,8 @@ export function useVolumeViewerLifecycle({
   renderBackgroundPassRef.current = renderBackgroundPass;
   const advancePlaybackFrameRef = useRef(advancePlaybackFrame);
   advancePlaybackFrameRef.current = advancePlaybackFrame;
+  const refreshInitialVrPlacementRef = useRef(refreshInitialVrPlacement);
+  refreshInitialVrPlacementRef.current = refreshInitialVrPlacement;
   const updateControllerRaysRef = useRef(updateControllerRays);
   updateControllerRaysRef.current = updateControllerRays;
   const refreshTrackOverlayRef = useRef(refreshTrackOverlay);
@@ -595,6 +599,7 @@ export function useVolumeViewerLifecycle({
       onCameraWindowStateChange: (state) => onCameraWindowStateChangeRef.current?.(state),
       advancePlaybackFrame: (timestamp) => advancePlaybackFrameRef.current(timestamp),
       refreshVrHudPlacements: () => refreshVrHudPlacementsRef.current?.(),
+      refreshInitialVrPlacement: () => refreshInitialVrPlacementRef.current?.(),
       updateControllerRays: () => updateControllerRaysRef.current(),
       controllersRef,
       vrLog,
