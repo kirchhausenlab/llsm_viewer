@@ -151,6 +151,11 @@ export type VrChannelsSliderKey =
   | 'windowMax'
   | 'contrast'
   | 'brightness'
+  | 'mipEarlyExitThreshold'
+  | 'blDensityScale'
+  | 'blBackgroundCutoff'
+  | 'blOpacityScale'
+  | 'blEarlyExitAlpha'
   | 'xOffset'
   | 'yOffset';
 

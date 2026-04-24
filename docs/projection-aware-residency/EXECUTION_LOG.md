@@ -1,0 +1,109 @@
+# Execution Log
+
+## 2026-04-22 - Documentation packet created
+
+- Scope:
+  - created the full documentation packet for the projection-aware residency refactor
+  - recorded the definitive investigation findings:
+    - orthographic force-volume residency was introduced intentionally
+    - it is enforced by tests
+    - it is not documented as fundamental
+    - the proper fix is unified projection-aware residency
+- Primary files added:
+  - `docs/projection-aware-residency/README.md`
+  - `docs/projection-aware-residency/DECISIONS.md`
+  - `docs/projection-aware-residency/IMPLEMENTATION_SPEC.md`
+  - `docs/projection-aware-residency/ROADMAP.md`
+  - `docs/projection-aware-residency/BACKLOG.md`
+  - `docs/projection-aware-residency/TEST_PLAN.md`
+  - `docs/projection-aware-residency/BENCHMARK_MATRIX.md`
+  - `docs/projection-aware-residency/RISK_REGISTER.md`
+  - `docs/projection-aware-residency/SESSION_HANDOFF.md`
+  - `docs/projection-aware-residency/SESSION_PROMPT.md`
+  - `docs/projection-aware-residency/EXECUTION_LOG.md`
+- Notes:
+  - this packet is the follow-on architecture program to the completed orthographic projection delivery
+  - no runtime code changes were made as part of this documentation session
+
+## 2026-04-22 - Projection-aware residency implemented
+
+- Backlog IDs:
+  - `RES-001`
+  - `RES-002`
+  - `RES-010`
+  - `RES-011`
+  - `RES-012`
+  - `RES-020`
+  - `RES-021`
+  - `RES-022`
+  - `RES-030`
+  - `RES-031`
+  - `RES-032`
+  - `RES-040`
+  - `RES-041`
+  - `RES-042`
+  - `RES-043`
+  - `RES-052`
+  - `RES-053`
+  - `RES-060`
+- Scope:
+  - added an explicit residency policy module and removed the orthographic force-volume hard switch
+  - threaded explicit residency decisions (`mode`, `scaleLevel`, `rationale`) through route loading
+  - added residency diagnostics to the runtime diagnostics window
+  - generalized playback readiness and playback cache handling to support both atlas-backed and direct-volume frames
+  - added direct-volume playback cache promotion/reuse coverage
+  - made orthographic atlas brick prioritization target- and view-direction-aware instead of camera-position-only
+- Primary code files:
+  - `src/ui/app/volume-loading/residencyPolicy.ts`
+  - `src/ui/app/hooks/useRouteLayerVolumes.ts`
+  - `src/ui/app/hooks/useRoutePlaybackPrefetch.ts`
+  - `src/ui/app/hooks/useAppRouteState.tsx`
+  - `src/components/viewers/volume-viewer/useVolumeResources.ts`
+  - `src/components/viewers/volume-viewer/gpuBrickResidency.ts`
+  - `src/components/viewers/volume-viewer/volumeViewerRenderLoop.ts`
+  - `src/components/viewers/VolumeViewer.tsx`
+  - `src/components/viewers/VolumeViewer.types.ts`
+  - `src/ui/contracts/viewerShell.ts`
+  - `src/components/viewers/useViewerShellProps.ts`
+- Primary tests updated/added:
+  - `tests/app/hooks/useRouteLayerVolumes.test.ts`
+  - `tests/app/hooks/useRoutePlaybackPrefetch.test.ts`
+  - `tests/useVolumeResources.test.ts`
+  - `tests/gpuBrickResidencyPacking.test.ts`
+- Commands executed:
+  - `npm run -s typecheck`
+  - `npm run -s typecheck:tests`
+  - `npm run -s test -- tests/app/hooks/useRouteLayerVolumes.test.ts`
+  - `npm run -s test -- tests/app/hooks/useRoutePlaybackPrefetch.test.ts`
+  - `npm run -s test -- tests/app/hooks/useViewerModePlayback.test.ts`
+  - `npm run -s test -- tests/playbackWarmupGate.test.ts`
+  - `npm run -s test -- tests/gpuBrickResidencyPacking.test.ts`
+  - `npm run -s test -- tests/useVolumeResources.test.ts`
+  - `npm run -s test -- tests/volumeRenderShaderLodModel.test.ts tests/volumeRenderShaderSkipModel.test.ts`
+  - `npm run -s test -- tests/viewer-shell/TopMenu.test.tsx tests/viewer-shell/ViewerSettingsWindow.test.tsx tests/ViewerShellContainer.test.ts`
+  - `npm run -s test -- tests/app/hooks/useRouteLayerVolumes.test.ts tests/app/hooks/useRoutePlaybackPrefetch.test.ts tests/app/hooks/useViewerModePlayback.test.ts tests/playbackWarmupGate.test.ts tests/gpuBrickResidencyPacking.test.ts tests/useVolumeResources.test.ts tests/volumeRenderShaderLodModel.test.ts tests/volumeRenderShaderSkipModel.test.ts tests/viewer-shell/TopMenu.test.tsx tests/viewer-shell/ViewerSettingsWindow.test.tsx tests/ViewerShellContainer.test.ts`
+  - `npm run -s test:e2e`
+- Results:
+  - all targeted typechecks passed
+  - all targeted regression tests passed
+  - `test:e2e` started the Chromium smoke suite but did not complete with a result in the local environment; benchmark/e2e evidence remains the only follow-up gap
+
+## 2026-04-22 - Regression fix pass after implementation
+
+- Scope:
+  - fixed the buffered-start playback-scale mismatch so pending playback warms the same scale that actual playback will use
+  - restored LOD hysteresis by preserving the last committed active scale while replacement loads are warming
+  - removed the temporary compatibility fallback from the GPU residency updater contract
+  - validated the orthographic motion invariant with the dedicated smoke spec
+  - validated playback controls with the synthetic 16-bit playback smoke spec
+- Commands executed:
+  - `npm run -s typecheck`
+  - `npm run -s typecheck:tests`
+  - `npm run -s test -- tests/app/hooks/useRouteLayerVolumes.test.ts tests/app/hooks/useRoutePlaybackPrefetch.test.ts tests/app/hooks/useViewerModePlayback.test.ts tests/playbackWarmupGate.test.ts tests/gpuBrickResidencyPacking.test.ts tests/useVolumeResources.test.ts tests/volumeRenderShaderLodModel.test.ts tests/volumeRenderShaderSkipModel.test.ts tests/volumeViewerRenderLoop.test.ts tests/useVolumeRenderSetup.test.ts tests/viewer-shell/TopMenu.test.tsx tests/viewer-shell/ViewerSettingsWindow.test.tsx tests/viewer-shell/CameraSettingsWindow.test.tsx tests/ViewerShellContainer.test.ts`
+  - `npx playwright test --config=playwright.config.ts --project=chromium tests/e2e/orthographic-regression.spec.ts -g "orthographic rendering remains visible and nearly invariant under W/S motion"`
+  - `npx playwright test --config=playwright.config.ts --project=chromium tests/e2e/viewer-16bit-playback.spec.ts -g "playback controls work on uint16 intensity datasets preprocessed in 16-bit mode"`
+- Results:
+  - targeted typechecks passed
+  - targeted regression suite passed
+  - orthographic motion-invariance smoke passed
+  - synthetic playback smoke passed

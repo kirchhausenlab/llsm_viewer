@@ -55,6 +55,7 @@ export default function TopMenu(props: TopMenuProps) {
     onOpenChannelsWindow,
     onOpenCameraWindow,
     onOpenCameraSettingsWindow,
+    onOpenBackgroundsWindow,
     onOpenPropsWindow,
     onOpenPaintbrush,
     onOpenDrawRoiWindow,
@@ -80,6 +81,7 @@ export default function TopMenu(props: TopMenuProps) {
     isHelpMenuOpen,
     volumeTimepointCount,
     isPlaying,
+    isPlaybackStartPending = false,
     selectedIndex,
     onTimeIndexChange,
     playbackDisabled,
@@ -169,7 +171,7 @@ export default function TopMenu(props: TopMenuProps) {
         { label: 'Channels', onSelect: onOpenChannelsWindow },
         { label: 'View selection', onSelect: onOpenCameraWindow },
         { label: 'Screen capture', onSelect: onOpenRecordWindow },
-        { label: 'Background', disabled: true },
+        { label: 'Backgrounds', onSelect: onOpenBackgroundsWindow },
         { label: 'Render settings', onSelect: onOpenRenderSettingsWindow },
         { label: 'Camera settings', onSelect: onOpenCameraSettingsWindow },
         { label: 'Hover settings', onSelect: onOpenHoverSettingsWindow }
@@ -194,6 +196,7 @@ export default function TopMenu(props: TopMenuProps) {
     }),
     [
       onOpenAmplitudePlotWindow,
+      onOpenBackgroundsWindow,
       onOpenCameraWindow,
       onOpenCameraSettingsWindow,
       onOpenChannelsWindow,
@@ -537,6 +540,69 @@ export default function TopMenu(props: TopMenuProps) {
         </div>
 
         <div className="viewer-top-menu-cell viewer-top-menu-cell--top viewer-top-menu-cell--column-2">
+          <div className="viewer-top-menu-cell-content" />
+        </div>
+
+        <div className="viewer-top-menu-cell viewer-top-menu-cell--top viewer-top-menu-cell--column-3">
+          <div className="viewer-top-menu-cell-content" />
+        </div>
+
+        <div className="viewer-top-menu-cell viewer-top-menu-cell--top viewer-top-menu-cell--column-4">
+          <div className="viewer-top-menu-cell-content viewer-top-menu-cell-content--split">
+            <div className="viewer-top-menu-cell-group viewer-top-menu-cell-group--fit">
+              <div className="viewer-top-menu-scale-row">
+                <div className="viewer-top-menu-scale" role="status" aria-live="polite">
+                  <span className="viewer-top-menu-scale-label">Scale</span>
+                  <span className="viewer-top-menu-scale-value">{currentScaleLabel}</span>
+                </div>
+                {isPerformanceMode ? (
+                  <div
+                    className="viewer-top-menu-warning viewer-top-menu-warning--performance"
+                    role="status"
+                    aria-live="polite"
+                    title="Performance mode raises all requested LOD scales by one level. Scale L0 is disabled in this session."
+                  >
+                    <span className="viewer-top-menu-warning-label">Performance Mode</span>
+                  </div>
+                ) : null}
+              </div>
+            </div>
+            <div className="viewer-top-menu-cell-group viewer-top-menu-cell-group--end viewer-top-menu-primary-actions">
+              <button
+                type="button"
+                className="viewer-top-menu-button"
+                onClick={() => onToggle2dView?.()}
+                disabled={twoDViewButtonDisabled}
+                title={twoDViewButtonTitle}
+                aria-pressed={is2dViewActive}
+              >
+                {is2dViewActive ? '3D view' : '2D view'}
+              </button>
+              <button
+                type="button"
+                className="viewer-top-menu-button"
+                onClick={() => resetViewHandler?.()}
+                disabled={!resetViewHandler}
+              >
+                Reset view
+              </button>
+              {is3dModeAvailable ? (
+                <button
+                  type="button"
+                  className="viewer-top-menu-button"
+                  onClick={onVrButtonClick}
+                  disabled={vrButtonDisabled}
+                  title={vrButtonTitle}
+                >
+                  {vrButtonLabel}
+                </button>
+              ) : null}
+              <ThemeModeToggle className="viewer-top-menu-theme-toggle" compact />
+            </div>
+          </div>
+        </div>
+
+        <div className="viewer-top-menu-cell viewer-top-menu-cell--bottom viewer-top-menu-cell--column-1">
           <div
             className="viewer-top-menu-cell-content viewer-top-menu-cell-content--start viewer-top-menu-playback-controls"
             style={
@@ -554,7 +620,7 @@ export default function TopMenu(props: TopMenuProps) {
                   ? 'playback-button playback-toggle playing viewer-top-menu-playback-button'
                   : 'playback-button playback-toggle viewer-top-menu-playback-button'
               }
-              aria-label={isPlaying ? 'Pause playback' : 'Start playback'}
+              aria-label={isPlaying ? 'Pause playback' : isPlaybackStartPending ? 'Cancel playback buffering' : 'Start playback'}
             >
               {isPlaying ? (
                 <svg className="playback-button-icon" viewBox="0 0 24 24" role="img" aria-hidden="true" focusable="false">
@@ -609,63 +675,7 @@ export default function TopMenu(props: TopMenuProps) {
           </div>
         </div>
 
-        <div className="viewer-top-menu-cell viewer-top-menu-cell--top viewer-top-menu-cell--column-3">
-          <div className="viewer-top-menu-cell-content viewer-top-menu-cell-content--start">
-            <div className="viewer-top-menu-scale-row">
-              <div className="viewer-top-menu-scale" role="status" aria-live="polite">
-                <span className="viewer-top-menu-scale-label">Scale</span>
-                <span className="viewer-top-menu-scale-value">{currentScaleLabel}</span>
-              </div>
-              {isPerformanceMode ? (
-                <div
-                  className="viewer-top-menu-warning viewer-top-menu-warning--performance"
-                  role="status"
-                  aria-live="polite"
-                  title="Performance mode raises all requested LOD scales by one level. Scale L0 is disabled in this session."
-                >
-                  <span className="viewer-top-menu-warning-label">Performance Mode</span>
-                </div>
-              ) : null}
-            </div>
-          </div>
-        </div>
-
-        <div className="viewer-top-menu-cell viewer-top-menu-cell--top viewer-top-menu-cell--column-4">
-          <div className="viewer-top-menu-cell-content viewer-top-menu-cell-content--end viewer-top-menu-primary-actions">
-            <button
-              type="button"
-              className="viewer-top-menu-button"
-              onClick={() => onToggle2dView?.()}
-              disabled={twoDViewButtonDisabled}
-              title={twoDViewButtonTitle}
-              aria-pressed={is2dViewActive}
-            >
-              {is2dViewActive ? '3D view' : '2D view'}
-            </button>
-            <button
-              type="button"
-              className="viewer-top-menu-button"
-              onClick={() => resetViewHandler?.()}
-              disabled={!resetViewHandler}
-            >
-              Reset view
-            </button>
-            {is3dModeAvailable ? (
-              <button
-                type="button"
-                className="viewer-top-menu-button"
-                onClick={onVrButtonClick}
-                disabled={vrButtonDisabled}
-                title={vrButtonTitle}
-              >
-                {vrButtonLabel}
-              </button>
-            ) : null}
-            <ThemeModeToggle className="viewer-top-menu-theme-toggle" compact />
-          </div>
-        </div>
-
-        <div className="viewer-top-menu-cell viewer-top-menu-cell--bottom viewer-top-menu-cell--column-1">
+        <div className="viewer-top-menu-cell viewer-top-menu-cell--bottom viewer-top-menu-cell--column-2">
           <div className="viewer-top-menu-cell-content viewer-top-menu-cell-content--start">
             {hasChannelTabs ? (
               <VolumeChannelTabs
@@ -682,7 +692,7 @@ export default function TopMenu(props: TopMenuProps) {
           </div>
         </div>
 
-        <div className="viewer-top-menu-cell viewer-top-menu-cell--bottom viewer-top-menu-cell--column-2">
+        <div className="viewer-top-menu-cell viewer-top-menu-cell--bottom viewer-top-menu-cell--column-3">
           <div className="viewer-top-menu-cell-content viewer-top-menu-cell-content--start">
             {hasTrackTabs ? (
               <VolumeTrackTabs
@@ -698,116 +708,115 @@ export default function TopMenu(props: TopMenuProps) {
           </div>
         </div>
 
-        <div className="viewer-top-menu-cell viewer-top-menu-cell--bottom viewer-top-menu-cell--column-3">
-          <div className="viewer-top-menu-cell-content viewer-top-menu-cell-content--start viewer-top-menu-hover-column">
-            <div className="viewer-top-menu-intensity" role="status" aria-live="polite">
-              {hoveredVoxel ? (
-                <>
-                  <span className="viewer-top-menu-intensity-marquee" ref={hoverIntensityViewportRef}>
-                    <span
-                      className={
-                        shouldAnimateHoverIntensity
-                          ? 'viewer-top-menu-intensity-track is-animated'
-                          : 'viewer-top-menu-intensity-track'
-                      }
-                      ref={hoverIntensityTrackRef}
-                      style={hoverIntensityTrackStyle}
-                    >
-                      {resolvedIntensityComponents.map((component) => (
-                        <span
-                          key={component.key}
-                          className="viewer-top-menu-intensity-entry"
-                          style={
-                            component.color
-                              ? ({
-                                  '--viewer-top-menu-intensity-marker-color': component.color,
-                                  '--viewer-top-menu-intensity-marker-border': isLightHexColor(component.color)
-                                    ? 'var(--panel-border-strong)'
-                                    : 'transparent'
-                                } as CSSProperties)
-                              : undefined
-                          }
-                          title={component.channelLabel ?? component.fullText}
-                        >
-                          {component.channelLabel && component.color ? (
-                            <span
-                              className="viewer-top-menu-intensity-entry-marker"
-                              aria-hidden="true"
-                            />
-                          ) : null}
-                          {component.channelLabel ? (
-                            <>
-                              <span className="viewer-top-menu-intensity-entry-label">
-                                {component.displayChannelLabel}
-                              </span>
-                              {component.valueText ? (
-                                <span
-                                  className="viewer-top-menu-intensity-entry-value"
-                                  style={{ width: `${hoverIntensityValueDigits}ch` }}
-                                >
-                                  {component.valueText}
-                                </span>
-                              ) : null}
-                            </>
-                          ) : (
-                            <span
-                              className="viewer-top-menu-intensity-entry-value"
-                              style={{ width: `${hoverIntensityValueDigits}ch` }}
-                            >
-                              {component.valueText}
-                            </span>
-                          )}
-                        </span>
-                      ))}
-                    </span>
-                  </span>
-                  <span className="viewer-top-menu-coordinates">
-                    (
-                    <span className="viewer-top-menu-coordinate-value" style={{ width: `${hoverCoordinateDigits.x}ch` }}>
-                      {toUserFacingVoxelIndex(hoveredVoxel.coordinates.x)}
-                    </span>
-                    ,{' '}
-                    <span className="viewer-top-menu-coordinate-value" style={{ width: `${hoverCoordinateDigits.y}ch` }}>
-                      {toUserFacingVoxelIndex(hoveredVoxel.coordinates.y)}
-                    </span>
-                    ,{' '}
-                    <span className="viewer-top-menu-coordinate-value" style={{ width: `${hoverCoordinateDigits.z}ch` }}>
-                      {toUserFacingVoxelIndex(hoveredVoxel.coordinates.z)}
-                    </span>
-                    )
-                  </span>
-                </>
-              ) : (
-                <span className="viewer-top-menu-intensity-empty">—</span>
-              )}
-            </div>
-          </div>
-        </div>
-
         <div className="viewer-top-menu-cell viewer-top-menu-cell--bottom viewer-top-menu-cell--column-4">
-          <div className="viewer-top-menu-cell-content viewer-top-menu-cell-content--end">
+          <div className="viewer-top-menu-cell-content viewer-top-menu-cell-content--split">
+            <div className="viewer-top-menu-cell-group viewer-top-menu-cell-group--grow viewer-top-menu-hover-column">
+              <div className="viewer-top-menu-intensity" role="status" aria-live="polite">
+                {hoveredVoxel ? (
+                  <>
+                    <span className="viewer-top-menu-intensity-marquee" ref={hoverIntensityViewportRef}>
+                      <span
+                        className={
+                          shouldAnimateHoverIntensity
+                            ? 'viewer-top-menu-intensity-track is-animated'
+                            : 'viewer-top-menu-intensity-track'
+                        }
+                        ref={hoverIntensityTrackRef}
+                        style={hoverIntensityTrackStyle}
+                      >
+                        {resolvedIntensityComponents.map((component) => (
+                          <span
+                            key={component.key}
+                            className="viewer-top-menu-intensity-entry"
+                            style={
+                              component.color
+                                ? ({
+                                    '--viewer-top-menu-intensity-marker-color': component.color,
+                                    '--viewer-top-menu-intensity-marker-border': isLightHexColor(component.color)
+                                      ? 'var(--panel-border-strong)'
+                                      : 'transparent'
+                                  } as CSSProperties)
+                                : undefined
+                            }
+                            title={component.channelLabel ?? component.fullText}
+                          >
+                            {component.channelLabel && component.color ? (
+                              <span
+                                className="viewer-top-menu-intensity-entry-marker"
+                                aria-hidden="true"
+                              />
+                            ) : null}
+                            {component.channelLabel ? (
+                              <>
+                                <span className="viewer-top-menu-intensity-entry-label">
+                                  {component.displayChannelLabel}
+                                </span>
+                                {component.valueText ? (
+                                  <span
+                                    className="viewer-top-menu-intensity-entry-value"
+                                    style={{ width: `${hoverIntensityValueDigits}ch` }}
+                                  >
+                                    {component.valueText}
+                                  </span>
+                                ) : null}
+                              </>
+                            ) : (
+                              <span
+                                className="viewer-top-menu-intensity-entry-value"
+                                style={{ width: `${hoverIntensityValueDigits}ch` }}
+                              >
+                                {component.valueText}
+                              </span>
+                            )}
+                          </span>
+                        ))}
+                      </span>
+                    </span>
+                    <span className="viewer-top-menu-coordinates">
+                      (
+                      <span className="viewer-top-menu-coordinate-value" style={{ width: `${hoverCoordinateDigits.x}ch` }}>
+                        {toUserFacingVoxelIndex(hoveredVoxel.coordinates.x)}
+                      </span>
+                      ,{' '}
+                      <span className="viewer-top-menu-coordinate-value" style={{ width: `${hoverCoordinateDigits.y}ch` }}>
+                        {toUserFacingVoxelIndex(hoveredVoxel.coordinates.y)}
+                      </span>
+                      ,{' '}
+                      <span className="viewer-top-menu-coordinate-value" style={{ width: `${hoverCoordinateDigits.z}ch` }}>
+                        {toUserFacingVoxelIndex(hoveredVoxel.coordinates.z)}
+                      </span>
+                      )
+                    </span>
+                  </>
+                ) : (
+                  <span className="viewer-top-menu-intensity-empty">—</span>
+                )}
+              </div>
+            </div>
             {isFollowActive && followTargetLabel ? (
-              <div className="viewer-top-menu-status-group viewer-top-menu-follow-group">
-                <span
-                  className="viewer-top-menu-follow-target"
-                  title={followTargetLabel}
-                  role="status"
-                  aria-live="polite"
-                >
-                  {followTargetLabel}
-                </span>
-                <button
-                  type="button"
-                  className="viewer-top-menu-button viewer-top-menu-button--danger"
-                  onClick={() =>
-                    isTrackFollowActive
-                      ? onStopTrackFollow(followedTrackSetId ?? undefined)
-                      : onStopVoxelFollow()
-                  }
-                  aria-label={`Stop following ${followTargetLabel.replace(/^Following\s+/, '')}`}
-                >
-                  Stop
-                </button>
+              <div className="viewer-top-menu-cell-group viewer-top-menu-cell-group--end">
+                <div className="viewer-top-menu-status-group viewer-top-menu-follow-group">
+                  <span
+                    className="viewer-top-menu-follow-target"
+                    title={followTargetLabel}
+                    role="status"
+                    aria-live="polite"
+                  >
+                    {followTargetLabel}
+                  </span>
+                  <button
+                    type="button"
+                    className="viewer-top-menu-button viewer-top-menu-button--danger"
+                    onClick={() =>
+                      isTrackFollowActive
+                        ? onStopTrackFollow(followedTrackSetId ?? undefined)
+                        : onStopVoxelFollow()
+                    }
+                    aria-label={`Stop following ${followTargetLabel.replace(/^Following\s+/, '')}`}
+                  >
+                    Stop
+                  </button>
+                </div>
               </div>
             ) : null}
           </div>

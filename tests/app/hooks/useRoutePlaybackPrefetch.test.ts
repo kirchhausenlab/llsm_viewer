@@ -3,9 +3,16 @@ import assert from 'node:assert/strict';
 import { useRoutePlaybackPrefetch } from '../../../src/ui/app/hooks/useRoutePlaybackPrefetch.ts';
 import type { VolumeProvider } from '../../../src/core/volumeProvider.ts';
 import type { PlaybackWarmupFrameState } from '../../../src/ui/app/hooks/useRouteLayerVolumes.ts';
+import type { ResidencyDecision } from '../../../src/ui/app/volume-loading/residencyPolicy.ts';
 import { renderHook } from '../../hooks/renderHook.ts';
 
 console.log('Starting useRoutePlaybackPrefetch tests');
+
+const createResidencyDecision = (mode: 'atlas' | 'volume', scaleLevel = 0): ResidencyDecision => ({
+  mode,
+  scaleLevel,
+  rationale: mode === 'atlas' ? 'atlas-eligible' : 'direct-volume-default'
+});
 
 type ProviderHarness = {
   provider: VolumeProvider;
@@ -169,8 +176,6 @@ await (async () => {
       isViewerLaunched: true,
       isPlaying: false,
       fps: 24,
-      preferBrickResidency: false,
-      brickResidencyLayerKeys: [],
       volumeProvider: provider,
       volumeTimepointCount: 2,
       playbackLayerKeys: ['layer-a', 'layer-b'],
@@ -202,8 +207,6 @@ await (async () => {
       isViewerLaunched: true,
       isPlaying: false,
       fps: 24,
-      preferBrickResidency: false,
-      brickResidencyLayerKeys: [],
       volumeProvider: provider,
       volumeTimepointCount: 2,
       playbackLayerKeys: ['layer-a', 'layer-b'],
@@ -225,8 +228,10 @@ await (async () => {
       isViewerLaunched: true,
       isPlaying: false,
       fps: 24,
-      preferBrickResidency: true,
-      brickResidencyLayerKeys: ['layer-a', 'layer-b'],
+      playbackResidencyDecisionByLayerKey: {
+        'layer-a': createResidencyDecision('atlas'),
+        'layer-b': createResidencyDecision('atlas'),
+      },
       volumeProvider: provider,
       volumeTimepointCount: 2,
       playbackLayerKeys: ['layer-a', 'layer-b'],
@@ -257,8 +262,10 @@ await (async () => {
       isViewerLaunched: true,
       isPlaying: false,
       fps: 24,
-      preferBrickResidency: true,
-      brickResidencyLayerKeys: ['layer-a'],
+      playbackResidencyDecisionByLayerKey: {
+        'layer-a': createResidencyDecision('atlas'),
+        'layer-b': createResidencyDecision('volume'),
+      },
       volumeProvider: provider,
       volumeTimepointCount: 2,
       playbackLayerKeys: ['layer-a', 'layer-b'],
@@ -292,8 +299,9 @@ await (async () => {
       isViewerLaunched: true,
       isPlaying: true,
       fps: 24,
-      preferBrickResidency: true,
-      brickResidencyLayerKeys: ['layer-a'],
+      playbackResidencyDecisionByLayerKey: {
+        'layer-a': createResidencyDecision('atlas'),
+      },
       volumeProvider: provider,
       volumeTimepointCount: 3,
       playbackLayerKeys: ['layer-a'],
@@ -317,7 +325,10 @@ await (async () => {
   const warmupFrame: PlaybackWarmupFrameState = {
     slotIndex: 0,
     timeIndex: 1,
-    scaleSignature: 'layer-a:1',
+    scaleSignature: 'layer-a:1:atlas',
+    layerResidencyDecisions: {
+      'layer-a': createResidencyDecision('atlas', 1),
+    },
     layerVolumes: { 'layer-a': null },
     layerPageTables: {
       'layer-a': {
@@ -369,9 +380,9 @@ await (async () => {
       isViewerLaunched: true,
       isPlaying: false,
       fps: 24,
-      preferBrickResidency: true,
-      brickResidencyLayerKeys: ['layer-a'],
-      playbackAtlasScaleLevelByLayerKey: { 'layer-a': 1 },
+      playbackResidencyDecisionByLayerKey: {
+        'layer-a': createResidencyDecision('atlas', 1),
+      },
       playbackWarmupFrames: [warmupFrame],
       volumeProvider: provider,
       volumeTimepointCount: 3,
@@ -390,24 +401,22 @@ await (async () => {
 
 (() => {
   const { provider } = createProviderHarness();
-  assert.throws(
-    () =>
-      renderHook(() =>
-        useRoutePlaybackPrefetch({
-          isViewerLaunched: true,
-          isPlaying: false,
-          fps: 24,
-          preferBrickResidency: true,
-          brickResidencyLayerKeys: ['layer-a'],
-          playbackAtlasScaleLevelByLayerKey: { 'layer-a': Number.NaN },
-          volumeProvider: provider,
-          volumeTimepointCount: 3,
-          playbackLayerKeys: ['layer-a'],
-          selectedIndex: 0,
-        }),
-      ),
-    /Invalid playback atlas scale level for layer "layer-a"/,
+  const hook = renderHook(() =>
+    useRoutePlaybackPrefetch({
+      isViewerLaunched: true,
+      isPlaying: false,
+      fps: 24,
+      playbackResidencyDecisionByLayerKey: {
+        'layer-a': null,
+      },
+      volumeProvider: provider,
+      volumeTimepointCount: 3,
+      playbackLayerKeys: ['layer-a'],
+      selectedIndex: 0,
+    }),
   );
+  assert.equal(hook.result.canAdvancePlaybackToIndex(1), false);
+  hook.unmount();
 })();
 
 console.log('useRoutePlaybackPrefetch tests passed');

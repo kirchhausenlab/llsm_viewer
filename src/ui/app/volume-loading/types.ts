@@ -13,6 +13,7 @@ import type { LoadedDatasetLayer, StagedPreprocessedExperiment } from '../../../
 import type { PlaybackIndexWindow } from '../../../shared/utils';
 import type { ViewerCameraNavigationSample } from '../../../hooks/useVolumeRenderSetup';
 import type { ViewerProjectionMode } from '../../../hooks/useVolumeRenderSetup';
+import type { ResidencyDecision } from './residencyPolicy';
 
 export type SetLaunchProgressOptions = {
   loadedCount: number;
@@ -29,6 +30,7 @@ export type PlaybackWarmupFrameState = {
   slotIndex: number;
   timeIndex: number;
   scaleSignature: string;
+  layerResidencyDecisions: Record<string, ResidencyDecision | null>;
   layerVolumes: Record<string, NormalizedVolume | null>;
   layerPageTables: Record<string, VolumeBrickPageTable | null>;
   layerBrickAtlases: Record<string, VolumeBrickAtlas | null>;
@@ -40,6 +42,7 @@ export type UseRouteLayerVolumesOptions = {
   isLaunchingViewer: boolean;
   isPerformanceMode?: boolean;
   isPlaying?: boolean;
+  isPlaybackStartPending?: boolean;
   preprocessedExperiment: StagedPreprocessedExperiment | null;
   volumeProvider: VolumeProvider | null;
   loadedChannelIds: string[];
@@ -50,6 +53,7 @@ export type UseRouteLayerVolumesOptions = {
   projectionMode?: ViewerProjectionMode;
   viewerCameraSample?: ViewerCameraNavigationSample | null;
   volumeTimepointCount: number;
+  playbackBufferFrameCount?: number;
   selectedIndex: number;
   playbackWindow?: PlaybackIndexWindow | null;
   clearDatasetError: () => void;
@@ -66,6 +70,7 @@ export type UseRouteLayerVolumesOptions = {
 };
 
 export type RouteLayerVolumesState = {
+  currentLayerResidencyDecisions: Record<string, ResidencyDecision | null>;
   currentLayerVolumes: Record<string, NormalizedVolume | null>;
   currentLayerPageTables: Record<string, VolumeBrickPageTable | null>;
   currentLayerBrickAtlases: Record<string, VolumeBrickAtlas | null>;
@@ -80,6 +85,7 @@ export type RouteLayerVolumesState = {
   lodPolicyDiagnostics: LODPolicyDiagnosticsSnapshot | null;
   setCurrentLayerVolumes: Dispatch<SetStateAction<Record<string, NormalizedVolume | null>>>;
   playbackLayerKeys: string[];
+  playbackResidencyDecisionByLayerKey: Record<string, ResidencyDecision>;
   playbackAtlasScaleLevelByLayerKey: Record<string, number>;
   handleLaunchViewer: (options?: LaunchViewerOptions) => Promise<void>;
 };

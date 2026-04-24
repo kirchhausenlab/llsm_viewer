@@ -75,6 +75,8 @@ type FileSystemWritableFileStreamLike = {
 };
 
 type DirectoryHandleCache = Map<string, Promise<FileSystemDirectoryHandleLike>>;
+type FileHandleCache = Map<string, Promise<FileSystemFileHandleLike>>;
+type FileSnapshotCache = Map<string, Promise<File>>;
 type FetchLike = typeof fetch;
 
 async function getOpfsRoot(): Promise<FileSystemDirectoryHandleLike> {
@@ -166,7 +168,9 @@ async function writeFileToDirectory(
   root: FileSystemDirectoryHandleLike,
   path: string,
   data: Uint8Array,
-  directoryCache?: DirectoryHandleCache
+  directoryCache?: DirectoryHandleCache,
+  fileHandleCache?: FileHandleCache,
+  fileSnapshotCache?: FileSnapshotCache
 ): Promise<void> {
   const safePath = assertSafePath(path);
   const parts = safePath.split('/');
@@ -184,6 +188,8 @@ async function writeFileToDirectory(
   const writable = await handle.createWritable();
   await writable.write(ensureArrayBuffer(data));
   await writable.close();
+  fileHandleCache?.delete(safePath);
+  fileSnapshotCache?.delete(safePath);
 }
 
 async function removeEntryFromDirectory(
@@ -213,9 +219,26 @@ async function removeEntryFromDirectory(
 async function readFileFromDirectory(
   root: FileSystemDirectoryHandleLike,
   path: string,
-  directoryCache?: DirectoryHandleCache
+  directoryCache?: DirectoryHandleCache,
+  fileHandleCache?: FileHandleCache,
+  fileSnapshotCache?: FileSnapshotCache
 ): Promise<Uint8Array> {
+  const file = await readFileSnapshotFromDirectory(root, path, directoryCache, fileHandleCache, fileSnapshotCache);
+  const buffer = await file.arrayBuffer();
+  return new Uint8Array(buffer);
+}
+
+async function getFileHandleFromDirectory(
+  root: FileSystemDirectoryHandleLike,
+  path: string,
+  directoryCache?: DirectoryHandleCache,
+  fileHandleCache?: FileHandleCache
+): Promise<FileSystemFileHandleLike> {
   const safePath = assertSafePath(path);
+  const cachedHandle = fileHandleCache?.get(safePath);
+  if (cachedHandle) {
+    return cachedHandle;
+  }
   const parts = safePath.split('/');
   const name = parts.pop();
   if (!name) {
@@ -227,10 +250,34 @@ async function readFileFromDirectory(
       ? await getDirectoryWithCache({ root, path: directoryPath, create: false, cache: directoryCache })
       : await getDirectory(root, directoryPath)
     : root;
-  const handle = await dir.getFileHandle(name);
-  const file = await handle.getFile();
-  const buffer = await file.arrayBuffer();
-  return new Uint8Array(buffer);
+  const handlePromise = dir.getFileHandle(name).catch((error) => {
+    fileHandleCache?.delete(safePath);
+    throw error;
+  });
+  fileHandleCache?.set(safePath, handlePromise);
+  return handlePromise;
+}
+
+async function readFileSnapshotFromDirectory(
+  root: FileSystemDirectoryHandleLike,
+  path: string,
+  directoryCache?: DirectoryHandleCache,
+  fileHandleCache?: FileHandleCache,
+  fileSnapshotCache?: FileSnapshotCache
+): Promise<File> {
+  const safePath = assertSafePath(path);
+  const cachedFile = fileSnapshotCache?.get(safePath);
+  if (cachedFile) {
+    return cachedFile;
+  }
+  const filePromise = getFileHandleFromDirectory(root, safePath, directoryCache, fileHandleCache)
+    .then((handle) => handle.getFile())
+    .catch((error) => {
+      fileSnapshotCache?.delete(safePath);
+      throw error;
+    });
+  fileSnapshotCache?.set(safePath, filePromise);
+  return filePromise;
 }
 
 function normalizeRange(offset: number, length: number, totalLength: number): { start: number; end: number } {
@@ -330,22 +377,11 @@ async function readFileRangeFromDirectory(
   path: string,
   offset: number,
   length: number,
-  directoryCache?: DirectoryHandleCache
+  directoryCache?: DirectoryHandleCache,
+  fileHandleCache?: FileHandleCache,
+  fileSnapshotCache?: FileSnapshotCache
 ): Promise<Uint8Array> {
-  const safePath = assertSafePath(path);
-  const parts = safePath.split('/');
-  const name = parts.pop();
-  if (!name) {
-    throw new Error('Storage file path is missing a file name.');
-  }
-  const directoryPath = parts.join('/');
-  const dir = directoryPath
-    ? directoryCache
-      ? await getDirectoryWithCache({ root, path: directoryPath, create: false, cache: directoryCache })
-      : await getDirectory(root, directoryPath)
-    : root;
-  const handle = await dir.getFileHandle(name);
-  const file = await handle.getFile();
+  const file = await readFileSnapshotFromDirectory(root, path, directoryCache, fileHandleCache, fileSnapshotCache);
   const { start, end } = normalizeRange(offset, length, file.size);
   if (end <= start) {
     return new Uint8Array(0);
@@ -363,16 +399,26 @@ export async function createOpfsPreprocessedStorage(
   const datasetDirName = ensureZarrDirectoryName(datasetId);
   const datasetRoot = await getOrCreateDirectory(root, `${rootDir}/${datasetDirName}`);
   const directoryCache: DirectoryHandleCache = new Map();
+  const fileHandleCache: FileHandleCache = new Map();
+  const fileSnapshotCache: FileSnapshotCache = new Map();
 
   const storage: PreprocessedStorage = {
     async writeFile(path, data) {
-      await writeFileToDirectory(datasetRoot, path, data, directoryCache);
+      await writeFileToDirectory(datasetRoot, path, data, directoryCache, fileHandleCache, fileSnapshotCache);
     },
     async readFile(path) {
-      return readFileFromDirectory(datasetRoot, path, directoryCache);
+      return readFileFromDirectory(datasetRoot, path, directoryCache, fileHandleCache, fileSnapshotCache);
     },
     async readFileRange(path, offset, length) {
-      return readFileRangeFromDirectory(datasetRoot, path, offset, length, directoryCache);
+      return readFileRangeFromDirectory(
+        datasetRoot,
+        path,
+        offset,
+        length,
+        directoryCache,
+        fileHandleCache,
+        fileSnapshotCache
+      );
     }
   };
 
@@ -402,16 +448,26 @@ export async function createDirectoryHandlePreprocessedStorage(
 
   const id = requireNonEmptyName(options.id, 'id');
   const directoryCache: DirectoryHandleCache = new Map();
+  const fileHandleCache: FileHandleCache = new Map();
+  const fileSnapshotCache: FileSnapshotCache = new Map();
 
   const storage: PreprocessedStorage = {
     async writeFile(path, data) {
-      await writeFileToDirectory(directory, path, data, directoryCache);
+      await writeFileToDirectory(directory, path, data, directoryCache, fileHandleCache, fileSnapshotCache);
     },
     async readFile(path) {
-      return readFileFromDirectory(directory, path, directoryCache);
+      return readFileFromDirectory(directory, path, directoryCache, fileHandleCache, fileSnapshotCache);
     },
     async readFileRange(path, offset, length) {
-      return readFileRangeFromDirectory(directory, path, offset, length, directoryCache);
+      return readFileRangeFromDirectory(
+        directory,
+        path,
+        offset,
+        length,
+        directoryCache,
+        fileHandleCache,
+        fileSnapshotCache
+      );
     }
   };
 

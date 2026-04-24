@@ -70,6 +70,7 @@ type ViewerPanelsTrackInput = Pick<
 export type ViewerShellContainerViewerPanelsProps = {
   layers: ViewerLayerConfig[];
   playbackWarmupLayers?: ViewerLayerConfig[];
+  playbackWarmupFrames?: ViewerShellProps['volumeViewerProps']['playbackWarmupFrames'];
   temporalResolution?: ViewerShellProps['volumeViewerProps']['temporalResolution'];
   voxelResolution?: ViewerShellProps['volumeViewerProps']['voxelResolution'];
   loading: ViewerPanelsLoadingInput;
@@ -77,6 +78,7 @@ export type ViewerShellContainerViewerPanelsProps = {
   zClipFrontFraction: number;
   runtimeDiagnostics?: VolumeProviderDiagnostics | null;
   lodPolicyDiagnostics?: LODPolicyDiagnosticsSnapshot | null;
+  residencyDecisions?: ViewerShellProps['volumeViewerProps']['residencyDecisions'];
   canAdvancePlayback?: ViewerShellProps['volumeViewerProps']['canAdvancePlayback'];
   onRegisterReset: ViewerShellProps['volumeViewerProps']['onRegisterReset'];
   onVolumeStepScaleChange?: ViewerShellProps['volumeViewerProps']['onVolumeStepScaleChange'];
@@ -113,6 +115,11 @@ export type ViewerShellContainerVrProps = Pick<
   | 'onLayerRenderStyleToggle'
   | 'onLayerSamplingModeToggle'
   | 'onLayerInvertToggle'
+  | 'onLayerBlDensityScaleChange'
+  | 'onLayerBlBackgroundCutoffChange'
+  | 'onLayerBlOpacityScaleChange'
+  | 'onLayerBlEarlyExitAlphaChange'
+  | 'onLayerMipEarlyExitThresholdChange'
   | 'onRegisterVrSession'
   | 'onVrSessionStarted'
   | 'onVrSessionEnded'

@@ -25,6 +25,23 @@ console.log('Starting lod0Residency tests');
   assert.equal(
     shouldPreferDirectVolumeSampling({
       scaleLevel: 1,
+      volumeWidth: 355,
+      volumeHeight: 304,
+      volumeDepth: 51,
+      textureChannels: 1,
+      gridShape: [4, 5, 6],
+      chunkShape: [16, 64, 64],
+      occupiedBrickCount: 120,
+      maxDirectVolumeBytes: 384 * 1024 * 1024
+    }),
+    true
+  );
+})();
+
+(() => {
+  assert.equal(
+    shouldPreferDirectVolumeSampling({
+      scaleLevel: 1,
       volumeWidth: 4096,
       volumeHeight: 256,
       volumeDepth: 128,

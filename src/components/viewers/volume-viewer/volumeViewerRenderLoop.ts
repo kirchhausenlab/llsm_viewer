@@ -33,6 +33,8 @@ type CreateVolumeViewerRenderLoopOptions = {
   updateTrackAppearance: (timestamp: number) => void;
   renderRoiBlOcclusionPass?: (renderer: THREE.WebGLRenderer, camera: THREE.Camera) => void;
   refreshViewerProps: () => void;
+  updateCameraFrustum?: (camera: DesktopViewerCamera) => void;
+  renderBackgroundPass?: (renderer: THREE.WebGLRenderer, camera: DesktopViewerCamera) => void;
   followTargetActiveRef: MutableRefObject<boolean>;
   followTargetOffsetRef: MutableRefObject<THREE.Vector3 | null>;
   roiGroupRef?: MutableRefObject<THREE.Group | null>;
@@ -61,6 +63,8 @@ export function createVolumeViewerRenderLoop({
   updateTrackAppearance,
   renderRoiBlOcclusionPass,
   refreshViewerProps,
+  updateCameraFrustum,
+  renderBackgroundPass,
   followTargetActiveRef,
   followTargetOffsetRef,
   roiGroupRef,
@@ -77,6 +81,7 @@ export function createVolumeViewerRenderLoop({
 }: CreateVolumeViewerRenderLoopOptions): (timestamp: number) => void {
   let lastRenderTickSummary: { presenting: boolean; hoveredByController: string | null } | null = null;
   const cameraWorldPosition = new THREE.Vector3();
+  const cameraWorldDirection = new THREE.Vector3();
   const fallbackProjectionTarget = new THREE.Vector3();
   const previousCameraPosition = new THREE.Vector3(Number.NaN, Number.NaN, Number.NaN);
   const previousTarget = new THREE.Vector3(Number.NaN, Number.NaN, Number.NaN);
@@ -98,10 +103,12 @@ export function createVolumeViewerRenderLoop({
     applyKeyboardRotation(renderer, camera, controls);
     applyKeyboardMovement(renderer, camera, controls);
     controls.update();
+    camera.updateMatrixWorld(true);
     rotationTargetRef.current.copy(controls.target);
 
     updateTrackAppearance(timestamp);
     refreshViewerProps();
+    updateCameraFrustum?.(camera);
 
     if (followTargetActiveRef.current) {
       const rotationTarget = rotationTargetRef.current;
@@ -124,12 +131,19 @@ export function createVolumeViewerRenderLoop({
 
     const resources = resourcesRef.current;
     cameraWorldPosition.setFromMatrixPosition(camera.matrixWorld);
+    camera.getWorldDirection(cameraWorldDirection);
     let nearestVisibleVolumeDistance = Number.POSITIVE_INFINITY;
     let nearestVisibleVolumeTarget: THREE.Vector3 | null = null;
     for (const resource of resources.values()) {
       const { mesh } = resource;
       mesh.updateMatrixWorld();
-      resource.updateGpuBrickResidencyForCamera?.(cameraWorldPosition);
+      resource.updateGpuBrickResidencyForCamera?.({
+        cameraWorldPosition,
+        projectionMode: getProjectionModeForCamera(camera),
+        targetWorldPosition: controls.target,
+        viewDirectionWorld: cameraWorldDirection,
+        zoom: camera.zoom ?? 1,
+      });
 
       if (mesh.visible) {
         const geometry = mesh.geometry as THREE.BufferGeometry;
@@ -233,6 +247,9 @@ export function createVolumeViewerRenderLoop({
     lastRenderTickSummary = renderSummary;
     const roiGroup = roiGroupRef?.current ?? null;
     const previousRoiVisibility = roiGroup?.visible ?? false;
+    const previousAutoClear = renderer.autoClear;
+    renderer.autoClear = false;
+    renderBackgroundPass?.(renderer, camera);
     if (roiGroup) {
       roiGroup.visible = false;
     }
@@ -241,5 +258,6 @@ export function createVolumeViewerRenderLoop({
       roiGroup.visible = previousRoiVisibility;
     }
     renderRoiBlOcclusionPass?.(renderer, camera);
+    renderer.autoClear = previousAutoClear;
   };
 }

@@ -4,6 +4,7 @@ import type { NormalizedVolume } from '../../../core/volumeProcessing';
 import type { LoadedDatasetLayer } from '../../../hooks/dataset';
 import type { LayerSettings } from '../../../state/layerSettings';
 import { DEFAULT_WINDOW_MAX, DEFAULT_WINDOW_MIN, resolveLayerSamplingMode } from '../../../state/layerSettings';
+import { normalizeLayerSettingsForVr } from '../../../shared/utils/vrRenderStyle';
 
 const DEFAULT_RESET_WINDOW = { windowMin: DEFAULT_WINDOW_MIN, windowMax: DEFAULT_WINDOW_MAX };
 
@@ -16,6 +17,7 @@ function selectDeterministicLayerKey(layers: ReadonlyArray<{ key: string }>): st
 
 type UseRouteVrChannelPanelsOptions = {
   trackSets: Array<{ id: string; name: string }>;
+  isVrActive?: boolean;
   loadedChannelIds: string[];
   channelNameMap: Map<string, string>;
   channelLayersMap: Map<string, LoadedDatasetLayer[]>;
@@ -56,6 +58,7 @@ type UseRouteVrChannelPanelsResult = {
 
 export function useRouteVrChannelPanels({
   trackSets,
+  isVrActive = false,
   loadedChannelIds,
   channelNameMap,
   channelLayersMap,
@@ -79,10 +82,13 @@ export function useRouteVrChannelPanels({
       const activeLayerKey = selectDeterministicLayerKey(channelLayers);
       const layers = channelLayers.map((layer) => {
         const settings = layerSettings[layer.key] ?? createLayerDefaultSettings(layer.key);
+        const effectiveSettings = isVrActive
+          ? normalizeLayerSettingsForVr(settings, layer.isSegmentation)
+          : settings;
         const volume = currentLayerVolumes[layer.key] ?? null;
         const samplingMode = resolveLayerSamplingMode(
-          settings.renderStyle,
-          settings.samplingMode,
+          effectiveSettings.renderStyle,
+          effectiveSettings.samplingMode,
           layer.isSegmentation
         );
         return {
@@ -94,7 +100,7 @@ export function useRouteVrChannelPanels({
           defaultWindow: DEFAULT_RESET_WINDOW,
           histogram: volume?.histogram ?? null,
           settings: {
-            ...settings,
+            ...effectiveSettings,
             samplingMode
           }
         };
@@ -115,7 +121,8 @@ export function useRouteVrChannelPanels({
     channelVisibility,
     layerSettings,
     currentLayerVolumes,
-    createLayerDefaultSettings
+    createLayerDefaultSettings,
+    isVrActive
   ]);
 
   return { trackChannels, vrChannelPanels };

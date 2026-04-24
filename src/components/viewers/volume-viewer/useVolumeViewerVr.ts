@@ -283,6 +283,11 @@ export function useVolumeViewerVr({
   const onLayerContrastChange = vrProps?.onLayerContrastChange;
   const onLayerBrightnessChange = vrProps?.onLayerBrightnessChange;
   const onLayerOffsetChange = vrProps?.onLayerOffsetChange;
+  const onLayerBlDensityScaleChange = vrProps?.onLayerBlDensityScaleChange;
+  const onLayerBlBackgroundCutoffChange = vrProps?.onLayerBlBackgroundCutoffChange;
+  const onLayerBlOpacityScaleChange = vrProps?.onLayerBlOpacityScaleChange;
+  const onLayerBlEarlyExitAlphaChange = vrProps?.onLayerBlEarlyExitAlphaChange;
+  const onLayerMipEarlyExitThresholdChange = vrProps?.onLayerMipEarlyExitThresholdChange;
   const onTrackOpacityChange = vrProps?.onTrackOpacityChange;
   const onTrackLineWidthChange = vrProps?.onTrackLineWidthChange;
   const trackHudEnabled = Boolean(vrProps?.isVrActive);
@@ -403,6 +408,11 @@ export function useVolumeViewerVr({
     onLayerContrastChange,
     onLayerBrightnessChange,
     onLayerOffsetChange,
+    onLayerBlDensityScaleChange,
+    onLayerBlBackgroundCutoffChange,
+    onLayerBlOpacityScaleChange,
+    onLayerBlEarlyExitAlphaChange,
+    onLayerMipEarlyExitThresholdChange,
     onTrackOpacityChange,
     onTrackLineWidthChange,
   });

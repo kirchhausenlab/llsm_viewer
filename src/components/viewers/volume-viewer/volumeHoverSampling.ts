@@ -100,6 +100,39 @@ function sampleBrickAtlasVoxelValue(
   return source.atlasData[atlasVoxelOffset] ?? 0;
 }
 
+export function sampleBrickAtlasAtVoxel(
+  source: BrickAtlasSampleSource,
+  voxelX: number,
+  voxelY: number,
+  voxelZ: number,
+): { normalizedValues: number[]; rawValues: number[] } {
+  if (source.kind === 'segmentation') {
+    const label = sampleBrickAtlasVoxelValue(source, voxelX, voxelY, voxelZ, 0);
+    return {
+      normalizedValues: [label > 0 ? 1 : 0],
+      rawValues: [label],
+    };
+  }
+
+  const channels = Math.max(1, source.sourceChannels);
+  const safeMin = Number.isFinite(source.min) ? source.min : 0;
+  const safeMax = Number.isFinite(source.max) ? source.max : 255;
+  const range = safeMax - safeMin;
+  const denominator = getNormalizedIntensityDenominator(source.dataType);
+  const atlasUsesFloatNormalization = source.atlasData instanceof Float32Array;
+  const normalizedValues: number[] = [];
+  const rawValues: number[] = [];
+
+  for (let channelIndex = 0; channelIndex < channels; channelIndex += 1) {
+    const sampleValue = sampleBrickAtlasVoxelValue(source, voxelX, voxelY, voxelZ, channelIndex);
+    const normalizedValue = atlasUsesFloatNormalization ? sampleValue : sampleValue / denominator;
+    normalizedValues.push(normalizedValue);
+    rawValues.push(safeMin + normalizedValue * range);
+  }
+
+  return { normalizedValues, rawValues };
+}
+
 export function sampleBrickAtlasAtNormalizedPosition(
   source: BrickAtlasSampleSource,
   coords: VectorLike,
@@ -176,6 +209,42 @@ export function sampleBrickAtlasAtNormalizedPosition(
     const normalizedValue = atlasUsesFloatNormalization ? interpolated : interpolated / denominator;
     normalizedValues.push(normalizedValue);
     rawValues.push(safeMin + normalizedValue * range);
+  }
+
+  return { normalizedValues, rawValues };
+}
+
+export function sampleVolumeAtVoxel(
+  volume: NormalizedVolume,
+  voxelX: number,
+  voxelY: number,
+  voxelZ: number,
+): { normalizedValues: number[]; rawValues: number[] } {
+  if (isSegmentationVolume(volume)) {
+    const label = sampleVolumeLabelAtNormalizedPosition(volume, {
+      x: voxelX / Math.max(1, volume.width),
+      y: voxelY / Math.max(1, volume.height),
+      z: voxelZ / Math.max(1, volume.depth),
+    });
+    return {
+      normalizedValues: [label > 0 ? 1 : 0],
+      rawValues: [label],
+    };
+  }
+
+  const channels = Math.max(1, volume.channels);
+  const x = Math.round(clampValue(voxelX, 0, volume.width - 1));
+  const y = Math.round(clampValue(voxelY, 0, volume.height - 1));
+  const z = Math.round(clampValue(voxelZ, 0, volume.depth - 1));
+  const normalizedValues: number[] = [];
+  const rawValues: number[] = [];
+  const denominator = getNormalizedIntensityDenominator(volume.normalizedDataType);
+  const voxelOffset = ((z * volume.height + y) * volume.width + x) * channels;
+
+  for (let channelIndex = 0; channelIndex < channels; channelIndex++) {
+    const normalized = volume.normalized[voxelOffset + channelIndex] ?? 0;
+    normalizedValues.push(normalized / denominator);
+    rawValues.push(denormalizeValue(normalized, volume));
   }
 
   return { normalizedValues, rawValues };

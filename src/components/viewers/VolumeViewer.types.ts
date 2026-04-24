@@ -6,10 +6,13 @@ import type { LineSegments2 } from 'three/examples/jsm/lines/LineSegments2';
 import type { LineSegmentsGeometry } from 'three/examples/jsm/lines/LineSegmentsGeometry';
 
 import type {
+  VolumeBackgroundMask,
+  VolumeBrickAtlas,
   VolumeBrickPageTable,
   VolumeProviderDiagnostics
 } from '../../core/volumeProvider';
 import type { LODPolicyDiagnosticsSnapshot } from '../../core/lodPolicyDiagnostics';
+import type { NormalizedVolume } from '../../core/volumeProcessing';
 import type { ViewerLayer } from '../../ui/contracts/viewerLayer';
 import type { FollowedVoxelTarget } from '../../types/follow';
 import type { HoveredVoxelInfo, HoverSettings } from '../../types/hover';
@@ -25,6 +28,7 @@ import type { TemporalResolutionMetadata, VoxelResolutionValues } from '../../ty
 import type { RenderStyle, SamplingMode } from '../../state/layerSettings';
 import type { TrackSetState } from '../../types/channelTracks';
 import type { PlaybackIndexWindow } from '../../shared/utils';
+import type { ResidencyDecision } from '../../ui/app/volume-loading/residencyPolicy';
 import type {
   CameraWindowController,
   CameraWindowState,
@@ -110,6 +114,11 @@ export type VolumeViewerVrProps = {
   onLayerRenderStyleToggle: (layerKey?: string) => void;
   onLayerSamplingModeToggle: (layerKey?: string) => void;
   onLayerInvertToggle: (layerKey: string) => void;
+  onLayerBlDensityScaleChange?: (layerKey: string, value: number) => void;
+  onLayerBlBackgroundCutoffChange?: (layerKey: string, value: number) => void;
+  onLayerBlOpacityScaleChange?: (layerKey: string, value: number) => void;
+  onLayerBlEarlyExitAlphaChange?: (layerKey: string, value: number) => void;
+  onLayerMipEarlyExitThresholdChange?: (layerKey: string, value: number) => void;
   onRegisterVrSession?: (
     handlers:
       | {
@@ -140,6 +149,19 @@ export type VolumeViewerCaptureTarget = {
   captureImage?: () => Promise<Blob | null>;
 };
 
+export type DesktopViewerBackgroundSelection = {
+  customBackgroundColor: string | null;
+  floorEnabled: boolean;
+  floorColor: string;
+};
+
+export type DesktopViewerBackgroundConfig = {
+  clearColor: string;
+  surfaceColor: string;
+  floorEnabled: boolean;
+  floorColor: string;
+};
+
 export type ViewerRoiConfig = {
   isDrawWindowOpen: boolean;
   tool: RoiTool;
@@ -157,9 +179,21 @@ export type ViewerRoiConfig = {
   onSavedRoiActivate: (roiId: string) => void;
 };
 
+export type PlaybackWarmupFrame = {
+  slotIndex: number;
+  timeIndex: number;
+  scaleSignature: string;
+  layerResidencyDecisions: Record<string, ResidencyDecision | null>;
+  layerVolumes: Record<string, NormalizedVolume | null>;
+  layerPageTables: Record<string, VolumeBrickPageTable | null>;
+  layerBrickAtlases: Record<string, VolumeBrickAtlas | null>;
+  backgroundMasksByScale: Record<number, VolumeBackgroundMask | null>;
+};
+
 export type VolumeViewerProps = {
   layers: ViewerLayer[];
   playbackWarmupLayers?: ViewerLayer[];
+  playbackWarmupFrames?: PlaybackWarmupFrame[];
   projectionMode?: ViewerProjectionMode;
   timeIndex: number;
   totalTimepoints: number;
@@ -169,6 +203,8 @@ export type VolumeViewerProps = {
   playbackDisabled: boolean;
   playbackLabel: string;
   fps: number;
+  playbackBufferFrames: number;
+  isPlaybackStartPending?: boolean;
   blendingMode: 'alpha' | 'additive';
   zClipFrontFraction?: number;
   isLoading: boolean;
@@ -177,6 +213,7 @@ export type VolumeViewerProps = {
   expectedVolumes: number;
   runtimeDiagnostics?: VolumeProviderDiagnostics | null;
   lodPolicyDiagnostics?: LODPolicyDiagnosticsSnapshot | null;
+  residencyDecisions?: Record<string, ResidencyDecision | null>;
   isDiagnosticsWindowOpen?: boolean;
   onCloseDiagnosticsWindow?: () => void;
   windowResetSignal?: number;
@@ -184,6 +221,7 @@ export type VolumeViewerProps = {
   onTimeIndexChange: (nextIndex: number) => void;
   playbackWindow?: PlaybackIndexWindow | null;
   canAdvancePlayback?: (nextIndex: number) => boolean;
+  onBufferedPlaybackStart?: () => void;
   onFpsChange: (value: number) => void;
   onVolumeStepScaleChange?: (value: number) => void;
   onRegisterVolumeStepScaleChange?: (handler: ((value: number) => void) | null) => void;
@@ -220,6 +258,7 @@ export type VolumeViewerProps = {
   onVoxelFollowRequest: (voxel: FollowedVoxelTarget) => void;
   onHoverVoxelChange?: (value: HoveredVoxelInfo | null) => void;
   hoverSettings?: HoverSettings;
+  background?: DesktopViewerBackgroundConfig;
   viewerPropsConfig?: ViewerPropsConfig;
   roiConfig?: ViewerRoiConfig;
   paintbrush?: PaintbrushStrokeHandlers;
@@ -271,6 +310,7 @@ export type VolumeResources = {
   brickAtlasSourcePageTable?: VolumeBrickPageTable | null;
   brickAtlasSlotGrid?: { x: number; y: number; z: number } | null;
   brickAtlasBuildVersion?: number;
+  usesPrepackedPlaybackResidentAtlas?: boolean;
   backgroundMaskSourceToken?: object | null;
   proxyGeometrySignature?: string | null;
   playbackWarmupForLayerKey?: string | null;
@@ -311,7 +351,15 @@ export type VolumeResources = {
     invalidRangeBricks: number;
     occupancyMetadataMismatchBricks: number;
   } | null;
-  updateGpuBrickResidencyForCamera?: ((cameraWorldPosition: THREE.Vector3) => void) | null;
+  updateGpuBrickResidencyForCamera?: ((
+    viewPriority: {
+      cameraWorldPosition: THREE.Vector3;
+      projectionMode: ViewerProjectionMode;
+      targetWorldPosition: THREE.Vector3;
+      viewDirectionWorld: THREE.Vector3;
+      zoom: number;
+    }
+  ) => void) | null;
 };
 
 export type VrHistogramShape = {

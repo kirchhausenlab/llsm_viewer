@@ -14,11 +14,11 @@ import {
   normalizeHexColor,
 } from '../../../../shared/colorMaps/layerColors';
 import {
-  RENDER_STYLE_SLICE,
   DEFAULT_WINDOW_MIN,
   DEFAULT_WINDOW_MAX,
   resolveIntensityRenderModeValue,
 } from '../../../../state/layerSettings';
+import { resolveVrCompatibleRenderStyle } from '../../../../shared/utils/vrRenderStyle';
 import { drawRoundedRect, drawRoundedRectCompat } from './hudCanvas';
 import {
   computeHistogramMappingPoints,
@@ -47,23 +47,25 @@ export function drawLayerToggleButtons(params: {
   const actionButtonRadius = 16;
   const availableRowWidth = canvasWidth - paddingX * 2;
   const renderButtonWidth = Math.max(0, availableRowWidth);
+  const compatibleRenderStyle = resolveVrCompatibleRenderStyle(
+    selectedLayer.settings,
+    selectedLayer.isSegmentation,
+  );
 
-  const renderStyleDisabled = !selectedLayer.hasData;
+  const renderStyleDisabled = !selectedLayer.hasData || selectedLayer.isSegmentation;
   const renderStyleActive = selectedLayer.isSegmentation
-    ? selectedLayer.settings.renderStyle !== RENDER_STYLE_SLICE
+    ? true
     : resolveIntensityRenderModeValue(
-        selectedLayer.settings.renderStyle,
-        selectedLayer.settings.samplingMode,
+        compatibleRenderStyle.renderStyle,
+        compatibleRenderStyle.samplingMode,
       ) !== 'mip';
   const renderStyleLabel =
     selectedLayer.isSegmentation
-      ? selectedLayer.settings.renderStyle === RENDER_STYLE_SLICE
-        ? 'Slice'
-        : '3D'
+      ? '3D'
       : (() => {
           const intensityMode = resolveIntensityRenderModeValue(
-            selectedLayer.settings.renderStyle,
-            selectedLayer.settings.samplingMode,
+            compatibleRenderStyle.renderStyle,
+            compatibleRenderStyle.samplingMode,
           );
           if (intensityMode === 'mip-v') {
             return 'MIP-V';
@@ -73,9 +75,6 @@ export function drawLayerToggleButtons(params: {
           }
           if (intensityMode === 'bl') {
             return 'BL';
-          }
-          if (intensityMode === 'slice') {
-            return 'Slice';
           }
           return 'MIP';
         })();

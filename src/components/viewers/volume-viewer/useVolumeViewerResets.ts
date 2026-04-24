@@ -115,6 +115,7 @@ export function useVolumeViewerResets({
         camera,
         controls.target,
         projectionMode,
+        controls,
       );
       return;
     }

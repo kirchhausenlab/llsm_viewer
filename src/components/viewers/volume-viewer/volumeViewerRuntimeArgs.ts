@@ -98,6 +98,8 @@ export type VolumeViewerLifecycleOptionGroups = {
     | 'updateTrackAppearance'
     | 'renderRoiBlOcclusionPass'
     | 'refreshViewerProps'
+    | 'updateCameraFrustum'
+    | 'renderBackgroundPass'
     | 'advancePlaybackFrame'
     | 'updateControllerRays'
     | 'controllersRef'

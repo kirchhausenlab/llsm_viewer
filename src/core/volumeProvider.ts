@@ -49,6 +49,7 @@ export type VolumePrefetchOptions = {
   signal?: AbortSignal | null;
   maxConcurrentLayerLoads?: number;
   scaleLevels?: number[];
+  includeHistogram?: boolean;
 };
 
 export type VolumeProviderStats = {
@@ -193,7 +194,12 @@ export type VolumeProvider = {
   getVolume(
     layerKey: string,
     timepoint: number,
-    options?: { scaleLevel?: number; signal?: AbortSignal | null; recordLookup?: boolean }
+    options?: {
+      scaleLevel?: number;
+      signal?: AbortSignal | null;
+      recordLookup?: boolean;
+      includeHistogram?: boolean;
+    }
   ): Promise<NormalizedVolume>;
   getBrickPageTable?(
     layerKey: string,
@@ -237,6 +243,7 @@ type CachedVolumeEntry = {
   timepoint: number;
   scaleLevel: number;
   volume: NormalizedVolume | null;
+  histogramIncluded: boolean;
   inFlight: Promise<NormalizedVolume> | null;
   inFlightAbortController: AbortController | null;
   inFlightWaiters: number;
@@ -248,6 +255,14 @@ type CachedChunkEntry = {
   bytes: Uint8Array | null;
   byteLength: number;
   inFlight: Promise<Uint8Array> | null;
+};
+
+type CachedRawShardEntry = {
+  key: string;
+  bytes: Uint8Array | null;
+  inFlight: Promise<Uint8Array> | null;
+  inFlightAbortController: AbortController | null;
+  inFlightWaiters: number;
 };
 
 type CachedBrickPageTableEntry = {
@@ -308,6 +323,7 @@ export const DEFAULT_MAX_CACHED_VOLUMES = 12;
 export const DEFAULT_MAX_CACHED_CHUNK_BYTES = 128 * 1024 * 1024;
 export const DEFAULT_MAX_CONCURRENT_CHUNK_READS = 6;
 export const DEFAULT_MAX_CONCURRENT_PREFETCH_LOADS = 2;
+const FULL_SHARD_REUSE_MAX_BYTES = 16 * 1024 * 1024;
 
 function createCacheKey(layerKey: string, timepoint: number, scaleLevel: number): string {
   return `${layerKey}:${timepoint}:s${scaleLevel}`;
@@ -997,6 +1013,7 @@ export function createVolumeProvider({
 
   const cache = new Map<string, CachedVolumeEntry>();
   const chunkCache = new Map<string, CachedChunkEntry>();
+  const rawShardCache = new Map<string, CachedRawShardEntry>();
   const shardEntryIndexCache = new Map<string, ShardEntryIndex>();
   const brickPageTableCache = new Map<string, CachedBrickPageTableEntry>();
   const brickAtlasCache = new Map<string, CachedBrickAtlasEntry>();
@@ -1416,6 +1433,58 @@ export function createVolumeProvider({
     );
   };
 
+  const shouldReuseWholeShardBytes = (descriptor: ZarrArrayDescriptor): boolean =>
+    Boolean(
+      descriptor.sharding?.enabled &&
+      Number.isFinite(descriptor.sharding.estimatedShardBytes) &&
+      (descriptor.sharding.estimatedShardBytes ?? Number.POSITIVE_INFINITY) <= FULL_SHARD_REUSE_MAX_BYTES
+    );
+
+  const readShardBytesWithCache = async (
+    shardPath: string,
+    signal: AbortSignal | null
+  ): Promise<{ bytes: Uint8Array; bytesRead: number }> => {
+    const existing = rawShardCache.get(shardPath);
+    if (existing) {
+      if (existing.bytes) {
+        return { bytes: existing.bytes, bytesRead: 0 };
+      }
+      if (existing.inFlight) {
+        return { bytes: await awaitAbortableInFlight(existing, existing.inFlight, signal), bytesRead: 0 };
+      }
+      rawShardCache.delete(shardPath);
+    }
+
+    const entry: CachedRawShardEntry = {
+      key: shardPath,
+      bytes: null,
+      inFlight: null,
+      inFlightAbortController: null,
+      inFlightWaiters: 0,
+    };
+    const inFlightAbortController = new AbortController();
+    entry.inFlightAbortController = inFlightAbortController;
+    const promise = storage.readFile(shardPath)
+      .then((bytes) => {
+        entry.bytes = bytes;
+        entry.inFlight = null;
+        entry.inFlightAbortController = null;
+        entry.inFlightWaiters = 0;
+        return bytes;
+      })
+      .catch((error) => {
+        entry.inFlight = null;
+        entry.inFlightAbortController = null;
+        entry.inFlightWaiters = 0;
+        rawShardCache.delete(shardPath);
+        throw error;
+      });
+    entry.inFlight = promise;
+    rawShardCache.set(shardPath, entry);
+    const bytes = await awaitAbortableInFlight(entry, promise, signal);
+    return { bytes, bytesRead: bytes.byteLength };
+  };
+
   const readChunkWithCache = async (
     descriptor: ZarrArrayDescriptor,
     chunkCoords: number[],
@@ -1458,6 +1527,47 @@ export function createVolumeProvider({
     let storageBytesRead = 0;
     const promise = (async () => {
       stats.chunkReadsStarted += 1;
+      if (
+        shardLocation &&
+        shouldReuseWholeShardBytes(descriptor) &&
+        typeof storage.readFileRange !== 'function'
+      ) {
+        assertShardFallbackIsSafe(descriptor, chunkPath);
+        const { bytes: rawShardBytes, bytesRead: shardBytesRead } = await readShardBytesWithCache(chunkPath, signal);
+        storageBytesRead += shardBytesRead;
+        let shardEntryIndex = shardEntryIndexCache.get(chunkPath);
+        if (!shardEntryIndex) {
+          shardEntryIndex = parseShardEntryIndex(rawShardBytes);
+          shardEntryIndexCache.set(chunkPath, shardEntryIndex);
+        }
+        const targetKey = createShardEntryKey(shardLocation.localChunkCoords);
+        const targetEntry = shardEntryIndex.entries.get(targetKey);
+        if (!targetEntry) {
+          throw new Error(`Shard entry not found for local chunk ${targetKey}.`);
+        }
+        const byteStart = shardEntryIndex.payloadStart + targetEntry.offset;
+        const byteEnd = byteStart + targetEntry.length;
+        if (byteEnd > rawShardBytes.byteLength) {
+          throw new Error(`Shard entry range for ${targetKey} exceeds shard payload bounds.`);
+        }
+        const workerDecodedBytes = await decodeShardSliceInWorker({
+          shardBytes: rawShardBytes,
+          byteStart,
+          byteEnd
+        });
+        const decodedChunkBytes =
+          workerDecodedBytes ??
+          decodeShardEntryFromIndex({
+            shardBytes: rawShardBytes,
+            rank: descriptor.shape.length,
+            localChunkCoords: shardLocation.localChunkCoords,
+            entryIndex: shardEntryIndex
+          });
+        stats.chunkReadsCompleted += 1;
+        stats.chunkBytesRead += storageBytesRead;
+        return decodedChunkBytes;
+      }
+
       if (shardLocation && typeof storage.readFileRange === 'function') {
         let shardEntryIndex = shardEntryIndexCache.get(chunkPath);
         if (!shardEntryIndex) {
@@ -1567,7 +1677,8 @@ export function createVolumeProvider({
     layer: LayerIndexEntry,
     timepoint: number,
     requestedScaleLevel: number,
-    signal: AbortSignal | null
+    signal: AbortSignal | null,
+    options?: { includeHistogram?: boolean }
   ): Promise<NormalizedVolume> => {
     throwIfAborted(signal);
     stats.loadsStarted += 1;
@@ -1577,6 +1688,7 @@ export function createVolumeProvider({
     }
 
     const scale = resolveScaleEntry(layer, requestedScaleLevel);
+    const includeHistogram = options?.includeHistogram !== false;
 
     const dataDescriptor = scale.zarr.data;
     if (layer.isSegmentation) {
@@ -1663,7 +1775,7 @@ export function createVolumeProvider({
       };
     }
 
-    const histogramDescriptor = scale.zarr.histogram;
+    const histogramDescriptor = includeHistogram ? scale.zarr.histogram : undefined;
     const histogram = histogramDescriptor
       ? await (async () => {
           const {
@@ -1701,8 +1813,8 @@ export function createVolumeProvider({
     stats.lastLoadMs = loadMs;
     stats.loadsCompleted += 1;
 
-    return {
-      kind: 'intensity',
+    const result = {
+      kind: 'intensity' as const,
       width: scale.width,
       height: scale.height,
       depth: scale.depth,
@@ -1720,6 +1832,7 @@ export function createVolumeProvider({
         throw new Error(`Layer ${layer.layerKey} is missing normalization.max metadata.`);
       })()
     };
+    return result;
   };
 
   const loadBrickPageTable = async (
@@ -1964,13 +2077,13 @@ export function createVolumeProvider({
       }
     }
 
-    return {
+    const result = {
       layerKey: layer.layerKey,
       timepoint,
       scaleLevel: scale.level,
       gridShape: expectedGridShape,
-      chunkShape: [chunkDepth, chunkHeight, chunkWidth],
-      volumeShape: [scale.depth, scale.height, scale.width],
+      chunkShape: [chunkDepth, chunkHeight, chunkWidth] as [number, number, number],
+      volumeShape: [scale.depth, scale.height, scale.width] as [number, number, number],
       skipHierarchy: {
         levels: effectiveSkipHierarchyLevels
       },
@@ -1981,17 +2094,24 @@ export function createVolumeProvider({
       occupiedBrickCount,
       subcell
     };
+    return result;
   };
 
   const getVolume = async (
     layerKey: string,
     timepoint: number,
-    options?: { scaleLevel?: number; signal?: AbortSignal | null; recordLookup?: boolean }
+    options?: {
+      scaleLevel?: number;
+      signal?: AbortSignal | null;
+      recordLookup?: boolean;
+      includeHistogram?: boolean;
+    }
   ): Promise<NormalizedVolume> => {
     const signal = options?.signal ?? null;
     // Prefetch warmups call with recordLookup=false so miss-rate diagnostics
     // track interactive lookups instead of background cache fills.
     const recordLookup = options?.recordLookup ?? true;
+    const includeHistogram = options?.includeHistogram !== false;
     throwIfAborted(signal);
     stats.getVolumeCalls += 1;
     if (!isValidTimepoint(timepoint)) {
@@ -2009,6 +2129,42 @@ export function createVolumeProvider({
     if (existing) {
       touch(key, existing);
       if (existing.volume) {
+        if (
+          includeHistogram &&
+          !existing.histogramIncluded &&
+          existing.volume.kind === 'intensity' &&
+          scale.zarr.histogram
+        ) {
+          const inFlightAbortController = new AbortController();
+          existing.inFlightAbortController = inFlightAbortController;
+          const promise = loadVolume(layer, timepoint, scale.level, inFlightAbortController.signal, {
+            includeHistogram: true,
+          })
+            .then((volume) => {
+              existing.volume = volume;
+              existing.histogramIncluded = volume.kind === 'segmentation' || Boolean(volume.histogram);
+              existing.inFlight = null;
+              existing.inFlightAbortController = null;
+              existing.inFlightWaiters = 0;
+              touch(key, existing);
+              evictIfNeeded();
+              return volume;
+            })
+            .catch((error) => {
+              if (!isAbortLikeError(error)) {
+                stats.loadsFailed += 1;
+              }
+              existing.inFlight = null;
+              existing.inFlightAbortController = null;
+              existing.inFlightWaiters = 0;
+              throw error;
+            });
+          existing.inFlight = promise;
+          if (recordLookup) {
+            stats.cacheHitInFlight += 1;
+          }
+          return awaitAbortableInFlight(existing, promise, signal);
+        }
         if (recordLookup) {
           stats.cacheHits += 1;
         }
@@ -2031,6 +2187,7 @@ export function createVolumeProvider({
       timepoint,
       scaleLevel: scale.level,
       volume: null,
+      histogramIncluded: false,
       inFlight: null,
       inFlightAbortController: null,
       inFlightWaiters: 0
@@ -2038,9 +2195,12 @@ export function createVolumeProvider({
     const inFlightAbortController = new AbortController();
     entry.inFlightAbortController = inFlightAbortController;
 
-    const promise = loadVolume(layer, timepoint, scale.level, inFlightAbortController.signal)
+    const promise = loadVolume(layer, timepoint, scale.level, inFlightAbortController.signal, {
+      includeHistogram,
+    })
       .then((volume) => {
         entry.volume = volume;
+        entry.histogramIncluded = volume.kind === 'segmentation' || Boolean(volume.histogram);
         entry.inFlight = null;
         entry.inFlightAbortController = null;
         entry.inFlightWaiters = 0;
@@ -2705,6 +2865,7 @@ export function createVolumeProvider({
     const policy: VolumePrefetchPolicy = options?.policy ?? 'missing-only';
     const reason: VolumePrefetchReason = options?.reason ?? 'manual';
     const signal = options?.signal ?? null;
+    const includeHistogram = options?.includeHistogram !== false;
     const requestedScaleLevels = normalizeScaleLevelSet(options?.scaleLevels);
     const maxConcurrentLayerLoads = Number.isFinite(options?.maxConcurrentLayerLoads)
       ? Math.max(1, Math.floor(options?.maxConcurrentLayerLoads ?? maxConcurrentPrefetchLoads))
@@ -2789,7 +2950,12 @@ export function createVolumeProvider({
 
           stats.prefetchLoadsStarted += 1;
           try {
-            await getVolume(layerKey, timepoint, { scaleLevel, signal, recordLookup: false });
+            await getVolume(layerKey, timepoint, {
+              scaleLevel,
+              signal,
+              recordLookup: false,
+              includeHistogram,
+            });
             stats.prefetchLoadsCompleted += 1;
           } catch (error) {
             if (requestAborted || signal?.aborted || isAbortLikeError(error)) {
@@ -2847,9 +3013,15 @@ export function createVolumeProvider({
       entry.inFlightAbortController = null;
       entry.inFlightWaiters = 0;
     }
+    for (const entry of rawShardCache.values()) {
+      entry.inFlightAbortController?.abort('Raw shard cache cleared.');
+      entry.inFlightAbortController = null;
+      entry.inFlightWaiters = 0;
+    }
     closeRuntimeShardDecodeWorker();
     cache.clear();
     chunkCache.clear();
+    rawShardCache.clear();
     shardEntryIndexCache.clear();
     brickPageTableCache.clear();
     brickAtlasCache.clear();

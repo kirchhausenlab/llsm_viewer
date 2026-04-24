@@ -30,6 +30,7 @@ type CreateLodPolicyControllerOptions = {
   layerScalesByLevelByKey: Map<string, Map<number, PreprocessedLayerScaleManifestEntry>>;
   isPerformanceMode: boolean;
   isPlaying: boolean;
+  isPlaybackStartPending: boolean;
   viewerCameraSample: ViewerCameraNavigationSample | null;
   lod0Flags: {
     adaptiveScaleSelector: boolean;
@@ -47,6 +48,7 @@ export function createLodPolicyController({
   layerScalesByLevelByKey,
   isPerformanceMode,
   isPlaying,
+  isPlaybackStartPending,
   viewerCameraSample,
   lod0Flags,
   layerPolicyStateByLayerKeyRef,
@@ -186,13 +188,14 @@ export function createLodPolicyController({
     const levels = layerScaleLevelsByKey.get(layerKey) ?? [0];
     const finestLevel = levels[0] ?? 0;
     const previousState = layerPolicyStateByLayerKeyRef.current.get(layerKey) ?? null;
+    const isPlaybackScaleModeActive = isPlaying || isPlaybackStartPending;
     const fallbackBaseDesired = applyScaleSelectionModeOverrides({
       levels,
       resolvedScaleLevel: finestLevel,
-      isPlaying,
+      isPlaying: isPlaybackScaleModeActive,
       isPerformanceMode: performanceMode
     });
-    if (isPlaying) {
+    if (isPlaybackScaleModeActive) {
       return fallbackBaseDesired;
     }
     if (!lod0Flags.adaptiveScaleSelector || adaptivePolicyDisabledRef.current) {
@@ -231,7 +234,7 @@ export function createLodPolicyController({
     projectedChoice = applyScaleSelectionModeOverrides({
       levels,
       resolvedScaleLevel: projectedChoice,
-      isPlaying,
+      isPlaying: isPlaybackScaleModeActive,
       isPerformanceMode: performanceMode
     });
     const fallbackIndex = Math.max(

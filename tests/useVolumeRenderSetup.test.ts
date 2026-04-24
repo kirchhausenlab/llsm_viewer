@@ -2,6 +2,9 @@ import assert from 'node:assert/strict';
 import * as THREE from 'three';
 
 import {
+  applyDesktopViewState,
+  applyOrthographicZoomBounds,
+  captureDesktopViewState,
   computeOrthographicVisibleHeight,
   computePerspectiveVisibleHeight,
   computeProjectedPixelsPerUnit,
@@ -59,4 +62,42 @@ import {
   const orthographicPixelsPerUnit = computeProjectedPixelsPerUnit(orthographicCamera, renderer, target);
   assert.ok(perspectivePixelsPerUnit > 0);
   assert.ok(orthographicPixelsPerUnit > perspectivePixelsPerUnit);
+})();
+
+(() => {
+  const target = new THREE.Vector3(0, 0, 0);
+  const controls = {
+    target: new THREE.Vector3(),
+    minZoom: 0,
+    maxZoom: Number.POSITIVE_INFINITY,
+    update: () => {},
+  };
+  const referenceZoom = 4;
+  const minZoom = applyOrthographicZoomBounds(controls, referenceZoom);
+
+  const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.1, 1000);
+  camera.position.set(0, 0, 2.5);
+  camera.lookAt(target);
+  camera.zoom = minZoom * 0.1;
+  camera.updateProjectionMatrix();
+  camera.updateMatrixWorld(true);
+
+  const capturedState = captureDesktopViewState(camera, target, 'orthographic', controls);
+  assert.ok(Math.abs(capturedState.zoom - minZoom) < 1e-9);
+
+  applyDesktopViewState(
+    camera,
+    controls as any,
+    {
+      projectionMode: 'orthographic',
+      position: camera.position.clone(),
+      target: target.clone(),
+      up: camera.up.clone(),
+      zoom: minZoom * 0.1,
+      distanceToTarget: camera.position.distanceTo(target),
+    },
+    800,
+    800,
+  );
+  assert.ok(Math.abs(camera.zoom - minZoom) < 1e-9);
 })();

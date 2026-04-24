@@ -26,6 +26,11 @@ type UseVrHudInteractionsParams = {
   onLayerContrastChange?: (layerKey: string, value: number) => void;
   onLayerBrightnessChange?: (layerKey: string, value: number) => void;
   onLayerOffsetChange?: (layerKey: string, axis: 'x' | 'y', value: number) => void;
+  onLayerBlDensityScaleChange?: (layerKey: string, value: number) => void;
+  onLayerBlBackgroundCutoffChange?: (layerKey: string, value: number) => void;
+  onLayerBlOpacityScaleChange?: (layerKey: string, value: number) => void;
+  onLayerBlEarlyExitAlphaChange?: (layerKey: string, value: number) => void;
+  onLayerMipEarlyExitThresholdChange?: (layerKey: string, value: number) => void;
   onTrackOpacityChange?: (channelId: string, value: number) => void;
   onTrackLineWidthChange?: (channelId: string, value: number) => void;
 };
@@ -58,6 +63,11 @@ export function useVrHudInteractions({
   onLayerContrastChange,
   onLayerBrightnessChange,
   onLayerOffsetChange,
+  onLayerBlDensityScaleChange,
+  onLayerBlBackgroundCutoffChange,
+  onLayerBlOpacityScaleChange,
+  onLayerBlEarlyExitAlphaChange,
+  onLayerMipEarlyExitThresholdChange,
   onTrackOpacityChange,
   onTrackLineWidthChange,
 }: UseVrHudInteractionsParams): UseVrHudInteractionsResult {
@@ -101,6 +111,18 @@ export function useVrHudInteractions({
       if (!layerState) {
         return;
       }
+
+      const applyGlobalLayerSetting = (
+        updateLocalState: (
+          layerSettings: VrChannelsState['channels'][number]['layers'][number]['settings'],
+        ) => void,
+      ) => {
+        for (const nextChannel of state.channels) {
+          for (const nextLayer of nextChannel.layers) {
+            updateLocalState(nextLayer.settings);
+          }
+        }
+      };
 
       if (region.sliderKey === 'windowMin') {
         const updated = brightnessContrastModel.applyWindow(
@@ -156,6 +178,31 @@ export function useVrHudInteractions({
       } else if (region.sliderKey === 'yOffset') {
         layerState.settings.yOffset = snappedValue;
         onLayerOffsetChange?.(layerKey, 'y', snappedValue);
+      } else if (region.sliderKey === 'mipEarlyExitThreshold') {
+        applyGlobalLayerSetting((nextSettings) => {
+          nextSettings.mipEarlyExitThreshold = snappedValue;
+        });
+        onLayerMipEarlyExitThresholdChange?.(layerKey, snappedValue);
+      } else if (region.sliderKey === 'blDensityScale') {
+        applyGlobalLayerSetting((nextSettings) => {
+          nextSettings.blDensityScale = snappedValue;
+        });
+        onLayerBlDensityScaleChange?.(layerKey, snappedValue);
+      } else if (region.sliderKey === 'blBackgroundCutoff') {
+        applyGlobalLayerSetting((nextSettings) => {
+          nextSettings.blBackgroundCutoff = snappedValue;
+        });
+        onLayerBlBackgroundCutoffChange?.(layerKey, snappedValue);
+      } else if (region.sliderKey === 'blOpacityScale') {
+        applyGlobalLayerSetting((nextSettings) => {
+          nextSettings.blOpacityScale = snappedValue;
+        });
+        onLayerBlOpacityScaleChange?.(layerKey, snappedValue);
+      } else if (region.sliderKey === 'blEarlyExitAlpha') {
+        applyGlobalLayerSetting((nextSettings) => {
+          nextSettings.blEarlyExitAlpha = snappedValue;
+        });
+        onLayerBlEarlyExitAlphaChange?.(layerKey, snappedValue);
       }
 
       renderVrChannelsHud(hud, state);
@@ -169,6 +216,11 @@ export function useVrHudInteractions({
       onLayerContrastChange,
       onLayerBrightnessChange,
       onLayerOffsetChange,
+      onLayerBlDensityScaleChange,
+      onLayerBlBackgroundCutoffChange,
+      onLayerBlOpacityScaleChange,
+      onLayerBlEarlyExitAlphaChange,
+      onLayerMipEarlyExitThresholdChange,
       renderVrChannelsHud,
     ],
   );

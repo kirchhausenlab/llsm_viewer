@@ -4,7 +4,9 @@ import type BrightnessContrastHistogram from '../BrightnessContrastHistogram';
 import type FloatingWindow from '../../widgets/FloatingWindow';
 import type PlotSettingsWindow from '../../widgets/PlotSettingsWindow';
 import type SelectedTracksWindow from '../../widgets/SelectedTracksWindow';
-import type { VolumeViewerProps } from '../VolumeViewer.types';
+import type {
+  VolumeViewerProps,
+} from '../VolumeViewer.types';
 import type { LoadedDatasetLayer } from '../../../hooks/dataset';
 import type { NormalizedVolume } from '../../../core/volumeProcessing';
 import type { VolumeBrickAtlas } from '../../../core/volumeProvider';
@@ -67,6 +69,7 @@ export type TopMenuProps = TopMenuChromeProps &
     onOpenChannelsWindow: () => void;
     onOpenCameraWindow: () => void;
     onOpenCameraSettingsWindow: () => void;
+    onOpenBackgroundsWindow: () => void;
     onOpenPropsWindow: () => void;
     onOpenPaintbrush: () => void;
     onOpenDrawRoiWindow: () => void;
@@ -88,6 +91,7 @@ export type TopMenuProps = TopMenuChromeProps &
     vrButtonLabel: string;
     volumeTimepointCount: number;
     isPlaying: boolean;
+    isPlaybackStartPending: boolean;
     selectedIndex: number;
     onTimeIndexChange: (index: number) => void;
     playbackDisabled: boolean;
@@ -128,6 +132,10 @@ export type RecordingStatus =
 export type PlaybackControlsProps = {
   fps: number;
   onFpsChange: (value: number) => void;
+  playbackBufferFrames: number;
+  onPlaybackBufferFramesChange: (value: number) => void;
+  isPlaybackStartPending: boolean;
+  onBufferedPlaybackStart: () => void;
   zSliderValue?: number;
   zSliderMax?: number;
   onZSliderChange?: (value: number) => void;
@@ -314,6 +322,18 @@ export type HoverSettingsProps = {
   onTypeChange: (type: HoverType) => void;
   onStrengthChange: (value: number) => void;
   onRadiusChange: (value: number) => void;
+};
+
+export type BackgroundSettingsProps = {
+  backgroundColor: string;
+  floorEnabled: boolean;
+  floorColor: string;
+  isFloorAvailable: boolean;
+  isResetDisabled: boolean;
+  onResetToDefault: () => void;
+  onBackgroundColorChange: (color: string) => void;
+  onFloorEnabledChange: (enabled: boolean) => void;
+  onFloorColorChange: (color: string) => void;
 };
 
 export type ViewerShellProps = {

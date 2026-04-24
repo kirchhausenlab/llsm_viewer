@@ -19,7 +19,6 @@ export const MAX_ADAPTIVE_DOWNSAMPLE_MULTIPLIER = 8;
 export const MAX_ADAPTIVE_DEMOTION_STEPS = 4;
 export const CAMERA_PROJECTED_PIXELS_REFERENCE_DISTANCE = 1.2;
 export const CAMERA_PROJECTED_PIXELS_AT_REFERENCE = 1.4;
-export const PLAYBACK_WARMUP_SLOT_COUNT = 3;
 export const HTTP_INITIAL_LAUNCH_MAX_DATA_CHUNKS = 32;
 
 export type LoadedLayerResources = readonly [
@@ -292,30 +291,4 @@ export function isPromotionReadyForResource({
     return isIntensityVolume(volume) ? volume.normalized.byteLength > 0 : volume.labels.byteLength > 0;
   }
   return pageTable ? pageTable.occupiedBrickCount > 0 : false;
-}
-
-export function buildLayerResidencyModeMap({
-  channelLayersMap,
-  preferBrickResidency,
-  canUseAtlas,
-  forceVolumeMode = false,
-}: {
-  channelLayersMap: Map<string, LoadedDatasetLayer[]>;
-  preferBrickResidency: boolean;
-  canUseAtlas: boolean;
-  forceVolumeMode?: boolean;
-}): Map<string, 'volume' | 'atlas'> {
-  const modeByKey = new Map<string, 'volume' | 'atlas'>();
-  for (const layers of channelLayersMap.values()) {
-    for (const layer of layers) {
-      const useAtlas =
-        !forceVolumeMode &&
-        preferBrickResidency &&
-        canUseAtlas &&
-        layer.depth > 1 &&
-        !layer.isSegmentation;
-      modeByKey.set(layer.key, useAtlas ? 'atlas' : 'volume');
-    }
-  }
-  return modeByKey;
 }

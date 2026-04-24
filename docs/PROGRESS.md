@@ -9,6 +9,17 @@
 - Viewer, route, VR, and preprocessing hotspots have been decomposed into smaller modules to reduce coupling.
 
 ## Most recent high-signal updates
+- Locked in the 3D hover intensity contract around discrete voxel readout:
+  - documented the invariant in `docs/hover-invariants.md`
+  - added a pointer from `docs/AGENTS.md` so future hover work is expected to consult that contract
+  - the contract is now explicit: once the hover position is resolved, the displayed intensity must come from exactly one voxel matching the displayed hover coordinates, not a trilinear blend
+- Hardened future-agent guidance around orthographic/playback regressions:
+  - added a `Critical runtime invariants` section to `docs/AGENTS.md`
+  - expanded `docs/playback-invariants.md` with authoritative-progress and directory-range-read rules
+  - recorded new decision entries in:
+    - `docs/orthographic-projection-mode/DECISIONS.md`
+    - `docs/projection-aware-residency/DECISIONS.md`
+  - goal: prevent future refactors from reintroducing the same orthographic projection-state and directory-backed playback failures
 - Extended playback/runtime volume selection and metadata precompute to reduce non-visible work during movie playback:
   - direct-volume sampling is now allowed for fitting non-L0 scales, so dense playback `L1+` frames can bypass the heavier atlas path when they fit the existing volume heuristics
   - atlas aux textures now reuse their existing GPU textures when the page table and residency mapping have not changed, and playback warmup readiness is based on zero pending residency work plus aux-texture completeness instead of requiring full residency

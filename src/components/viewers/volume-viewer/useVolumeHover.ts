@@ -4,7 +4,12 @@ import * as THREE from 'three';
 
 import type { DesktopViewerCamera } from '../../../hooks/useVolumeRenderSetup';
 import { formatChannelValuesDetailed } from '../../../shared/utils/intensityFormatting';
-import { clampValue, sampleRawValuesAtPosition, sampleSegmentationLabel } from '../../../shared/utils/hoverSampling';
+import {
+  clampValue,
+  mapDisplayCoordinateToDataCoordinate,
+  sampleRawValuesAtVoxel,
+  sampleSegmentationLabel,
+} from '../../../shared/utils/hoverSampling';
 import type { NormalizedVolume } from '../../../core/volumeProcessing';
 import type { VolumeBrickPageTable } from '../../../core/volumeProvider';
 import type { HoveredVoxelInfo } from '../../../types/hover';
@@ -35,6 +40,7 @@ import {
 import { resolveVolumeHoverLayerSelection } from './volumeHoverTargetLayer';
 import {
   adjustWindowedIntensity,
+  sampleBrickAtlasAtVoxel,
   computeVolumeLuminance,
   sampleBrickAtlasAtNormalizedPosition,
   sampleBrickAtlasLabelAtNormalizedPosition,
@@ -113,6 +119,36 @@ export function resolveHoverSpaceDimensions({
       targetLayer?.fullResolutionDepth ?? 0,
       sampleDepth,
     ),
+  };
+}
+
+function resolveLayerDataDimensions({
+  layer,
+  resource,
+}: {
+  layer: ViewerLayer | null;
+  resource: VolumeResources | null;
+}): { width: number; height: number; depth: number } {
+  const atlasDepth =
+    layer?.brickAtlas?.pageTable?.volumeShape[0] ??
+    layer?.brickPageTable?.volumeShape[0] ??
+    resource?.brickAtlasSourcePageTable?.volumeShape[0] ??
+    0;
+  const atlasHeight =
+    layer?.brickAtlas?.pageTable?.volumeShape[1] ??
+    layer?.brickPageTable?.volumeShape[1] ??
+    resource?.brickAtlasSourcePageTable?.volumeShape[1] ??
+    0;
+  const atlasWidth =
+    layer?.brickAtlas?.pageTable?.volumeShape[2] ??
+    layer?.brickPageTable?.volumeShape[2] ??
+    resource?.brickAtlasSourcePageTable?.volumeShape[2] ??
+    0;
+
+  return {
+    width: firstPositiveDimension(layer?.volume?.width ?? 0, atlasWidth, layer?.fullResolutionWidth ?? 0),
+    height: firstPositiveDimension(layer?.volume?.height ?? 0, atlasHeight, layer?.fullResolutionHeight ?? 0),
+    depth: firstPositiveDimension(layer?.volume?.depth ?? 0, atlasDepth, layer?.fullResolutionDepth ?? 0),
   };
 }
 
@@ -564,6 +600,12 @@ export function useVolumeHover({
         clampValue(hoverMaxPosition.z, 0, 1),
       );
 
+      const hoveredCoordinates = {
+        x: sliceCoordinateOverride?.x ?? Math.round(clampValue(hoverMaxPosition.x * targetWidth, 0, targetWidth - 1)),
+        y: sliceCoordinateOverride?.y ?? Math.round(clampValue(hoverMaxPosition.y * targetHeight, 0, targetHeight - 1)),
+        z: sliceCoordinateOverride?.z ?? Math.round(clampValue(hoverMaxPosition.z * targetDepth, 0, targetDepth - 1)),
+      };
+
       const hoveredSegmentationLabel =
         targetLayer.isSegmentation
           ? (
@@ -586,6 +628,16 @@ export function useVolumeHover({
 
       for (const layer of displayLayers) {
         const layerVolume = layer.volume;
+        const layerResource = resourcesRef.current.get(layer.key) ?? null;
+        const layerDataDimensions = resolveLayerDataDimensions({
+          layer,
+          resource: layerResource,
+        });
+        const layerVoxel = {
+          x: mapDisplayCoordinateToDataCoordinate(hoveredCoordinates.x, targetWidth, layerDataDimensions.width),
+          y: mapDisplayCoordinateToDataCoordinate(hoveredCoordinates.y, targetHeight, layerDataDimensions.height),
+          z: mapDisplayCoordinateToDataCoordinate(hoveredCoordinates.z, targetDepth, layerDataDimensions.depth),
+        };
         let displayValues: number[] | null = null;
         let displayType: NormalizedVolume['dataType'] | null = null;
 
@@ -596,7 +648,6 @@ export function useVolumeHover({
               : layerVolume
                 ? sampleSegmentationLabel(layerVolume, hoverMaxPosition)
                 : (() => {
-                    const layerResource = resourcesRef.current.get(layer.key) ?? null;
                     const layerAtlasPageTable =
                       layer.brickAtlas?.pageTable ??
                       layer.brickPageTable ??
@@ -630,14 +681,10 @@ export function useVolumeHover({
         }
 
         if (!displayValues) {
-          if (layer.key === targetLayer.key) {
-            displayValues = maxRawValues;
-            displayType = targetDataType;
-          } else if (layerVolume) {
-            displayValues = sampleRawValuesAtPosition(layerVolume, hoverMaxPosition);
+          if (layerVolume) {
+            displayValues = sampleRawValuesAtVoxel(layerVolume, layerVoxel);
             displayType = layerVolume.dataType;
           } else {
-            const layerResource = resourcesRef.current.get(layer.key) ?? null;
             const layerAtlasPageTable =
               layer.brickAtlas?.pageTable ??
               layer.brickPageTable ??
@@ -649,7 +696,7 @@ export function useVolumeHover({
               null;
             const layerAtlasTextureFormat = layer.brickAtlas?.textureFormat ?? null;
             if (layerAtlasPageTable && layerAtlasData && layerAtlasTextureFormat) {
-              const atlasSample = sampleBrickAtlasAtNormalizedPosition(
+              const atlasSample = sampleBrickAtlasAtVoxel(
                 {
                   kind: (layer.isSegmentation ? 'segmentation' : 'intensity') as 'segmentation' | 'intensity',
                   pageTable: layerAtlasPageTable,
@@ -663,7 +710,9 @@ export function useVolumeHover({
                   min: layer.min ?? targetMin,
                   max: layer.max ?? targetMax,
                 },
-                hoverMaxPosition
+                layerVoxel.x,
+                layerVoxel.y,
+                layerVoxel.z,
               );
               displayValues = atlasSample.rawValues;
               displayType = (layer.dataType ?? targetDataType) as NormalizedVolume['dataType'];
@@ -713,11 +762,7 @@ export function useVolumeHover({
           channelLabel: entry.channelLabel,
           color: entry.color
         })),
-        coordinates: {
-          x: sliceCoordinateOverride?.x ?? Math.round(clampValue(hoverMaxPosition.x * targetWidth, 0, targetWidth - 1)),
-          y: sliceCoordinateOverride?.y ?? Math.round(clampValue(hoverMaxPosition.y * targetHeight, 0, targetHeight - 1)),
-          z: sliceCoordinateOverride?.z ?? Math.round(clampValue(hoverMaxPosition.z * targetDepth, 0, targetDepth - 1))
-        }
+        coordinates: hoveredCoordinates
       } satisfies HoveredVoxelInfo;
 
       emitHoverVoxel(hoveredVoxel);

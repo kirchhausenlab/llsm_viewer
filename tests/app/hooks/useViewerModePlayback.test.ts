@@ -14,6 +14,8 @@ console.log('Starting useViewerModePlayback tests');
   };
 
   const modeChanges: string[] = [];
+  let playbackStartRequests = 0;
+  let playbackStartCancels = 0;
 
   const hook = renderHook(() =>
     useViewerModePlayback({
@@ -21,20 +23,44 @@ console.log('Starting useViewerModePlayback tests');
       onBeforeEnterVr: () => {},
       onViewerModeChange: (mode) => modeChanges.push(mode),
       volumeTimepointCount: 2,
-      isLoading: false
+      isLoading: false,
+      bufferBeforePlayDefault: true,
+      onPlaybackStartRequest: () => {
+        playbackStartRequests += 1;
+      },
+      onPlaybackStartCancel: () => {
+        playbackStartCancels += 1;
+      }
     })
   );
 
   const { act } = hook;
 
   act(() => hook.result.handleTogglePlayback());
-  assert.equal(hook.result.playback.isPlaying, true);
+  assert.equal(hook.result.playback.isPlaying, false);
+  assert.equal(playbackStartRequests, 1);
 
   assert.equal(hook.result.viewerControls.viewerMode, '3d');
   assert.equal(modeChanges[0], '3d');
 
   act(() => hook.result.handleTimeIndexChange(5));
   assert.equal(hook.result.playback.selectedIndex, 1);
+
+  const pendingHook = renderHook(() =>
+    useViewerModePlayback({
+      is3dViewerAvailable: true,
+      onBeforeEnterVr: () => {},
+      volumeTimepointCount: 2,
+      isLoading: false,
+      isPlaybackStartPending: true,
+      bufferBeforePlayDefault: true,
+      onPlaybackStartCancel: () => {
+        playbackStartCancels += 1;
+      }
+    })
+  );
+  pendingHook.act(() => pendingHook.result.handleTogglePlayback());
+  assert.equal(playbackStartCancels >= 1, true);
 
   (globalThis as any).window = previousWindow;
 })();

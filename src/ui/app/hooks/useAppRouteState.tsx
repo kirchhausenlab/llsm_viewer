@@ -55,6 +55,8 @@ import {
   collectInitialHttpLaunchTrackedTargets
 } from './initialHttpLaunch';
 import { getTrackPlaybackIndexWindow, snapTimeIndexToWindow } from '../../../shared/utils';
+import { clampPlaybackBufferFrames, DEFAULT_PLAYBACK_BUFFER_FRAMES } from '../../../shared/utils/viewerPlayback';
+import { getNextVrCompatibleRenderStyle } from '../../../shared/utils/vrRenderStyle';
 import type { AppRouteState } from '../../contracts/routes';
 
 function selectDeterministicId(values: ReadonlyArray<string>): string | null {
@@ -241,6 +243,8 @@ export function useAppRouteState(): AppRouteState {
   const [isInitialHttpLaunchLoading, setIsInitialHttpLaunchLoading] = useState(false);
   const playback = useViewerPlayback();
   const { selectedIndex, setSelectedIndex, isPlaying, fps, setFps, stopPlayback, setIsPlaying } = playback;
+  const [playbackBufferFrames, setPlaybackBufferFrames] = useState(DEFAULT_PLAYBACK_BUFFER_FRAMES);
+  const [isPlaybackStartPending, setIsPlaybackStartPending] = useState(false);
   const [zSliderValue, setZSliderValue] = useState(1);
   const is3dViewerAvailable = true;
   const preferBrickResidency = true;
@@ -654,6 +658,7 @@ export function useAppRouteState(): AppRouteState {
   }, [resolvedSelectedIndex, volumeTimepointCount]);
 
   const {
+    currentLayerResidencyDecisions,
     currentLayerVolumes,
     currentLayerPageTables,
     currentLayerBrickAtlases,
@@ -668,6 +673,7 @@ export function useAppRouteState(): AppRouteState {
     lodPolicyDiagnostics,
     setCurrentLayerVolumes,
     playbackLayerKeys,
+    playbackResidencyDecisionByLayerKey,
     playbackAtlasScaleLevelByLayerKey,
     handleLaunchViewer: handleRouteLaunchViewer
   } = useRouteLayerVolumes({
@@ -675,6 +681,7 @@ export function useAppRouteState(): AppRouteState {
     isLaunchingViewer,
     isPerformanceMode,
     isPlaying,
+    isPlaybackStartPending,
     preprocessedExperiment,
     volumeProvider,
     loadedChannelIds,
@@ -685,6 +692,7 @@ export function useAppRouteState(): AppRouteState {
     projectionMode,
     viewerCameraSample,
     volumeTimepointCount,
+    playbackBufferFrameCount: playbackBufferFrames,
     selectedIndex: resolvedSelectedIndex,
     playbackWindow: followedTrackPlaybackWindow,
     clearDatasetError,
@@ -713,14 +721,6 @@ export function useAppRouteState(): AppRouteState {
     () => handleRouteLaunchViewer({ performanceMode: true }),
     [handleRouteLaunchViewer]
   );
-  const brickResidencyLayerKeys = useMemo(() => {
-    if (!preferBrickResidency) {
-      return [] as string[];
-    }
-    return loadedDatasetLayers
-      .filter((layer) => !layer.isSegmentation && layer.depth > 1)
-      .map((layer) => layer.key);
-  }, [loadedDatasetLayers, preferBrickResidency]);
   const layerDownsampleFactorByLevelByKey = useMemo(() => {
     const byLayer = new Map<string, Map<number, [number, number, number]>>();
     const manifest = preprocessedExperiment?.manifest;
@@ -907,9 +907,7 @@ export function useAppRouteState(): AppRouteState {
     isViewerLaunched,
     isPlaying,
     fps,
-    preferBrickResidency,
-    brickResidencyLayerKeys,
-    playbackAtlasScaleLevelByLayerKey,
+    playbackResidencyDecisionByLayerKey,
     playbackWarmupFrames,
     volumeProvider,
     volumeTimepointCount,
@@ -929,8 +927,60 @@ export function useAppRouteState(): AppRouteState {
     onViewerModeChange: resetHoveredVoxel,
     volumeTimepointCount,
     isLoading,
+    isPlaybackStartPending,
+    bufferBeforePlayDefault: true,
+    onPlaybackStartRequest: () => {
+      setIsPlaybackStartPending(true);
+    },
+    onPlaybackStartCancel: () => setIsPlaybackStartPending(false),
     playbackWindow: followedTrackPlaybackWindow
   });
+
+  useEffect(() => {
+    if (!playbackDisabled) {
+      return;
+    }
+    setIsPlaybackStartPending(false);
+    setIsPlaying(false);
+  }, [playbackDisabled]);
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+    const buildPlaybackDebugSummary = () => ({
+      isViewerLaunched,
+      isPlaying,
+      isPlaybackStartPending,
+      playbackDisabled,
+      playbackBufferFrames,
+      selectedIndex: resolvedSelectedIndex,
+      volumeTimepointCount,
+      loadedChannelIds,
+      playbackLayerKeys,
+      playbackWarmupFrameCount: playbackWarmupFrames.length,
+    });
+    (window as Window & { __LLSM_ROUTE_PLAYBACK_DEBUG__?: (() => unknown) | null }).__LLSM_ROUTE_PLAYBACK_DEBUG__ =
+      buildPlaybackDebugSummary;
+    return () => {
+      if (
+        (window as Window & { __LLSM_ROUTE_PLAYBACK_DEBUG__?: (() => unknown) | null }).__LLSM_ROUTE_PLAYBACK_DEBUG__ ===
+        buildPlaybackDebugSummary
+      ) {
+        delete (window as Window & { __LLSM_ROUTE_PLAYBACK_DEBUG__?: (() => unknown) | null }).__LLSM_ROUTE_PLAYBACK_DEBUG__;
+      }
+    };
+  }, [
+    isPlaybackStartPending,
+    isPlaying,
+    isViewerLaunched,
+    loadedChannelIds,
+    playbackBufferFrames,
+    playbackDisabled,
+    playbackLayerKeys,
+    playbackWarmupFrames.length,
+    resolvedSelectedIndex,
+    volumeTimepointCount,
+  ]);
 
   const canRecord = volumeTimepointCount > 0 && !isLoading;
 
@@ -1066,6 +1116,7 @@ export function useAppRouteState(): AppRouteState {
 
   const { trackChannels, vrChannelPanels } = useRouteVrChannelPanels({
     trackSets,
+    isVrActive,
     loadedChannelIds,
     channelNameMap,
     channelLayersMap,
@@ -1269,7 +1320,6 @@ export function useAppRouteState(): AppRouteState {
     handleLayerOffsetChange,
     handleLayerColorChange,
     handleLayerRenderStyleChange,
-    handleLayerRenderStyleToggle,
     handleLayerBlDensityScaleChange,
     handleLayerBlBackgroundCutoffChange,
     handleLayerBlOpacityScaleChange,
@@ -1279,6 +1329,7 @@ export function useAppRouteState(): AppRouteState {
     handleLayerInvertToggle
   } = useLayerControls({
     layers: loadedDatasetLayers,
+    isVrActive,
     selectedIndex: resolvedSelectedIndex,
     isPlaying,
     layerVolumes: currentLayerVolumes,
@@ -1311,6 +1362,34 @@ export function useAppRouteState(): AppRouteState {
     setGlobalBlEarlyExitAlpha,
     setGlobalMipEarlyExitThreshold
   });
+
+  const handleVrLayerRenderStyleToggle = useCallback(
+    (layerKey?: string) => {
+      if (!layerKey) {
+        return;
+      }
+
+      const targetLayer = loadedDatasetLayers.find((layer) => layer.key === layerKey);
+      if (!targetLayer) {
+        return;
+      }
+
+      const currentSettings = layerSettings[layerKey] ?? createLayerDefaultSettings(layerKey);
+      const nextStyle = getNextVrCompatibleRenderStyle(currentSettings, targetLayer.isSegmentation);
+      if (!nextStyle) {
+        return;
+      }
+
+      handleLayerRenderStyleChange(layerKey, nextStyle.renderStyle, nextStyle.samplingMode);
+    },
+    [
+      createLayerDefaultSettings,
+      handleLayerRenderStyleChange,
+      layerSettings,
+      loadedDatasetLayers,
+    ]
+  );
+
   const zSliderMax = useMemo(() => {
     let depth = 1;
     for (const layer of viewerLayers) {
@@ -1422,6 +1501,7 @@ export function useAppRouteState(): AppRouteState {
       viewerPanels: {
         layers: viewerLayers,
         playbackWarmupLayers: viewerPlaybackWarmupLayers,
+        playbackWarmupFrames,
         zClipFrontFraction,
         loading: {
           isLoading,
@@ -1450,6 +1530,7 @@ export function useAppRouteState(): AppRouteState {
         },
         runtimeDiagnostics: volumeProviderDiagnostics,
         lodPolicyDiagnostics,
+        residencyDecisions: currentLayerResidencyDecisions,
         canAdvancePlayback: canAdvancePlaybackToIndex,
         onRegisterReset: handleRegisterReset,
         onVolumeStepScaleChange: handleVolumeStepScaleChange,
@@ -1483,9 +1564,14 @@ export function useAppRouteState(): AppRouteState {
         onLayerAutoContrast: handleLayerAutoContrast,
         onLayerOffsetChange: handleLayerOffsetChange,
         onLayerColorChange: handleLayerColorChange,
-        onLayerRenderStyleToggle: handleLayerRenderStyleToggle,
+        onLayerRenderStyleToggle: handleVrLayerRenderStyleToggle,
         onLayerSamplingModeToggle: handleLayerSamplingModeToggle,
         onLayerInvertToggle: handleLayerInvertToggle,
+        onLayerBlDensityScaleChange: handleLayerBlDensityScaleChange,
+        onLayerBlBackgroundCutoffChange: handleLayerBlBackgroundCutoffChange,
+        onLayerBlOpacityScaleChange: handleLayerBlOpacityScaleChange,
+        onLayerBlEarlyExitAlphaChange: handleLayerBlEarlyExitAlphaChange,
+        onLayerMipEarlyExitThresholdChange: handleLayerMipEarlyExitThresholdChange,
         onRegisterVrSession: registerSessionHandlers,
         onVrSessionStarted: handleSessionStarted,
         onVrSessionEnded: handleSessionEnded
@@ -1542,6 +1628,13 @@ export function useAppRouteState(): AppRouteState {
       playbackControls: {
         fps,
         onFpsChange: setFps,
+        playbackBufferFrames,
+        onPlaybackBufferFramesChange: (value: number) => setPlaybackBufferFrames(clampPlaybackBufferFrames(value)),
+        isPlaybackStartPending,
+        onBufferedPlaybackStart: () => {
+          setIsPlaybackStartPending(false);
+          setIsPlaying(true);
+        },
         zSliderValue,
         zSliderMax,
         onZSliderChange: handleZSliderChange,

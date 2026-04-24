@@ -26,6 +26,40 @@ Agents: You may freely modify `docs/PROJECT_STRUCTURE.md` to reflect code change
   - Refactor or re-run preprocessing logic, as long as you do **not** regress visualization performance.
 - For playback/streaming changes, follow invariants in:
   - `docs/playback-invariants.md`
+- For hover readout/sampling changes, follow invariants in:
+  - `docs/hover-invariants.md`
+
+---
+
+## Critical runtime invariants
+
+Agents: read this section before changing playback, projection, residency, storage, or viewer-loop code.
+
+- Orthographic projection changes must refresh the live resource state immediately.
+  - If `projectionMode` changes and the active `VolumeResources` tree does not rerun, the viewer can stay in perspective-era shader/uniform state until some unrelated visibility/load event happens.
+  - First file to inspect: `src/components/viewers/volume-viewer/useVolumeResources.ts`
+- Playback progress must be authoritative.
+  - Do not treat a local mutable playback ref, VR HUD state, or top-menu counter as proof that the underlying route-selected frame and loaded resources advanced.
+  - If the UI appears to move but the volume does not, debug route/provider/resource state first.
+- Directory/OPFS range-read performance is part of the playback architecture.
+  - Rebuilding file snapshots repeatedly in `readFileRange` can destroy playback throughput and make frame loads appear hung.
+  - First file to inspect: `src/shared/storage/preprocessedStorage.ts`
+- If playback regresses, debug from the provider/storage path upward.
+  - Order:
+    1. `src/shared/storage/preprocessedStorage.ts`
+    2. `src/core/volumeProvider.ts`
+    3. `src/ui/app/hooks/useRouteLayerVolumes.ts`
+    4. `src/components/viewers/volume-viewer/useVolumeResources.ts`
+    5. `src/components/viewers/VolumeViewer.tsx`
+    6. `src/components/viewers/viewer-shell/TopMenu.tsx`
+- Do not add "fail-open" playback progress hacks unless they preserve authoritative loaded-state semantics.
+  - A workaround that makes the play button or counter move while the route/provider state is still stalled is a regression, not a fix.
+- Regression tests are mandatory for these paths.
+  - Relevant test anchors:
+    - `tests/useVolumeResources.test.ts`
+    - `tests/playbackWarmupGate.test.ts`
+    - `tests/preprocessedStorage.test.ts`
+    - `tests/app/hooks/useRouteLayerVolumes.test.ts`
 
 ---
 
