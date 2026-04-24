@@ -4,7 +4,6 @@ import * as zarr from 'zarrita';
 import type { NormalizationParameters, NormalizedVolume } from '../../../core/volumeProcessing';
 import {
   canonicalizeSegmentationVolume,
-  computeNormalizationParameters,
   isSegmentationVolume,
   normalizeVolume,
   toSegmentationLabelId

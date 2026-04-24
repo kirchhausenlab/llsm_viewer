@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
+import * as THREE from 'three';
 
-import { LineSegments2 } from 'three/examples/jsm/lines/LineSegments2';
+import { LineSegments2 } from 'three/addons/lines/LineSegments2.js';
 
 import { createRoiResource, updateRoiResourceGeometry } from '../src/components/viewers/volume-viewer/useRoiRendering.ts';
 
@@ -19,11 +20,29 @@ console.log('Starting roiRenderResource tests');
     shouldBlink: false,
   };
 
-  const resource = createRoiResource(spec, { current: null }, { current: null });
+  const blOcclusionUniforms = {
+    roiBlOcclusionEnabled: { value: 1 },
+    roiBlAlphaTexture: { value: new THREE.Texture() },
+    roiBlDepthTexture: { value: new THREE.Texture() },
+    roiBlViewport: { value: new THREE.Vector2(128, 128) },
+    roiBlDepthBias: { value: 0.001 },
+  };
+  const resource = createRoiResource(spec, { current: null }, { current: null }, blOcclusionUniforms);
 
   assert.ok(resource.line instanceof LineSegments2, 'ROI segment geometry must render through LineSegments2');
   assert.equal(resource.geometry.attributes.instanceStart.count, 4, '2D rectangle should keep four visible edges');
   assert.equal(resource.geometry.instanceCount, 4, 'ROI resource should expose the full segment count to the renderer');
+  const shader = {
+    uniforms: {},
+    vertexShader: '',
+    fragmentShader: 'uniform float linewidth;\nfloat alpha = opacity;\n',
+  };
+  resource.material.onBeforeCompile(shader as Parameters<typeof resource.material.onBeforeCompile>[0], null as never);
+  assert.strictEqual(shader.uniforms.roiBlOcclusionEnabled, blOcclusionUniforms.roiBlOcclusionEnabled);
+  assert.strictEqual(shader.uniforms.roiBlAlphaTexture, blOcclusionUniforms.roiBlAlphaTexture);
+  assert.strictEqual(shader.uniforms.roiBlDepthTexture, blOcclusionUniforms.roiBlDepthTexture);
+  assert.match(shader.fragmentShader, /uniform sampler2D roiBlAlphaTexture;/);
+  assert.match(shader.fragmentShader, /gl_FragCoord\.z > roiBlFrontDepth/);
 
   const previousGeometry = resource.geometry;
   updateRoiResourceGeometry(resource, {

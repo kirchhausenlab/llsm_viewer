@@ -110,6 +110,7 @@ export function createVrPlaybackHud(initialState?: PlaybackState | null): VrPlay
     labelTexture.colorSpace = THREE.SRGBColorSpace;
     labelTexture.minFilter = THREE.LinearFilter;
     labelTexture.magFilter = THREE.LinearFilter;
+    labelTexture.generateMipmaps = false;
     drawButtonLabel(labelCanvas, labelContext, labelTexture, label);
 
     const labelMaterial = new THREE.MeshBasicMaterial({
@@ -315,6 +316,7 @@ export function createVrPlaybackHud(initialState?: PlaybackState | null): VrPlay
   fpsLabelTexture.colorSpace = THREE.SRGBColorSpace;
   fpsLabelTexture.minFilter = THREE.LinearFilter;
   fpsLabelTexture.magFilter = THREE.LinearFilter;
+  fpsLabelTexture.generateMipmaps = false;
   const fpsLabelMaterial = new THREE.MeshBasicMaterial({
     map: fpsLabelTexture,
     transparent: true,
@@ -390,6 +392,7 @@ export function createVrPlaybackHud(initialState?: PlaybackState | null): VrPlay
   labelTexture.colorSpace = THREE.SRGBColorSpace;
   labelTexture.minFilter = THREE.LinearFilter;
   labelTexture.magFilter = THREE.LinearFilter;
+  labelTexture.generateMipmaps = false;
   const labelMaterial = new THREE.MeshBasicMaterial({
     map: labelTexture,
     transparent: true,
@@ -526,6 +529,7 @@ export function createVrChannelsHud(): VrChannelsHud | null {
   panelTexture.colorSpace = THREE.SRGBColorSpace;
   panelTexture.minFilter = THREE.LinearFilter;
   panelTexture.magFilter = THREE.LinearFilter;
+  panelTexture.generateMipmaps = false;
 
   const panelMaterial = new THREE.MeshBasicMaterial({
     map: panelTexture,
@@ -664,6 +668,7 @@ export function createVrTracksHud(): VrTracksHud | null {
   panelTexture.colorSpace = THREE.SRGBColorSpace;
   panelTexture.minFilter = THREE.LinearFilter;
   panelTexture.magFilter = THREE.LinearFilter;
+  panelTexture.generateMipmaps = false;
 
   const panelMaterial = new THREE.MeshBasicMaterial({
     map: panelTexture,

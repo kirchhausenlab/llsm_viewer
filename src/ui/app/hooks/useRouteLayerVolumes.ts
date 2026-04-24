@@ -31,7 +31,6 @@ import {
   collectPlaybackWarmupTimeIndices,
   collectVisibleLayerKeys,
   estimateDataChunkCount,
-  getTextureChannelCountForSourceChannels,
   isAllocationLikeError,
   isPromotionReadyForResource,
   nowMs,
@@ -447,9 +446,6 @@ export function useRouteLayerVolumes({
           const isDesiredScaleLevel = scaleLevel === desiredScaleLevel;
           throwIfAborted(signal);
           const scale = layerScalesByLevelByKey.get(layerKey)?.get(scaleLevel) ?? null;
-          const sourceChannels = scale?.channels ?? 1;
-          const textureChannels = getTextureChannelCountForSourceChannels(sourceChannels);
-
           if (typeof volumeProvider?.getBrickPageTable === 'function') {
             const pageTable = await volumeProvider.getBrickPageTable(layerKey, timeIndex, { scaleLevel, signal });
             throwIfAborted(signal);

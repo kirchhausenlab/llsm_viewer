@@ -36,9 +36,9 @@ import {
   isSegmentationVolume,
   type NormalizedVolume
 } from '../../../core/volumeProcessing';
-import type { PlaybackWarmupFrame, VolumeResources } from '../VolumeViewer.types';
+import type { VolumeResources } from '../VolumeViewer.types';
 import { DESKTOP_VOLUME_STEP_SCALE } from './vr';
-import type { OrbitControls } from 'three/examples/jsm/controls/OrbitControls';
+import type { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import type { VolumeBrickAtlas, VolumeBrickPageTable } from '../../../core/volumeProvider';
 import { getLod0FeatureFlags } from '../../../config/lod0Flags';
 import {
@@ -154,6 +154,7 @@ type UseVolumeResourcesParams = {
 type ShaderUniformMap = Record<string, { value: unknown }>;
 type TextureFormat = THREE.Data3DTexture['format'];
 type TextureSourceArray = Uint8Array | Uint16Array | Float32Array;
+type GpuTextureSourceArray = Uint8Array | Float32Array;
 type ByteTextureFilterMode = 'nearest' | 'linear';
 type BrickAtlasBuildResult = {
   data: TextureSourceArray;
@@ -379,6 +380,10 @@ function resolveGpuTextureSource(source: TextureSourceArray): Uint8Array | Float
     return normalizeUint16TextureData(source);
   }
   return source;
+}
+
+function getTextureDataType(source: GpuTextureSourceArray): THREE.TextureDataType {
+  return source instanceof Float32Array ? THREE.FloatType : THREE.UnsignedByteType;
 }
 
 function resolveRendererSurfaceSize(
@@ -627,7 +632,7 @@ function createByte3dTexture(
   const gpuData = resolveGpuTextureSource(data);
   const texture = new THREE.Data3DTexture(gpuData, width, height, depth);
   texture.format = format;
-  texture.type = gpuData instanceof Float32Array ? THREE.FloatType : THREE.UnsignedByteType;
+  texture.type = getTextureDataType(gpuData);
   texture.internalFormat = null;
   applyByteTextureFilter(texture, filterMode);
   texture.unpackAlignment = 1;
@@ -645,12 +650,83 @@ function createFloat3dTexture(
   const texture = new THREE.Data3DTexture(data, width, height, depth);
   texture.format = format;
   texture.type = THREE.FloatType;
+  texture.internalFormat = null;
   texture.minFilter = THREE.NearestFilter;
   texture.magFilter = THREE.NearestFilter;
   texture.unpackAlignment = 1;
   texture.generateMipmaps = false;
   texture.needsUpdate = true;
   return texture;
+}
+
+function applySliceTextureSampling(
+  texture: THREE.DataTexture,
+  samplingMode: 'linear' | 'nearest',
+): void {
+  const filter = samplingMode === 'nearest' ? THREE.NearestFilter : THREE.LinearFilter;
+  texture.minFilter = filter;
+  texture.magFilter = filter;
+  texture.generateMipmaps = false;
+}
+
+function createSliceDataTexture(
+  data: GpuTextureSourceArray,
+  width: number,
+  height: number,
+  format: THREE.PixelFormat,
+  samplingMode: 'linear' | 'nearest',
+): THREE.DataTexture {
+  const texture = new THREE.DataTexture(data, width, height, format);
+  texture.type = getTextureDataType(data);
+  texture.internalFormat = null;
+  applySliceTextureSampling(texture, samplingMode);
+  texture.unpackAlignment = 1;
+  texture.colorSpace = THREE.LinearSRGBColorSpace;
+  texture.needsUpdate = true;
+  return texture;
+}
+
+export function updateOrCreateSliceDataTexture({
+  existing,
+  data,
+  width,
+  height,
+  format,
+  samplingMode,
+}: {
+  existing: THREE.DataTexture | null | undefined;
+  data: GpuTextureSourceArray;
+  width: number;
+  height: number;
+  format: THREE.PixelFormat;
+  samplingMode: 'linear' | 'nearest';
+}): THREE.DataTexture {
+  const nextType = getTextureDataType(data);
+  const nextInternalFormat = null;
+  if (existing) {
+    const image = existing.image as { width?: number; height?: number; data?: unknown };
+    const canReuse =
+      image.width === width &&
+      image.height === height &&
+      existing.format === format &&
+      existing.type === nextType &&
+      existing.internalFormat === nextInternalFormat;
+    if (canReuse) {
+      existing.image.data = data;
+      existing.image.width = width;
+      existing.image.height = height;
+      existing.format = format;
+      existing.type = nextType;
+      existing.internalFormat = nextInternalFormat;
+      existing.unpackAlignment = 1;
+      existing.colorSpace = THREE.LinearSRGBColorSpace;
+      applySliceTextureSampling(existing, samplingMode);
+      existing.needsUpdate = true;
+      return existing;
+    }
+    existing.dispose();
+  }
+  return createSliceDataTexture(data, width, height, format, samplingMode);
 }
 
 function acquireSharedBackgroundMaskTexture(mask: {
@@ -689,6 +765,7 @@ function getSegmentationPaletteTexture(layerKey: string): THREE.DataTexture {
   const paletteData = createSegmentationColorTable(seed);
   const texture = new THREE.DataTexture(paletteData, 256, 256, THREE.RGBAFormat);
   texture.type = THREE.UnsignedByteType;
+  texture.internalFormat = null;
   texture.minFilter = THREE.NearestFilter;
   texture.magFilter = THREE.NearestFilter;
   texture.unpackAlignment = 1;
@@ -748,7 +825,7 @@ function resolvePreparedVolumeTextureState(volume: NormalizedVolume): {
   };
 }
 
-function updateOrCreatePreparedVolumeTexture({
+export function updateOrCreatePreparedVolumeTexture({
   existing,
   volume,
   samplingMode,
@@ -763,20 +840,34 @@ function updateOrCreatePreparedVolumeTexture({
   textureType: THREE.TextureDataType;
 } {
   const prepared = resolvePreparedVolumeTextureState(volume);
-  const texture =
-    existing ??
-    new THREE.Data3DTexture(prepared.data, prepared.width, prepared.height, prepared.depth);
+  const nextInternalFormat = null;
+  const nextColorSpace = volume.kind === 'intensity' ? THREE.LinearSRGBColorSpace : THREE.NoColorSpace;
+  let texture = existing ?? null;
+  if (texture) {
+    const { width, height, depth } = getTextureDimensions(texture);
+    const canReuse =
+      width === prepared.width &&
+      height === prepared.height &&
+      depth === prepared.depth &&
+      texture.format === prepared.format &&
+      texture.type === prepared.type &&
+      texture.internalFormat === nextInternalFormat &&
+      texture.colorSpace === nextColorSpace;
+    if (!canReuse) {
+      texture.dispose();
+      texture = null;
+    }
+  }
+  texture ??= new THREE.Data3DTexture(prepared.data, prepared.width, prepared.height, prepared.depth);
   texture.image.data = prepared.data;
   texture.image.width = prepared.width;
   texture.image.height = prepared.height;
   texture.image.depth = prepared.depth;
   texture.format = prepared.format;
   texture.type = prepared.type;
-  texture.internalFormat = null;
+  texture.internalFormat = nextInternalFormat;
   texture.unpackAlignment = 1;
-  if (volume.kind === 'intensity') {
-    texture.colorSpace = THREE.LinearSRGBColorSpace;
-  }
+  texture.colorSpace = nextColorSpace;
   applyVolumeTextureSampling(texture, samplingMode);
   texture.needsUpdate = true;
   return {
@@ -989,7 +1080,7 @@ function applyByteTextureFilter(texture: THREE.Data3DTexture, filterMode: ByteTe
   texture.needsUpdate = true;
 }
 
-function updateOrCreateByte3dTexture(
+export function updateOrCreateByte3dTexture(
   existing: THREE.Data3DTexture | null | undefined,
   source: TextureSourceArray,
   width: number,
@@ -1000,6 +1091,8 @@ function updateOrCreateByte3dTexture(
   forceNeedsUpdate = true,
 ): THREE.Data3DTexture {
   const gpuSource = resolveGpuTextureSource(source);
+  const nextType = getTextureDataType(gpuSource);
+  const nextInternalFormat = null;
   if (existing) {
     const { width: currentWidth, height: currentHeight, depth: currentDepth, data } =
       getTextureDimensions(existing);
@@ -1007,6 +1100,9 @@ function updateOrCreateByte3dTexture(
       currentWidth === width &&
       currentHeight === height &&
       currentDepth === depth &&
+      existing.format === format &&
+      existing.type === nextType &&
+      existing.internalFormat === nextInternalFormat &&
       ((data instanceof Uint8Array && gpuSource instanceof Uint8Array) ||
         (data instanceof Float32Array && gpuSource instanceof Float32Array)) &&
       data.length === gpuSource.length
@@ -1015,16 +1111,11 @@ function updateOrCreateByte3dTexture(
       if (!hasSharedBuffer) {
         data.set(gpuSource);
       }
-      const formatChanged = existing.format !== format;
-      const nextType = gpuSource instanceof Float32Array ? THREE.FloatType : THREE.UnsignedByteType;
-      const typeChanged = existing.type !== nextType;
-      const nextInternalFormat = null;
-      const internalFormatChanged = existing.internalFormat !== nextInternalFormat;
       existing.format = format;
       existing.type = nextType;
       existing.internalFormat = nextInternalFormat;
       applyByteTextureFilter(existing, filterMode);
-      if (!hasSharedBuffer || formatChanged || typeChanged || internalFormatChanged || forceNeedsUpdate) {
+      if (!hasSharedBuffer || forceNeedsUpdate) {
         existing.needsUpdate = true;
       }
       return existing;
@@ -1034,7 +1125,7 @@ function updateOrCreateByte3dTexture(
   return createByte3dTexture(source, width, height, depth, format, filterMode);
 }
 
-function updateOrCreateFloat3dTexture(
+export function updateOrCreateFloat3dTexture(
   existing: THREE.Data3DTexture | null | undefined,
   source: Float32Array,
   width: number,
@@ -1043,6 +1134,7 @@ function updateOrCreateFloat3dTexture(
   format: TextureFormat = THREE.RedFormat,
   forceNeedsUpdate = true,
 ): THREE.Data3DTexture {
+  const nextInternalFormat = null;
   if (existing) {
     const { width: currentWidth, height: currentHeight, depth: currentDepth, data } =
       getTextureDimensions(existing);
@@ -1050,6 +1142,9 @@ function updateOrCreateFloat3dTexture(
       currentWidth === width &&
       currentHeight === height &&
       currentDepth === depth &&
+      existing.format === format &&
+      existing.type === THREE.FloatType &&
+      existing.internalFormat === nextInternalFormat &&
       data instanceof Float32Array &&
       data.length === source.length
     ) {
@@ -1057,9 +1152,10 @@ function updateOrCreateFloat3dTexture(
       if (!hasSharedBuffer) {
         data.set(source);
       }
-      const formatChanged = existing.format !== format;
       existing.format = format;
-      if (!hasSharedBuffer || formatChanged || forceNeedsUpdate) {
+      existing.type = THREE.FloatType;
+      existing.internalFormat = nextInternalFormat;
+      if (!hasSharedBuffer || forceNeedsUpdate) {
         existing.needsUpdate = true;
       }
       return existing;
@@ -3475,20 +3571,34 @@ export function useVolumeResources({
           depth,
         });
 
-        const needsRebuild =
-          !resources ||
-          resources.mode !== viewerMode ||
-          resources.renderStyle !== layer.renderStyle ||
+	        const existingVolumeTexture = resources?.texture instanceof THREE.Data3DTexture
+	          ? resources.texture
+	          : null;
+	        const existingVolumeTextureImage = existingVolumeTexture?.image;
+	        const expectedTextureWidth = sourceUsesVolume ? dataWidth : 1;
+	        const expectedTextureHeight = sourceUsesVolume ? dataHeight : 1;
+	        const expectedTextureDepth = sourceUsesVolume ? dataDepth : 1;
+	        const expectedTextureInternalFormat = null;
+	        const expectedTextureColorSpace = layer.isSegmentation ? THREE.NoColorSpace : THREE.LinearSRGBColorSpace;
+	        const needsRebuild =
+	          !resources ||
+	          resources.mode !== viewerMode ||
+	          resources.renderStyle !== layer.renderStyle ||
           resources.samplingMode !== effectiveSamplingMode ||
           resources.dimensions.width !== width ||
           resources.dimensions.height !== height ||
           resources.dimensions.depth !== depth ||
-          resources.channels !== channels ||
-          resources.proxyGeometrySignature !== proxyVisibleBox.signature ||
-          !(resources.texture instanceof THREE.Data3DTexture) ||
-          resources.texture.image.data.length !== textureData.length ||
-          resources.texture.format !== textureFormat ||
-          resources.texture.type !== textureType;
+	          resources.channels !== channels ||
+	          resources.proxyGeometrySignature !== proxyVisibleBox.signature ||
+	          !existingVolumeTexture ||
+	          existingVolumeTextureImage?.data?.length !== textureData.length ||
+	          existingVolumeTextureImage?.width !== expectedTextureWidth ||
+	          existingVolumeTextureImage?.height !== expectedTextureHeight ||
+	          existingVolumeTextureImage?.depth !== expectedTextureDepth ||
+	          existingVolumeTexture.format !== textureFormat ||
+	          existingVolumeTexture.type !== textureType ||
+	          existingVolumeTexture.internalFormat !== expectedTextureInternalFormat ||
+	          existingVolumeTexture.colorSpace !== expectedTextureColorSpace;
 
         if (needsRebuild) {
           removeResource(layer.key);
@@ -3501,9 +3611,7 @@ export function useVolumeResources({
           texture.internalFormat = null;
           applyVolumeTextureSampling(texture, effectiveSamplingMode);
           texture.unpackAlignment = 1;
-          if (!layer.isSegmentation) {
-            texture.colorSpace = THREE.LinearSRGBColorSpace;
-          }
+	          texture.colorSpace = expectedTextureColorSpace;
           texture.needsUpdate = true;
 
           const shader =
@@ -3715,32 +3823,25 @@ export function useVolumeResources({
         if (needsRebuild) {
           removeResource(layer.key);
 
-          const sliceTexture = (() => {
-            const isNearestSampling = effectiveSamplingMode === 'nearest';
-            if (volume) {
-              const sliceInfo = prepareSliceTexture(
-                volume,
-                clampedSliceDataIndex,
+	          const sliceTexture = (() => {
+	            if (volume) {
+	              const sliceInfo = prepareSliceTexture(
+	                volume,
+	                clampedSliceDataIndex,
                 null,
                 segmentationPaletteTexture ? (segmentationPaletteTexture.image.data as Uint8Array) : null,
               );
-              const texture = new THREE.DataTexture(
-                sliceInfo.data,
-                volume.width,
-                volume.height,
-                sliceInfo.format,
-              );
-              texture.type = sliceInfo.data instanceof Float32Array ? THREE.FloatType : THREE.UnsignedByteType;
-              texture.internalFormat = null;
-              texture.minFilter = isNearestSampling ? THREE.NearestFilter : THREE.LinearFilter;
-              texture.magFilter = isNearestSampling ? THREE.NearestFilter : THREE.LinearFilter;
-              texture.unpackAlignment = 1;
-              texture.colorSpace = THREE.LinearSRGBColorSpace;
-              texture.needsUpdate = true;
-              return { texture, sliceBuffer: sliceInfo.data };
-            }
-            if (pageTable && brickAtlas?.enabled) {
-              const sliceInfo = prepareSliceTextureFromBrickAtlas(
+	              const texture = createSliceDataTexture(
+	                sliceInfo.data,
+	                volume.width,
+	                volume.height,
+	                sliceInfo.format,
+	                effectiveSamplingMode,
+	              );
+	              return { texture, sliceBuffer: sliceInfo.data };
+	            }
+	            if (pageTable && brickAtlas?.enabled) {
+	              const sliceInfo = prepareSliceTextureFromBrickAtlas(
                 {
                   kind: brickAtlas.kind,
                   pageTable,
@@ -3753,37 +3854,26 @@ export function useVolumeResources({
                 null,
                 segmentationPaletteTexture ? (segmentationPaletteTexture.image.data as Uint8Array) : null,
               );
-              const texture = new THREE.DataTexture(
-                sliceInfo.data,
-                sliceInfo.width,
-                sliceInfo.height,
-                sliceInfo.format,
-              );
-              texture.type = sliceInfo.data instanceof Float32Array ? THREE.FloatType : THREE.UnsignedByteType;
-              texture.internalFormat = null;
-              texture.minFilter = isNearestSampling ? THREE.NearestFilter : THREE.LinearFilter;
-              texture.magFilter = isNearestSampling ? THREE.NearestFilter : THREE.LinearFilter;
-              texture.unpackAlignment = 1;
-              texture.colorSpace = THREE.LinearSRGBColorSpace;
-              texture.needsUpdate = true;
-              return { texture, sliceBuffer: sliceInfo.data };
-            }
-            {
-              const fallbackTexture = new THREE.DataTexture(
-                FALLBACK_VOLUME_TEXTURE_DATA.slice(),
-                1,
-                1,
-                THREE.RedFormat,
-              );
-              fallbackTexture.type = THREE.UnsignedByteType;
-              fallbackTexture.minFilter = isNearestSampling ? THREE.NearestFilter : THREE.LinearFilter;
-              fallbackTexture.magFilter = isNearestSampling ? THREE.NearestFilter : THREE.LinearFilter;
-              fallbackTexture.unpackAlignment = 1;
-              fallbackTexture.colorSpace = THREE.LinearSRGBColorSpace;
-              fallbackTexture.needsUpdate = true;
-              return { texture: fallbackTexture, sliceBuffer: null as Uint8Array | null };
-            }
-          })();
+	              const texture = createSliceDataTexture(
+	                sliceInfo.data,
+	                sliceInfo.width,
+	                sliceInfo.height,
+	                sliceInfo.format,
+	                effectiveSamplingMode,
+	              );
+	              return { texture, sliceBuffer: sliceInfo.data };
+	            }
+	            {
+	              const fallbackTexture = createSliceDataTexture(
+	                FALLBACK_VOLUME_TEXTURE_DATA.slice(),
+	                1,
+	                1,
+	                THREE.RedFormat,
+	                effectiveSamplingMode,
+	              );
+	              return { texture: fallbackTexture, sliceBuffer: null as Uint8Array | null };
+	            }
+	          })();
 
           const texture = sliceTexture.texture;
           const shader = SliceRenderShader;
@@ -4110,48 +4200,67 @@ export function useVolumeResources({
             brickAtlas,
             directAtlasFormat,
           });
-          const dataTexture = resources.texture as THREE.Data3DTexture;
-          if (resources.samplingMode !== effectiveSamplingMode) {
-            applyVolumeTextureSampling(dataTexture, effectiveSamplingMode);
-            dataTexture.needsUpdate = true;
-            resources.samplingMode = effectiveSamplingMode;
-          }
-          const nextTextureData = preparation
-            ? preparation.data
-            : segmentationVolume
+	          let dataTexture = resources.texture as THREE.Data3DTexture;
+	          const nextTextureData = preparation
+	            ? preparation.data
+	            : segmentationVolume
               ? packSegmentationLabelTextureData(segmentationVolume.labels)
               : FALLBACK_VOLUME_TEXTURE_DATA;
           const nextTextureWidth = preparation || segmentationVolume ? dataWidth : 1;
           const nextTextureHeight = preparation || segmentationVolume ? dataHeight : 1;
           const nextTextureDepth = preparation || segmentationVolume ? dataDepth : 1;
-          const nextTextureFormat = preparation
-            ? preparation.format
-            : segmentationVolume
-              ? THREE.RGFormat
-              : THREE.RedFormat;
-          const nextTextureType = nextTextureData instanceof Float32Array ? THREE.FloatType : THREE.UnsignedByteType;
-          const nextTextureInternalFormat = null;
-          const textureSourceChanged =
-            dataTexture.image.data !== nextTextureData ||
-            dataTexture.image.width !== nextTextureWidth ||
-            dataTexture.image.height !== nextTextureHeight ||
-            dataTexture.image.depth !== nextTextureDepth ||
-            dataTexture.format !== nextTextureFormat ||
-            dataTexture.type !== nextTextureType ||
-            dataTexture.internalFormat !== nextTextureInternalFormat;
-          if (textureSourceChanged) {
-            dataTexture.image.data = nextTextureData;
-            dataTexture.image.width = nextTextureWidth;
-            dataTexture.image.height = nextTextureHeight;
-            dataTexture.image.depth = nextTextureDepth;
-            dataTexture.format = nextTextureFormat;
-            dataTexture.type = nextTextureType;
-            dataTexture.internalFormat = nextTextureInternalFormat;
-            dataTexture.needsUpdate = true;
-          }
-          if (materialUniforms.u_data.value !== dataTexture) {
-            materialUniforms.u_data.value = dataTexture;
-          }
+	          const nextTextureFormat = preparation
+	            ? preparation.format
+	            : segmentationVolume
+	              ? THREE.RGFormat
+	              : THREE.RedFormat;
+	          const nextTextureType = nextTextureData instanceof Float32Array ? THREE.FloatType : THREE.UnsignedByteType;
+	          const nextTextureInternalFormat = null;
+	          const nextTextureColorSpace = layer.isSegmentation ? THREE.NoColorSpace : THREE.LinearSRGBColorSpace;
+	          const textureIdentityChanged =
+	            dataTexture.image.width !== nextTextureWidth ||
+	            dataTexture.image.height !== nextTextureHeight ||
+	            dataTexture.image.depth !== nextTextureDepth ||
+	            dataTexture.format !== nextTextureFormat ||
+	            dataTexture.type !== nextTextureType ||
+	            dataTexture.internalFormat !== nextTextureInternalFormat ||
+	            dataTexture.colorSpace !== nextTextureColorSpace;
+	          if (textureIdentityChanged) {
+	            const previousTexture = dataTexture;
+	            dataTexture = new THREE.Data3DTexture(
+	              nextTextureData,
+	              nextTextureWidth,
+	              nextTextureHeight,
+	              nextTextureDepth,
+	            );
+	            dataTexture.format = nextTextureFormat;
+	            dataTexture.type = nextTextureType;
+	            dataTexture.internalFormat = nextTextureInternalFormat;
+	            dataTexture.unpackAlignment = 1;
+	            dataTexture.colorSpace = nextTextureColorSpace;
+	            applyVolumeTextureSampling(dataTexture, effectiveSamplingMode);
+	            dataTexture.needsUpdate = true;
+	            resources.texture = dataTexture;
+	            previousTexture.dispose();
+	          } else if (dataTexture.image.data !== nextTextureData) {
+	            dataTexture.image.data = nextTextureData;
+	            dataTexture.image.width = nextTextureWidth;
+	            dataTexture.image.height = nextTextureHeight;
+	            dataTexture.image.depth = nextTextureDepth;
+	            dataTexture.format = nextTextureFormat;
+	            dataTexture.type = nextTextureType;
+	            dataTexture.internalFormat = nextTextureInternalFormat;
+	            dataTexture.colorSpace = nextTextureColorSpace;
+	            dataTexture.needsUpdate = true;
+	          }
+	          if (resources.samplingMode !== effectiveSamplingMode) {
+	            applyVolumeTextureSampling(dataTexture, effectiveSamplingMode);
+	            dataTexture.needsUpdate = true;
+	            resources.samplingMode = effectiveSamplingMode;
+	          }
+	          if (materialUniforms.u_data.value !== dataTexture) {
+	            materialUniforms.u_data.value = dataTexture;
+	          }
           if (materialUniforms.u_isSegmentation) {
             materialUniforms.u_isSegmentation.value = layer.isSegmentation ? 1 : 0;
           }
@@ -4228,59 +4337,64 @@ export function useVolumeResources({
                 : undefined,
           );
 
-          const dataTexture = resources.texture as THREE.DataTexture;
-          const shouldUseNearestSampling = effectiveSamplingMode === 'nearest';
-          if (
-            dataTexture.minFilter !== (shouldUseNearestSampling ? THREE.NearestFilter : THREE.LinearFilter) ||
-            dataTexture.magFilter !== (shouldUseNearestSampling ? THREE.NearestFilter : THREE.LinearFilter)
-          ) {
-            dataTexture.minFilter = shouldUseNearestSampling ? THREE.NearestFilter : THREE.LinearFilter;
-            dataTexture.magFilter = shouldUseNearestSampling ? THREE.NearestFilter : THREE.LinearFilter;
-            dataTexture.needsUpdate = true;
-          }
+	          let dataTexture = resources.texture as THREE.DataTexture;
+	          if (resources.samplingMode !== effectiveSamplingMode) {
+	            applySliceTextureSampling(dataTexture, effectiveSamplingMode);
+	            dataTexture.needsUpdate = true;
+	          }
 
-          if (volume) {
-            const existingBuffer = resources.sliceBuffer ?? null;
-            const sliceInfo = prepareSliceTexture(
-              volume,
-              clampedSliceDataIndex,
-              existingBuffer,
-              segmentationPaletteTexture ? (segmentationPaletteTexture.image.data as Uint8Array) : null,
-            );
-            resources.sliceBuffer = sliceInfo.data;
-            dataTexture.image.data = sliceInfo.data;
-            dataTexture.image.width = volume.width;
-            dataTexture.image.height = volume.height;
-            dataTexture.format = sliceInfo.format;
-            dataTexture.type = sliceInfo.data instanceof Float32Array ? THREE.FloatType : THREE.UnsignedByteType;
-            dataTexture.internalFormat = null;
-            dataTexture.needsUpdate = true;
-              materialUniforms.u_slice.value = dataTexture;
-          } else if (pageTable && brickAtlas?.enabled) {
-            const existingBuffer = resources.sliceBuffer ?? null;
-            const sliceInfo = prepareSliceTextureFromBrickAtlas(
-              {
-                kind: brickAtlas.kind,
-                pageTable,
-                atlasData: brickAtlas.data,
-                textureFormat: brickAtlas.textureFormat,
-                sourceChannels: brickAtlas.sourceChannels,
-                dataType: brickAtlas.dataType,
-              },
-              clampedSliceDataIndex,
-              existingBuffer,
-              segmentationPaletteTexture ? (segmentationPaletteTexture.image.data as Uint8Array) : null,
-            );
-            resources.sliceBuffer = sliceInfo.data;
-            dataTexture.image.data = sliceInfo.data;
-            dataTexture.image.width = sliceInfo.width;
-            dataTexture.image.height = sliceInfo.height;
-            dataTexture.format = sliceInfo.format;
-            dataTexture.type = sliceInfo.data instanceof Float32Array ? THREE.FloatType : THREE.UnsignedByteType;
-            dataTexture.internalFormat = null;
-            dataTexture.needsUpdate = true;
-            materialUniforms.u_slice.value = dataTexture;
-          }
+	          if (volume) {
+	            const existingBuffer = resources.sliceBuffer ?? null;
+	            const sliceInfo = prepareSliceTexture(
+	              volume,
+	              clampedSliceDataIndex,
+	              existingBuffer,
+	              segmentationPaletteTexture ? (segmentationPaletteTexture.image.data as Uint8Array) : null,
+	            );
+	            resources.sliceBuffer = sliceInfo.data;
+	            const nextTexture = updateOrCreateSliceDataTexture({
+	              existing: dataTexture,
+	              data: sliceInfo.data,
+	              width: volume.width,
+	              height: volume.height,
+	              format: sliceInfo.format,
+	              samplingMode: effectiveSamplingMode,
+	            });
+	            if (nextTexture !== dataTexture) {
+	              resources.texture = nextTexture;
+	              dataTexture = nextTexture;
+	            }
+	            materialUniforms.u_slice.value = dataTexture;
+	          } else if (pageTable && brickAtlas?.enabled) {
+	            const existingBuffer = resources.sliceBuffer ?? null;
+	            const sliceInfo = prepareSliceTextureFromBrickAtlas(
+	              {
+	                kind: brickAtlas.kind,
+	                pageTable,
+	                atlasData: brickAtlas.data,
+	                textureFormat: brickAtlas.textureFormat,
+	                sourceChannels: brickAtlas.sourceChannels,
+	                dataType: brickAtlas.dataType,
+	              },
+	              clampedSliceDataIndex,
+	              existingBuffer,
+	              segmentationPaletteTexture ? (segmentationPaletteTexture.image.data as Uint8Array) : null,
+	            );
+	            resources.sliceBuffer = sliceInfo.data;
+	            const nextTexture = updateOrCreateSliceDataTexture({
+	              existing: dataTexture,
+	              data: sliceInfo.data,
+	              width: sliceInfo.width,
+	              height: sliceInfo.height,
+	              format: sliceInfo.format,
+	              samplingMode: effectiveSamplingMode,
+	            });
+	            if (nextTexture !== dataTexture) {
+	              resources.texture = nextTexture;
+	              dataTexture = nextTexture;
+	            }
+	            materialUniforms.u_slice.value = dataTexture;
+	          }
           if (materialUniforms.u_sliceSize) {
             const image = dataTexture.image as { width?: number; height?: number };
             const sliceWidth = Math.max(1, Number(image.width ?? width));

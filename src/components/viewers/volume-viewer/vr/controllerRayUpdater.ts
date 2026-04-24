@@ -1,6 +1,6 @@
 import type { MutableRefObject } from 'react';
 import * as THREE from 'three';
-import { Line2 } from 'three/examples/jsm/lines/Line2';
+import { Line2 } from 'three/addons/lines/Line2.js';
 
 import type { TrackRenderResource } from '../../VolumeViewer.types';
 import type {

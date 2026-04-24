@@ -1,9 +1,10 @@
 import { type MutableRefObject, useCallback, useEffect, useMemo, useRef } from 'react';
 import * as THREE from 'three';
-import type { OrbitControls } from 'three/examples/jsm/controls/OrbitControls';
+import type { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 
 import {
   applyOrthographicZoomBounds,
+  applyDesktopRendererPixelRatio,
   applyDesktopViewState,
   captureDesktopViewState,
   clampOrthographicZoomForControls,
@@ -21,9 +22,7 @@ import {
   type ViewerProjectionMode,
   type VolumeRenderContext,
 } from '../../../hooks/useVolumeRenderSetup';
-import {
-  resolveSceneWorldBounds,
-} from './cameraNavigationBounds';
+import { DEFAULT_DESKTOP_RENDER_PIXEL_RATIO_CAP } from '../../../types/renderResolution';
 import type { MovementState, RoiRenderResource, TrackRenderResource } from '../VolumeViewer.types';
 import type { CameraRotation, CameraWindowState } from '../../../types/camera';
 import { normalizeSignedAngleDegrees } from '../../../shared/utils/cameraViews';
@@ -63,6 +62,7 @@ type UseCameraControlsParams = {
   rotationSpeedMultiplier?: number;
   enableKeyboardNavigation?: boolean;
   rotationLocked?: boolean;
+  rendererPixelRatioCap?: number;
 };
 
 export function useCameraControls({
@@ -78,6 +78,7 @@ export function useCameraControls({
   rotationSpeedMultiplier = 1,
   enableKeyboardNavigation = true,
   rotationLocked = false,
+  rendererPixelRatioCap = DEFAULT_DESKTOP_RENDER_PIXEL_RATIO_CAP,
 }: UseCameraControlsParams) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
@@ -117,6 +118,7 @@ export function useCameraControls({
       setHasMeasured(true);
     }
 
+    applyDesktopRendererPixelRatio(rendererInstance, rendererPixelRatioCap);
     rendererInstance.setSize(width, height);
     if (width > 0 && height > 0) {
       for (const resource of trackLinesRef.current.values()) {
@@ -133,7 +135,7 @@ export function useCameraControls({
       }
     }
     resizeDesktopCamera(cameraInstance, width, height);
-  }, [roiLinesRef, setHasMeasured, trackLinesRef]);
+  }, [rendererPixelRatioCap, roiLinesRef, setHasMeasured, trackLinesRef]);
 
   const worldUp = useMemo(() => new THREE.Vector3(0, 1, 0), []);
   const lookDirectionRef = useRef(new THREE.Vector3());
@@ -622,14 +624,22 @@ export function useCameraControls({
   );
 
   const initializeRenderContext = useCallback((container: HTMLElement) => {
-    const renderContext = createVolumeRenderContext(container, currentProjectionModeRef.current);
+    const renderContext = createVolumeRenderContext(
+      container,
+      currentProjectionModeRef.current,
+      rendererPixelRatioCap,
+    );
     rendererRef.current = renderContext.renderer;
     sceneRef.current = renderContext.scene;
     cameraRef.current = renderContext.camera;
     controlsRef.current = renderContext.controls;
     applyOrthographicZoomFloor(renderContext.camera, renderContext.controls);
     return renderContext;
-  }, [applyOrthographicZoomFloor]);
+  }, [applyOrthographicZoomFloor, rendererPixelRatioCap]);
+
+  useEffect(() => {
+    handleResize();
+  }, [handleResize]);
 
   useEffect(() => {
     const renderer = rendererRef.current;

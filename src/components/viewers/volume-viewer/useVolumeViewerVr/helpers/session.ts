@@ -1,6 +1,6 @@
 import type { MutableRefObject } from 'react';
 import * as THREE from 'three';
-import type { OrbitControls } from 'three/examples/jsm/controls/OrbitControls';
+import type { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 
 import {
   DESKTOP_VOLUME_STEP_SCALE,

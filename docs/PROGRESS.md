@@ -9,6 +9,19 @@
 - Viewer, route, VR, and preprocessing hotspots have been decomposed into smaller modules to reduce coupling.
 
 ## Most recent high-signal updates
+- Implemented the Three.js r184 hard cutover tracked in `docs/three-r184-hard-cutover/`:
+  - `three` and `@types/three` are pinned to exact `0.184.0`
+  - source and tests use `three/addons/...js` imports
+  - removed r184-unsupported API usage and added clean legacy/fallback scans
+  - renderer setup now requires WebGL2 explicitly
+  - texture lifecycle paths recreate `DataTexture` / `Data3DTexture` instances on identity changes
+  - verification passed:
+    - `npm run verify:fast`
+    - `npm run verify:ui`
+    - `npm run test:perf`
+    - `npm run test:e2e:preprocess-perf`
+    - `npm run test:e2e:closeup-perf`
+  - only remaining external blocker is physical WebXR headset verification; automated/source VR checks passed
 - Locked in the 3D hover intensity contract around discrete voxel readout:
   - documented the invariant in `docs/hover-invariants.md`
   - added a pointer from `docs/AGENTS.md` so future hover work is expected to consult that contract

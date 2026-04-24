@@ -98,7 +98,7 @@ function createPointerEvent(
 
 (() => {
   const domElement = createFakeCanvas();
-  const controls = { target: new THREE.Vector3() } as unknown as import('three/examples/jsm/controls/OrbitControls').OrbitControls;
+  const controls = { target: new THREE.Vector3() } as unknown as import('three/addons/controls/OrbitControls.js').OrbitControls;
   const camera = new THREE.PerspectiveCamera(60, 1, 0.1, 1000);
   camera.position.set(0, 0, 30);
   camera.lookAt(0, 0, 0);
@@ -184,7 +184,7 @@ function createPointerEvent(
 
 (() => {
   const domElement = createFakeCanvas();
-  const controls = { target: new THREE.Vector3() } as unknown as import('three/examples/jsm/controls/OrbitControls').OrbitControls;
+  const controls = { target: new THREE.Vector3() } as unknown as import('three/addons/controls/OrbitControls.js').OrbitControls;
   const camera = new THREE.PerspectiveCamera(60, 1, 0.1, 1000);
   const pointerLookCounters = { begin: 0, move: 0, end: 0 };
   const paintCounters = { start: 0, end: 0 };
@@ -261,7 +261,7 @@ function createPointerEvent(
 
 (() => {
   const domElement = createFakeCanvas();
-  const controls = { target: new THREE.Vector3() } as unknown as import('three/examples/jsm/controls/OrbitControls').OrbitControls;
+  const controls = { target: new THREE.Vector3() } as unknown as import('three/addons/controls/OrbitControls.js').OrbitControls;
   const camera = new THREE.PerspectiveCamera(60, 1, 0.1, 1000);
   const roiMoveActiveRef = { current: false };
   const roiMoveInteractionActiveRef = { current: false };
@@ -327,7 +327,7 @@ function createPointerEvent(
 
 (() => {
   const domElement = createFakeCanvas();
-  const controls = { target: new THREE.Vector3() } as unknown as import('three/examples/jsm/controls/OrbitControls').OrbitControls;
+  const controls = { target: new THREE.Vector3() } as unknown as import('three/addons/controls/OrbitControls.js').OrbitControls;
   const camera = new THREE.PerspectiveCamera(60, 1, 0.1, 1000);
   const pointerLookCounters = { begin: 0, move: 0, end: 0 };
   let selectedPropId: string | null = null;
@@ -394,7 +394,7 @@ function createPointerEvent(
 
 (() => {
   const domElement = createFakeCanvas();
-  const controls = { target: new THREE.Vector3() } as unknown as import('three/examples/jsm/controls/OrbitControls').OrbitControls;
+  const controls = { target: new THREE.Vector3() } as unknown as import('three/addons/controls/OrbitControls.js').OrbitControls;
   const camera = new THREE.PerspectiveCamera(60, 1, 0.1, 1000);
   const pointerLookCounters = { begin: 0, move: 0, end: 0 };
   const draggedPositions: Array<{ x: number; y: number }> = [];
@@ -473,7 +473,7 @@ function createPointerEvent(
 
 (() => {
   const domElement = createFakeCanvas();
-  const controls = { target: new THREE.Vector3() } as unknown as import('three/examples/jsm/controls/OrbitControls').OrbitControls;
+  const controls = { target: new THREE.Vector3() } as unknown as import('three/addons/controls/OrbitControls.js').OrbitControls;
   const camera = new THREE.PerspectiveCamera(60, 1, 0.1, 1000);
   const pointerLookCounters = { begin: 0, move: 0, end: 0 };
   const roiCounters = { down: 0, move: 0, up: 0 };
@@ -549,7 +549,7 @@ function createPointerEvent(
 
 (() => {
   const domElement = createFakeCanvas();
-  const controls = { target: new THREE.Vector3() } as unknown as import('three/examples/jsm/controls/OrbitControls').OrbitControls;
+  const controls = { target: new THREE.Vector3() } as unknown as import('three/addons/controls/OrbitControls.js').OrbitControls;
   const camera = new THREE.PerspectiveCamera(60, 1, 0.1, 1000);
   const pointerLookCounters = { begin: 0, move: 0, end: 0 };
   const roiCounters = { down: 0, move: 0, up: 0, leave: 0 };

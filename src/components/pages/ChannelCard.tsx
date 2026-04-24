@@ -6,7 +6,6 @@ import {
   getChannelVolumeComponentIndex,
   getChannelVolumeSourceChannels,
   isMultichannelDerivedChannelSource,
-  isMultichannelOwnerChannelSource,
   type ChannelSource,
   type ChannelValidation
 } from '../../hooks/dataset';
@@ -35,7 +34,6 @@ export default function ChannelCard({
   const primaryLayer = channel.volume;
   const hasLayerSelection = primaryLayer !== null;
   const isLinkedMultichannelChild = isMultichannelDerivedChannelSource(channel);
-  const isMultichannelOwner = isMultichannelOwnerChannelSource(channel);
   const sourceChannels = getChannelVolumeSourceChannels(primaryLayer);
   const componentLabel = getChannelVolumeComponentIndex(primaryLayer) + 1;
 

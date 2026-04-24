@@ -9,7 +9,7 @@ const expectedMenus = [
   {
     buttonLabel: 'File',
     menuLabel: 'file menu',
-    items: ['Save changes', 'Reset changes', 'Recenter windows', 'Diagnostics', 'Exit']
+    items: ['Save changes', 'Reset changes', 'Recenter windows', 'Diagnostics', 'Enter VR', 'Exit']
   },
   {
     buttonLabel: 'View',

@@ -3,6 +3,9 @@ import * as THREE from 'three';
 
 import {
   disposeVolumeResources,
+  updateOrCreateByte3dTexture,
+  updateOrCreatePreparedVolumeTexture,
+  updateOrCreateSliceDataTexture,
   useVolumeResources,
 } from '../src/components/viewers/volume-viewer/useVolumeResources.ts';
 import type { NormalizedVolume } from '../src/core/volumeProcessing.ts';
@@ -68,7 +71,7 @@ function withSuppressedConsoleError(
 
 const createFakeResource = (): VolumeResources => {
   const mesh = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshBasicMaterial());
-  const texture = new THREE.DataTexture(new Uint8Array([0]), 1, 1, THREE.LuminanceFormat);
+  const texture = new THREE.DataTexture(new Uint8Array([0]), 1, 1, THREE.RedFormat);
   return {
     mesh,
     texture,
@@ -344,6 +347,68 @@ const createLayer = (
   brickAtlas: resolvedBrickAtlas,
   };
 };
+
+function createVolumeResourceHook(
+  initialLayers: ViewerLayer[],
+  initialPrimaryVolume: NormalizedVolume | null,
+  options: { zClipFrontFraction?: number } = {},
+) {
+  let layers = initialLayers;
+  let primaryVolume = initialPrimaryVolume;
+  const sceneRef = { current: new THREE.Scene() };
+  const cameraRef = { current: new THREE.PerspectiveCamera(75, 1, 0.1, 10) };
+  const controlsRef = {
+    current: {
+      target: new THREE.Vector3(),
+      update: () => {},
+      saveState: () => {},
+    } as unknown as THREE.OrbitControls,
+  };
+  const resourcesRef = { current: new Map<string, VolumeResources>() };
+  const hook = renderHook(() =>
+    useVolumeResources({
+      layers,
+      primaryVolume,
+      isAdditiveBlending: false,
+      zClipFrontFraction: options.zClipFrontFraction,
+      renderContextRevision: 0,
+      sceneRef,
+      cameraRef,
+      controlsRef,
+      rotationTargetRef: { current: new THREE.Vector3() },
+      defaultViewStateRef: { current: null },
+      trackGroupRef: { current: new THREE.Group() },
+      resourcesRef,
+      currentDimensionsRef: { current: null },
+      colormapCacheRef: { current: new Map() },
+      volumeRootGroupRef: { current: new THREE.Group() },
+      volumeRootBaseOffsetRef: { current: new THREE.Vector3() },
+      volumeRootCenterOffsetRef: { current: new THREE.Vector3() },
+      volumeRootCenterUnscaledRef: { current: new THREE.Vector3() },
+      volumeRootHalfExtentsRef: { current: new THREE.Vector3() },
+      volumeNormalizationScaleRef: { current: 1 },
+      volumeUserScaleRef: { current: 1 },
+      volumeStepScaleRef: { current: 1 },
+      volumeYawRef: { current: 0 },
+      volumePitchRef: { current: 0 },
+      volumeRootRotatedCenterTempRef: { current: new THREE.Vector3() },
+      applyTrackGroupTransform: () => {},
+      applyVolumeRootTransform: () => {},
+      applyVolumeStepScaleToResources: () => {},
+      applyHoverHighlightToResources: () => {},
+    }),
+  );
+
+  return {
+    hook,
+    resourcesRef,
+    rerender(nextLayers: ViewerLayer[], nextPrimaryVolume: NormalizedVolume | null = primaryVolume) {
+      layers = nextLayers;
+      primaryVolume = nextPrimaryVolume;
+      hook.rerender();
+    },
+  };
+}
 
 await (async () => {
   const resourcesRef = { current: new Map<string, VolumeResources>([['resource', createFakeResource()]]) };
@@ -1687,6 +1752,87 @@ await (async () => {
 
   const fallback = resourcesRef.current.get('layer-3d');
   assert.equal(fallback, undefined);
+})();
+
+(() => {
+  const volume8: NormalizedVolume = {
+    kind: 'intensity',
+    width: 2,
+    height: 2,
+    depth: 2,
+    channels: 1,
+    dataType: 'uint8',
+    normalizedDataType: 'uint8',
+    normalized: new Uint8Array([1, 2, 3, 4, 5, 6, 7, 8]),
+    min: 0,
+    max: 255,
+  };
+  const volume8b: NormalizedVolume = {
+    ...volume8,
+    normalized: new Uint8Array([8, 7, 6, 5, 4, 3, 2, 1]),
+  };
+  const initial = updateOrCreatePreparedVolumeTexture({
+    existing: null,
+    volume: volume8,
+    samplingMode: 'linear',
+  }).texture;
+  let disposeCalls = 0;
+  const originalDispose = initial.dispose.bind(initial);
+  initial.dispose = () => {
+    disposeCalls += 1;
+    originalDispose();
+  };
+
+  const reused = updateOrCreatePreparedVolumeTexture({
+    existing: initial,
+    volume: volume8b,
+    samplingMode: 'linear',
+  }).texture;
+  assert.strictEqual(reused, initial, 'same 3D texture identity should be reused for data-only updates');
+  assert.equal(disposeCalls, 0);
+  assert.deepEqual(Array.from(reused.image.data as Uint8Array), Array.from(volume8b.normalized));
+
+  const volume16: NormalizedVolume = {
+    kind: 'intensity',
+    width: 2,
+    height: 2,
+    depth: 2,
+    channels: 1,
+    dataType: 'uint16',
+    normalizedDataType: 'uint16',
+    normalized: new Uint16Array([0, 65535, 32768, 1000, 2000, 3000, 4000, 5000]),
+    min: 0,
+    max: 65535,
+  };
+  const recreated = updateOrCreatePreparedVolumeTexture({
+    existing: reused,
+    volume: volume16,
+    samplingMode: 'linear',
+  }).texture;
+  assert.notStrictEqual(recreated, reused, '3D texture identity changes must recreate the texture');
+  assert.equal(disposeCalls, 1);
+  assert.equal(recreated.type, THREE.FloatType);
+  assert.ok(recreated.image.data instanceof Float32Array);
+})();
+
+(() => {
+  const initial = updateOrCreateByte3dTexture(null, new Uint8Array([1, 2, 3, 4]), 1, 1, 1, THREE.RGBAFormat);
+  let disposeCalls = 0;
+  const originalDispose = initial.dispose.bind(initial);
+  initial.dispose = () => {
+    disposeCalls += 1;
+    originalDispose();
+  };
+
+  const reused = updateOrCreateByte3dTexture(initial, new Uint8Array([4, 3, 2, 1]), 1, 1, 1, THREE.RGBAFormat);
+  assert.strictEqual(reused, initial, 'metadata 3D textures should reuse identity for same upload contract');
+  assert.equal(disposeCalls, 0);
+  assert.deepEqual(Array.from(reused.image.data as Uint8Array), [4, 3, 2, 1]);
+
+  const recreated = updateOrCreateByte3dTexture(reused, new Float32Array([1, 0, 0, 1]), 1, 1, 1, THREE.RGBAFormat);
+  assert.notStrictEqual(recreated, reused, 'metadata 3D texture type changes must recreate the texture');
+  assert.equal(disposeCalls, 1);
+  assert.equal(recreated.type, THREE.FloatType);
 })();
 
 (() => {
@@ -3043,6 +3189,61 @@ await (async () => {
       14, 14, 14, 255,
     ],
   );
+})();
+
+(() => {
+  const volume8: NormalizedVolume = {
+    kind: 'intensity',
+    width: 2,
+    height: 2,
+    depth: 1,
+    channels: 1,
+    dataType: 'uint8',
+    normalizedDataType: 'uint8',
+    normalized: new Uint8Array([10, 20, 30, 40]),
+    min: 0,
+    max: 255,
+  };
+  const volume16: NormalizedVolume = {
+    kind: 'intensity',
+    width: 2,
+    height: 2,
+    depth: 1,
+    channels: 1,
+    dataType: 'uint16',
+    normalizedDataType: 'uint16',
+    normalized: new Uint16Array([0, 65535, 32768, 16384]),
+    min: 0,
+    max: 65535,
+  };
+  const createSliceLayer = (volume: NormalizedVolume): ViewerLayer => ({
+    ...createLayer(volume, null, null, 'linear'),
+    key: 'layer-slice-identity',
+    mode: 'slice',
+    renderStyle: RENDER_STYLE_SLICE,
+  });
+  const { hook, resourcesRef, rerender } = createVolumeResourceHook([createSliceLayer(volume8)], volume8);
+  const initial = resourcesRef.current.get('layer-slice-identity');
+  assert.ok(initial);
+  const initialTexture = initial.texture as THREE.DataTexture;
+  let disposeCalls = 0;
+  const originalDispose = initialTexture.dispose.bind(initialTexture);
+  initialTexture.dispose = () => {
+    disposeCalls += 1;
+    originalDispose();
+  };
+
+  rerender([createSliceLayer(volume16)], volume16);
+
+  const updated = resourcesRef.current.get('layer-slice-identity');
+  assert.ok(updated);
+  assert.notStrictEqual(updated.texture, initialTexture, 'slice texture type changes must recreate the DataTexture');
+  assert.equal(disposeCalls, 1);
+  assert.equal((updated.texture as THREE.DataTexture).type, THREE.FloatType);
+  assert.ok((updated.texture as THREE.DataTexture).image.data instanceof Float32Array);
+  const uniforms = (updated.mesh.material as THREE.ShaderMaterial).uniforms as Record<string, { value: unknown }>;
+  assert.strictEqual(uniforms.u_slice?.value, updated.texture);
+  hook.unmount();
 })();
 
 (() => {
