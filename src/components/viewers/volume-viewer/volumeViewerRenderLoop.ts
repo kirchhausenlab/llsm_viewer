@@ -45,7 +45,6 @@ type CreateVolumeViewerRenderLoopOptions = {
   onCameraWindowStateChange?: (state: CameraWindowState | null) => void;
   advancePlaybackFrame: (timestamp: number) => void;
   refreshVrHudPlacements: () => void;
-  refreshInitialVrPlacement?: () => void;
   updateControllerRays: () => void;
   controllersRef: MutableRefObject<Array<{ hoverTrackId: string | null }>>;
   vrLog: (...args: Parameters<typeof console.debug>) => void;
@@ -76,7 +75,6 @@ export function createVolumeViewerRenderLoop({
   onCameraWindowStateChange,
   advancePlaybackFrame,
   refreshVrHudPlacements,
-  refreshInitialVrPlacement,
   updateControllerRays,
   controllersRef,
   vrLog
@@ -111,9 +109,6 @@ export function createVolumeViewerRenderLoop({
       controls.update();
     }
     camera.updateMatrixWorld(true);
-    if (isXrPresenting) {
-      refreshInitialVrPlacement?.();
-    }
     if (!isXrPresenting) {
       rotationTargetRef.current.copy(controls.target);
     }

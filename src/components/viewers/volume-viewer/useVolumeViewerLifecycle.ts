@@ -49,7 +49,6 @@ type UseVolumeViewerLifecycleParams = {
   updateCameraFrustum: RenderLoopOptions['updateCameraFrustum'];
   renderBackgroundPass: RenderLoopOptions['renderBackgroundPass'];
   advancePlaybackFrame: RenderLoopOptions['advancePlaybackFrame'];
-  refreshInitialVrPlacement: RenderLoopOptions['refreshInitialVrPlacement'];
   updateControllerRays: RenderLoopOptions['updateControllerRays'];
   controllersRef: MutableRefObject<ControllerEntry[]>;
   vrLog: RenderLoopOptions['vrLog'];
@@ -161,7 +160,6 @@ export function useVolumeViewerLifecycle({
   updateCameraFrustum,
   renderBackgroundPass,
   advancePlaybackFrame,
-  refreshInitialVrPlacement,
   updateControllerRays,
   controllersRef,
   vrLog,
@@ -270,8 +268,6 @@ export function useVolumeViewerLifecycle({
   renderBackgroundPassRef.current = renderBackgroundPass;
   const advancePlaybackFrameRef = useRef(advancePlaybackFrame);
   advancePlaybackFrameRef.current = advancePlaybackFrame;
-  const refreshInitialVrPlacementRef = useRef(refreshInitialVrPlacement);
-  refreshInitialVrPlacementRef.current = refreshInitialVrPlacement;
   const updateControllerRaysRef = useRef(updateControllerRays);
   updateControllerRaysRef.current = updateControllerRays;
   const refreshTrackOverlayRef = useRef(refreshTrackOverlay);
@@ -346,6 +342,12 @@ export function useVolumeViewerLifecycle({
   createVrChannelsHudRef.current = createVrChannelsHud;
   const createVrTracksHudRef = useRef(createVrTracksHud);
   createVrTracksHudRef.current = createVrTracksHud;
+  const resetVrPlaybackHudPlacementRef = useRef(resetVrPlaybackHudPlacement);
+  resetVrPlaybackHudPlacementRef.current = resetVrPlaybackHudPlacement;
+  const resetVrChannelsHudPlacementRef = useRef(resetVrChannelsHudPlacement);
+  resetVrChannelsHudPlacementRef.current = resetVrChannelsHudPlacement;
+  const resetVrTracksHudPlacementRef = useRef(resetVrTracksHudPlacement);
+  resetVrTracksHudPlacementRef.current = resetVrTracksHudPlacement;
   const updateVrPlaybackHudRef = useRef(updateVrPlaybackHud);
   updateVrPlaybackHudRef.current = updateVrPlaybackHud;
   const updateVrChannelsHudRef = useRef(updateVrChannelsHud);
@@ -358,6 +360,60 @@ export function useVolumeViewerLifecycle({
   disposeTrackResourcesRef.current = disposeTrackResources;
   const disposeRoiResourcesRef = useRef(disposeRoiResources);
   disposeRoiResourcesRef.current = disposeRoiResources;
+
+  const ensureVrHudObjects = () => {
+    const scene = sceneRef.current;
+    if (!scene) {
+      return;
+    }
+
+    if (!vrPlaybackHudRef.current) {
+      const playbackHud = createVrPlaybackHudRef.current();
+      if (playbackHud) {
+        playbackHud.group.visible = false;
+        scene.add(playbackHud.group);
+        vrPlaybackHudRef.current = playbackHud;
+        resetVrPlaybackHudPlacementRef.current();
+        updateVrPlaybackHudRef.current();
+        applyVrPlaybackHoverStateRef.current(false, false, false, false, false, false, false, false, false);
+      }
+    }
+
+    if (!vrChannelsHudRef.current) {
+      const channelsHud = createVrChannelsHudRef.current();
+      if (channelsHud) {
+        channelsHud.group.visible = false;
+        scene.add(channelsHud.group);
+        vrChannelsHudRef.current = channelsHud;
+        resetVrChannelsHudPlacementRef.current();
+        updateVrChannelsHudRef.current();
+      }
+    }
+
+    if (!vrTracksHudRef.current) {
+      const tracksHud = createVrTracksHudRef.current();
+      if (tracksHud) {
+        tracksHud.group.visible = false;
+        scene.add(tracksHud.group);
+        vrTracksHudRef.current = tracksHud;
+        resetVrTracksHudPlacementRef.current();
+        updateVrTracksHudRef.current();
+      }
+    }
+  };
+
+  useEffect(() => {
+    if (!rendererRef.current || !sceneRef.current) {
+      return;
+    }
+    ensureVrHudObjects();
+    onRendererInitializedRef.current();
+  }, [
+    createVrChannelsHud,
+    createVrPlaybackHud,
+    createVrTracksHud,
+    onRendererInitialized,
+  ]);
 
   useEffect(() => {
     resetHoverStateRef.current();
@@ -475,39 +531,9 @@ export function useVolumeViewerLifecycle({
     cameraRef.current = camera;
     controlsRef.current = controls;
 
-    const playbackHud = createVrPlaybackHudRef.current();
-    if (playbackHud) {
-      playbackHud.group.visible = false;
-      scene.add(playbackHud.group);
-      vrPlaybackHudRef.current = playbackHud;
-      resetVrPlaybackHudPlacement();
-      updateVrPlaybackHudRef.current();
-      applyVrPlaybackHoverStateRef.current(false, false, false, false, false, false, false, false, false);
-    } else {
-      vrPlaybackHudRef.current = null;
-    }
-
-    const channelsHud = createVrChannelsHudRef.current();
-    if (channelsHud) {
-      channelsHud.group.visible = false;
-      scene.add(channelsHud.group);
-      vrChannelsHudRef.current = channelsHud;
-      resetVrChannelsHudPlacement();
-      updateVrChannelsHudRef.current();
-    } else {
-      vrChannelsHudRef.current = null;
-    }
-
-    const tracksHud = createVrTracksHudRef.current();
-    if (tracksHud) {
-      tracksHud.group.visible = false;
-      scene.add(tracksHud.group);
-      vrTracksHudRef.current = tracksHud;
-      resetVrTracksHudPlacement();
-      updateVrTracksHudRef.current();
-    } else {
-      vrTracksHudRef.current = null;
-    }
+    rendererRef.current = renderer;
+    sceneRef.current = scene;
+    ensureVrHudObjects();
 
     const domElement = renderer.domElement;
 
@@ -517,8 +543,6 @@ export function useVolumeViewerLifecycle({
 
     const { beginPointerLook, updatePointerLook, endPointerLook } = createPointerLookHandlersRef.current(renderContext);
 
-    rendererRef.current = renderer;
-    sceneRef.current = scene;
     cameraRef.current = camera;
     raycasterRef.current = raycaster;
     markHoverInitializedRef.current(raycaster);
@@ -599,7 +623,6 @@ export function useVolumeViewerLifecycle({
       onCameraWindowStateChange: (state) => onCameraWindowStateChangeRef.current?.(state),
       advancePlaybackFrame: (timestamp) => advancePlaybackFrameRef.current(timestamp),
       refreshVrHudPlacements: () => refreshVrHudPlacementsRef.current?.(),
-      refreshInitialVrPlacement: () => refreshInitialVrPlacementRef.current?.(),
       updateControllerRays: () => updateControllerRaysRef.current(),
       controllersRef,
       vrLog,

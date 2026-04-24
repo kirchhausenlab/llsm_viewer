@@ -22,6 +22,7 @@ type DropdownMenuId = 'file' | 'view' | 'edit' | 'tracks' | 'help';
 type DropdownMenuItem = {
   label: string;
   disabled?: boolean;
+  title?: string;
   onSelect?: () => void;
 };
 
@@ -165,6 +166,16 @@ export default function TopMenu(props: TopMenuProps) {
         { label: 'Reset changes', disabled: true },
         { label: 'Recenter windows', onSelect: onResetLayout },
         { label: 'Diagnostics', onSelect: onOpenDiagnosticsWindow },
+        ...(is3dModeAvailable
+          ? [
+              {
+                label: vrButtonLabel,
+                disabled: vrButtonDisabled,
+                title: vrButtonTitle,
+                onSelect: onVrButtonClick
+              }
+            ]
+          : []),
         { label: 'Exit', onSelect: onReturnToLauncher }
       ],
       view: [
@@ -214,7 +225,12 @@ export default function TopMenu(props: TopMenuProps) {
       onOpenTracksWindow,
       onResetLayout,
       onReturnToLauncher,
-      openHelpMenu
+      onVrButtonClick,
+      openHelpMenu,
+      is3dModeAvailable,
+      vrButtonDisabled,
+      vrButtonLabel,
+      vrButtonTitle
     ]
   );
 
@@ -521,6 +537,7 @@ export default function TopMenu(props: TopMenuProps) {
                               role="menuitem"
                               className="viewer-top-menu-dropdown-item"
                               disabled={item.disabled === true}
+                              title={item.title}
                               ref={(element) => {
                                 menuItemRefs.current[menuId][index] = item.disabled === true ? null : element;
                               }}

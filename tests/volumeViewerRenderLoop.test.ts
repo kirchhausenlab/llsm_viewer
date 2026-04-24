@@ -167,9 +167,6 @@ import { createVolumeViewerRenderLoop } from '../src/components/viewers/volume-v
     currentDimensionsRef: { current: { width: 100, height: 100, depth: 100 } },
     advancePlaybackFrame: () => {},
     refreshVrHudPlacements: () => {},
-    refreshInitialVrPlacement: () => {
-      calls.push('refreshInitialVrPlacement');
-    },
     updateControllerRays: () => {},
     controllersRef: { current: [] },
     vrLog: () => {},
@@ -178,7 +175,6 @@ import { createVolumeViewerRenderLoop } from '../src/components/viewers/volume-v
   renderLoop(0);
 
   assert.ok(calls.includes('xr.updateCamera'));
-  assert.ok(calls.indexOf('xr.updateCamera') < calls.indexOf('refreshInitialVrPlacement'));
   assert.ok(!calls.includes('controls.update'));
   assert.ok(!calls.includes('applyKeyboardRotation'));
   assert.ok(!calls.includes('applyKeyboardMovement'));
