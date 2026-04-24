@@ -78,6 +78,10 @@ import {
   toUserFacingVoxelIndex,
 } from '../../shared/utils/voxelIndex';
 import type { HoverSettings, HoverType } from '../../types/hover';
+import {
+  DEFAULT_DESKTOP_RENDER_RESOLUTION,
+  type DesktopRenderResolution,
+} from '../../types/renderResolution';
 import { useUiTheme } from '../../ui/app/providers/UiThemeProvider';
 
 type CoordinateDraft = {
@@ -338,6 +342,9 @@ function ViewerShell({
     [volumeDimensions.depth, volumeDimensions.height, volumeDimensions.width]
   );
   const [renderingQuality, setRenderingQuality] = useState(1.1);
+  const [desktopRenderResolution, setDesktopRenderResolution] = useState<DesktopRenderResolution>(
+    DEFAULT_DESKTOP_RENDER_RESOLUTION,
+  );
   const [hoverSettings, setHoverSettings] = useState<HoverSettings>(() => ({ ...DEFAULT_HOVER_SETTINGS }));
   const [backgroundSelection, setBackgroundSelection] = useState<DesktopViewerBackgroundSelection>({
     mode: 'default',
@@ -356,6 +363,10 @@ function ViewerShell({
   const handleRenderingQualityChange = (value: number) => {
     setRenderingQuality(value);
     volumeViewerProps.onVolumeStepScaleChange?.(value);
+  };
+
+  const handleDesktopRenderResolutionChange = (value: DesktopRenderResolution) => {
+    setDesktopRenderResolution(value);
   };
 
   const {
@@ -1730,6 +1741,7 @@ function ViewerShell({
     () => ({
       ...volumeViewerWithCaptureTarget,
       hoverSettings,
+      desktopRenderResolution,
       background: resolvedViewerBackground,
       translationSpeedMultiplier,
       rotationSpeedMultiplier,
@@ -1789,6 +1801,7 @@ function ViewerShell({
       volumeViewerProps.temporalResolution,
       volumeViewerWithCaptureTarget,
       hoverSettings,
+      desktopRenderResolution,
       resolvedViewerBackground,
       is2dViewActive,
       translationSpeedMultiplier,
@@ -2037,6 +2050,8 @@ function ViewerShell({
         viewerSettings={viewerSettings}
         isOpen={isViewerSettingsOpen}
         onClose={closeViewerSettings}
+        desktopRenderResolution={desktopRenderResolution}
+        onDesktopRenderResolutionChange={handleDesktopRenderResolutionChange}
         renderingQuality={renderingQuality}
         onRenderingQualityChange={handleRenderingQualityChange}
         globalRenderControls={resolvedGlobalRenderControls}

@@ -7,6 +7,11 @@ import {
   MAX_PLAYBACK_BUFFER_FRAMES,
   MIN_PLAYBACK_BUFFER_FRAMES,
 } from '../../../shared/utils/viewerPlayback';
+import {
+  DESKTOP_RENDER_RESOLUTION_OPTIONS,
+  resolveDesktopRenderResolutionPixelRatioCap,
+  type DesktopRenderResolution,
+} from '../../../types/renderResolution';
 import FloatingWindow from '../../widgets/FloatingWindow';
 import type { GlobalRenderControls, LayoutProps, PlaybackControlsProps } from './types';
 import type { ModeToggleState, ViewerSettingsControls } from './hooks/useViewerModeControls';
@@ -26,6 +31,11 @@ const formatBlControlValue = (value: number): string => {
   return fixed.replace(/(\.\d*?[1-9])0+$/, '$1').replace(/\.0+$/, '');
 };
 
+const formatPixelRatioCap = (value: number): string => {
+  const fixed = value.toFixed(1);
+  return fixed.replace(/\.0$/, '');
+};
+
 export type ViewerSettingsWindowProps = {
   layout: Pick<LayoutProps, 'windowMargin' | 'controlWindowWidth' | 'viewerSettingsWindowInitialPosition' | 'resetToken'>;
   modeToggle: ModeToggleState;
@@ -36,6 +46,8 @@ export type ViewerSettingsWindowProps = {
   viewerSettings: ViewerSettingsControls;
   isOpen: boolean;
   onClose: () => void;
+  desktopRenderResolution: DesktopRenderResolution;
+  onDesktopRenderResolutionChange: (value: DesktopRenderResolution) => void;
   renderingQuality: number;
   onRenderingQualityChange: (value: number) => void;
   globalRenderControls: GlobalRenderControls;
@@ -48,6 +60,8 @@ export default function ViewerSettingsWindow({
   viewerSettings,
   isOpen,
   onClose,
+  desktopRenderResolution,
+  onDesktopRenderResolutionChange,
   renderingQuality,
   onRenderingQualityChange,
   globalRenderControls
@@ -85,6 +99,8 @@ export default function ViewerSettingsWindow({
     Math.max(MIN_PLAYBACK_BUFFER_FRAMES, volumeTimepointCount - 1)
   );
   const displayedPlaybackBufferFrames = Math.min(playbackBufferFrames, playbackBufferSliderMax);
+  const selectedRenderResolutionPixelRatioCap =
+    resolveDesktopRenderResolutionPixelRatioCap(desktopRenderResolution);
 
   if (!isOpen) {
     return null;
@@ -133,6 +149,23 @@ export default function ViewerSettingsWindow({
               />
             </div>
           ) : null}
+
+          <div className="control-group">
+            <label htmlFor="desktop-render-resolution-select">
+              Render resolution <span>{formatPixelRatioCap(selectedRenderResolutionPixelRatioCap)}x</span>
+            </label>
+            <select
+              id="desktop-render-resolution-select"
+              value={desktopRenderResolution}
+              onChange={(event) => onDesktopRenderResolutionChange(event.target.value as DesktopRenderResolution)}
+            >
+              {DESKTOP_RENDER_RESOLUTION_OPTIONS.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label} ({formatPixelRatioCap(option.pixelRatioCap)}x)
+                </option>
+              ))}
+            </select>
+          </div>
 
           {is3dModeAvailable ? (
             <div className="control-group control-group--slider">

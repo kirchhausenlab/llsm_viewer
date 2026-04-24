@@ -1,6 +1,8 @@
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls';
 import * as THREE from 'three';
 
+import { DEFAULT_DESKTOP_RENDER_PIXEL_RATIO_CAP } from '../types/renderResolution';
+
 export type ViewerProjectionMode = 'perspective' | 'orthographic';
 
 export type DesktopViewerCamera = THREE.PerspectiveCamera | THREE.OrthographicCamera;
@@ -32,7 +34,6 @@ export type VolumeRenderContext = {
   projectionMode: ViewerProjectionMode;
 };
 
-const MAX_RENDERER_PIXEL_RATIO = 2;
 export const DEFAULT_DESKTOP_CAMERA_NEAR = 0.0001;
 export const DEFAULT_DESKTOP_CAMERA_FAR = 1000;
 export const DEFAULT_DESKTOP_PERSPECTIVE_FOV = 38;
@@ -99,6 +100,31 @@ function getSafeAspect(width: number, height: number): number {
     return 1;
   }
   return width / height;
+}
+
+function normalizeRendererPixelRatio(value: number | null | undefined, fallback: number): number {
+  return typeof value === 'number' && Number.isFinite(value) && value > 0 ? value : fallback;
+}
+
+export function resolveDesktopRendererPixelRatio(
+  pixelRatioCap = DEFAULT_DESKTOP_RENDER_PIXEL_RATIO_CAP,
+): number {
+  const devicePixelRatio =
+    typeof window === 'undefined'
+      ? 1
+      : normalizeRendererPixelRatio(window.devicePixelRatio, 1);
+  const safePixelRatioCap = normalizeRendererPixelRatio(
+    pixelRatioCap,
+    DEFAULT_DESKTOP_RENDER_PIXEL_RATIO_CAP,
+  );
+  return Math.min(devicePixelRatio, safePixelRatioCap);
+}
+
+export function applyDesktopRendererPixelRatio(
+  renderer: THREE.WebGLRenderer,
+  pixelRatioCap = DEFAULT_DESKTOP_RENDER_PIXEL_RATIO_CAP,
+): void {
+  renderer.setPixelRatio(resolveDesktopRendererPixelRatio(pixelRatioCap));
 }
 
 export function resizeDesktopCamera(camera: DesktopViewerCamera, width: number, height: number): void {
@@ -306,6 +332,7 @@ export function createPerspectiveViewStateFromOrthographic(
 export function createVolumeRenderContext(
   container: HTMLElement,
   projectionMode: ViewerProjectionMode = 'perspective',
+  pixelRatioCap = DEFAULT_DESKTOP_RENDER_PIXEL_RATIO_CAP,
 ): VolumeRenderContext {
   const renderer = new THREE.WebGLRenderer({
     antialias: true,
@@ -314,11 +341,7 @@ export function createVolumeRenderContext(
   });
 
   renderer.outputColorSpace = THREE.SRGBColorSpace;
-  const pixelRatio =
-    typeof window === 'undefined'
-      ? 1
-      : Math.min(window.devicePixelRatio ?? 1, MAX_RENDERER_PIXEL_RATIO);
-  renderer.setPixelRatio(pixelRatio);
+  applyDesktopRendererPixelRatio(renderer, pixelRatioCap);
   renderer.setSize(container.clientWidth, container.clientHeight);
   renderer.setClearColor(0x000000, 0);
   renderer.domElement.style.background = 'transparent';

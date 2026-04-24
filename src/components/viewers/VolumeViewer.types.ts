@@ -27,6 +27,7 @@ import type { ViewerProp } from '../../types/viewerProps';
 import type { TemporalResolutionMetadata, VoxelResolutionValues } from '../../types/voxelResolution';
 import type { RenderStyle, SamplingMode } from '../../state/layerSettings';
 import type { TrackSetState } from '../../types/channelTracks';
+import type { DesktopRenderResolution } from '../../types/renderResolution';
 import type { PlaybackIndexWindow } from '../../shared/utils';
 import type { ResidencyDecision } from '../../ui/app/volume-loading/residencyPolicy';
 import type {
@@ -220,6 +221,7 @@ export type VolumeViewerProps = {
   isDiagnosticsWindowOpen?: boolean;
   onCloseDiagnosticsWindow?: () => void;
   windowResetSignal?: number;
+  desktopRenderResolution?: DesktopRenderResolution;
   onTogglePlayback: () => void;
   onTimeIndexChange: (nextIndex: number) => void;
   playbackWindow?: PlaybackIndexWindow | null;

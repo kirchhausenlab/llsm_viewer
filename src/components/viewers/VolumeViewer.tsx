@@ -59,6 +59,10 @@ import { computeLoopedNextTimeIndex } from '../../shared/utils';
 import { RENDER_STYLE_BL, RENDER_STYLE_SLICE } from '../../state/layerSettings';
 import FloatingWindow from '../widgets/FloatingWindow';
 import { DEFAULT_HOVER_SETTINGS, normalizeHoverSettings } from '../../shared/utils/hoverSettings';
+import {
+  DEFAULT_DESKTOP_RENDER_RESOLUTION,
+  resolveDesktopRenderResolutionPixelRatioCap,
+} from '../../types/renderResolution';
 
 function formatPercentage(value: number): string {
   if (!Number.isFinite(value)) {
@@ -371,6 +375,7 @@ function VolumeViewer({
   isDiagnosticsWindowOpen = false,
   onCloseDiagnosticsWindow,
   windowResetSignal,
+  desktopRenderResolution = DEFAULT_DESKTOP_RENDER_RESOLUTION,
   timeIndex,
   totalTimepoints,
   isPlaying,
@@ -535,6 +540,10 @@ function VolumeViewer({
     () => normalizeHoverSettings(hoverSettings),
     [hoverSettings]
   );
+  const rendererPixelRatioCap = useMemo(
+    () => resolveDesktopRenderResolutionPixelRatioCap(desktopRenderResolution),
+    [desktopRenderResolution],
+  );
   const enableKeyboardNavigation = useMemo(
     () =>
       layers.some((layer) => {
@@ -588,6 +597,7 @@ function VolumeViewer({
     rotationSpeedMultiplier,
     enableKeyboardNavigation,
     rotationLocked,
+    rendererPixelRatioCap,
   });
   useEffect(() => {
     onRegisterCameraWindowController?.({
