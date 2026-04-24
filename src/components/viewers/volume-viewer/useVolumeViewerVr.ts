@@ -104,7 +104,6 @@ export function useVolumeViewerVr({
   const endVrSessionRequestRef = useRef<(() => Promise<void> | void) | null>(null);
   const disposedRef = useRef(false);
   const requestVrSessionRef = useRef<(() => Promise<XRSession>) | null>(null);
-  const pendingInitialPlacementFramesRef = useRef(0);
   const vrPropsRef = useRef(vrProps ?? null);
   vrPropsRef.current = vrProps ?? null;
 
@@ -519,7 +518,6 @@ export function useVolumeViewerVr({
       volumeRootBaseOffsetRef,
       volumeYawRef,
       volumePitchRef,
-      pendingInitialPlacementFramesRef,
       applyVolumeRootTransform,
       currentDimensionsRef,
       refreshControllerVisibility,
@@ -567,7 +565,6 @@ export function useVolumeViewerVr({
       volumeRootBaseOffsetRef,
       volumeYawRef,
       volumePitchRef,
-      pendingInitialPlacementFramesRef,
       applyVolumeRootTransform,
       currentDimensionsRef,
       refreshControllerVisibility,
@@ -593,7 +590,6 @@ export function useVolumeViewerVr({
   const {
     applySessionStartState,
     applySessionEndState,
-    refreshInitialVrPlacement,
     sessionManager,
     requestVrSession,
     endVrSession,
@@ -808,6 +804,5 @@ export function useVolumeViewerVr({
     onRendererInitialized,
     endVrSessionRequestRef,
     updateControllerRays,
-    refreshInitialVrPlacement,
   };
 }

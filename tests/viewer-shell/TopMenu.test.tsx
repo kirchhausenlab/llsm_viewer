@@ -360,9 +360,12 @@ test('wired dropdown items invoke the expected handlers', () => {
     let plotSettingsCalls = 0;
     let trackSettingsCalls = 0;
     let diagnosticsCalls = 0;
+    let vrCalls = 0;
     let helpCalls = 0;
 
     const renderer = renderTopMenu({
+      is3dModeAvailable: true,
+      vrButtonDisabled: false,
       onReturnToLauncher: () => {
         exitCalls += 1;
       },
@@ -419,6 +422,9 @@ test('wired dropdown items invoke the expected handlers', () => {
       },
       onOpenDiagnosticsWindow: () => {
         diagnosticsCalls += 1;
+      },
+      onVrButtonClick: () => {
+        vrCalls += 1;
       },
       openHelpMenu: () => {
         helpCalls += 1;
@@ -479,6 +485,13 @@ test('wired dropdown items invoke the expected handlers', () => {
     });
     act(() => {
       findMenuItem(renderer, 'Diagnostics').props.onClick();
+    });
+
+    act(() => {
+      findDropdownTrigger(renderer, 'File').props.onClick();
+    });
+    act(() => {
+      findMenuItem(renderer, 'Enter VR').props.onClick();
     });
 
     act(() => {
@@ -584,6 +597,7 @@ test('wired dropdown items invoke the expected handlers', () => {
     assert.equal(plotSettingsCalls, 1);
     assert.equal(trackSettingsCalls, 1);
     assert.equal(diagnosticsCalls, 1);
+    assert.equal(vrCalls, 1);
     assert.equal(helpCalls, 1);
 
     renderer.unmount();

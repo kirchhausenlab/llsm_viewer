@@ -384,7 +384,6 @@ export function useVolumeViewerVrBridge(options: VolumeViewerVrBridgeOptions) {
       onRendererInitialized: () => {},
       endVrSessionRequestRef: createMutableRef<(() => Promise<void> | void) | null>(null),
       updateControllerRays: () => {},
-      refreshInitialVrPlacement: () => {},
     };
   }, [
     fallbackTranslationHandleRef,
