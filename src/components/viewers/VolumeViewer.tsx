@@ -446,7 +446,6 @@ function VolumeViewer({
   const screenshotReadbackBufferRef = useRef<Uint8Array | null>(null);
   const screenshotCanvasResourceRef = useRef<ScreenshotCanvasResource | null>(null);
   const backgroundPassSceneRef = useRef<THREE.Scene | null>(new THREE.Scene());
-  const backgroundPassCameraRef = useRef<THREE.Camera | null>(new THREE.Camera());
   const backgroundPassMeshRef = useRef<THREE.Mesh<THREE.PlaneGeometry, THREE.ShaderMaterial> | null>(null);
   const backgroundPassPlanePointLocalRef = useRef(new THREE.Vector3());
   const backgroundPassPlanePointWorldRef = useRef(new THREE.Vector3());
@@ -1349,8 +1348,7 @@ function VolumeViewer({
 
   useEffect(() => {
     const backgroundScene = backgroundPassSceneRef.current;
-    const backgroundCamera = backgroundPassCameraRef.current;
-    if (!backgroundScene || !backgroundCamera) {
+    if (!backgroundScene) {
       return undefined;
     }
 
@@ -1484,10 +1482,9 @@ function VolumeViewer({
     }
 
     const backgroundScene = backgroundPassSceneRef.current;
-    const backgroundCamera = backgroundPassCameraRef.current;
     const backgroundMesh = backgroundPassMeshRef.current;
     const volumeRootGroup = volumeRootGroupRef.current;
-    if (!backgroundScene || !backgroundCamera || !backgroundMesh || !volumeRootGroup) {
+    if (!backgroundScene || !backgroundMesh || !volumeRootGroup) {
       return;
     }
 
@@ -1508,20 +1505,6 @@ function VolumeViewer({
     });
     const safeGridSpacing = Math.max(gridStyle.gridSpacing, 1e-6);
     const safeFarGridSpacing = Math.max(gridStyle.farGridSpacing, 1e-6);
-    const cameraLocalPosition = volumeRootGroup.worldToLocal(
-      backgroundPassCameraLocalRef.current.copy(camera.position),
-    );
-    uniforms.gridOriginOffset.value.set(
-      Math.floor(cameraLocalPosition.x / safeGridSpacing) * safeGridSpacing,
-      Math.floor(cameraLocalPosition.z / safeGridSpacing) * safeGridSpacing,
-    );
-    uniforms.farGridOriginOffset.value.set(
-      Math.floor(cameraLocalPosition.x / safeFarGridSpacing) * safeFarGridSpacing,
-      Math.floor(cameraLocalPosition.z / safeFarGridSpacing) * safeFarGridSpacing,
-    );
-    uniforms.projectionInverse.value.copy(camera.projectionMatrixInverse);
-    uniforms.cameraWorldMatrix.value.copy(camera.matrixWorld);
-    uniforms.cameraWorldPosition.value.setFromMatrixPosition(camera.matrixWorld);
     uniforms.volumeRootWorldInverse.value.copy(volumeRootGroup.matrixWorld).invert();
     uniforms.planePointWorld.value.copy(planePointWorld);
     uniforms.planeNormalWorld.value.copy(planeNormalWorld);
@@ -1533,7 +1516,23 @@ function VolumeViewer({
     uniforms.farGridSpacing.value = gridStyle.farGridSpacing;
     uniforms.farGridStrength.value = gridStyle.farGridLineStrength;
 
-    renderer.render(backgroundScene, backgroundCamera);
+    backgroundMesh.onBeforeRender = (_renderer, _scene, renderCamera) => {
+      const renderCameraPosition = backgroundPassCameraLocalRef.current.setFromMatrixPosition(renderCamera.matrixWorld);
+      const cameraLocalPosition = volumeRootGroup.worldToLocal(renderCameraPosition);
+      uniforms.gridOriginOffset.value.set(
+        Math.floor(cameraLocalPosition.x / safeGridSpacing) * safeGridSpacing,
+        Math.floor(cameraLocalPosition.z / safeGridSpacing) * safeGridSpacing,
+      );
+      uniforms.farGridOriginOffset.value.set(
+        Math.floor(cameraLocalPosition.x / safeFarGridSpacing) * safeFarGridSpacing,
+        Math.floor(cameraLocalPosition.z / safeFarGridSpacing) * safeFarGridSpacing,
+      );
+      uniforms.projectionInverse.value.copy(renderCamera.projectionMatrixInverse);
+      uniforms.cameraWorldMatrix.value.copy(renderCamera.matrixWorld);
+      uniforms.cameraWorldPosition.value.setFromMatrixPosition(renderCamera.matrixWorld);
+    };
+
+    renderer.render(backgroundScene, camera);
   }, [
     background?.floorColor,
     background?.floorEnabled,
