@@ -30,12 +30,14 @@ export default function BackgroundsWindow({
     resetToken,
   } = layout;
   const {
+    mode,
     backgroundColor,
     floorEnabled,
     floorColor,
     isFloorAvailable,
     isResetDisabled,
     onResetToDefault,
+    onModeChange,
     onBackgroundColorChange,
     onFloorEnabledChange,
     onFloorColorChange,
@@ -47,6 +49,7 @@ export default function BackgroundsWindow({
 
   const normalizedBackgroundColor = normalizeHexColor(backgroundColor, DEFAULT_BACKGROUND_COLOR);
   const normalizedFloorColor = normalizeHexColor(floorColor, DEFAULT_FLOOR_COLOR);
+  const isBackgroundColorDisabled = mode === 'default';
   const isFloorControlDisabled = !isFloorAvailable;
   const isFloorColorDisabled = !isFloorAvailable || !floorEnabled;
 
@@ -70,15 +73,43 @@ export default function BackgroundsWindow({
             Reset to Default
           </button>
 
+          <div className="backgrounds-window__row backgrounds-window__row--mode">
+            <span className="backgrounds-window__label">Background:</span>
+            <div className="viewer-mode-row backgrounds-window__mode-row" role="group" aria-label="Background mode">
+              <button
+                id="viewer-background-mode-default"
+                type="button"
+                className={mode === 'default' ? 'viewer-mode-button is-active' : 'viewer-mode-button'}
+                aria-pressed={mode === 'default'}
+                onClick={() => onModeChange('default')}
+              >
+                Default
+              </button>
+              <button
+                id="viewer-background-mode-custom"
+                type="button"
+                className={mode === 'custom' ? 'viewer-mode-button is-active' : 'viewer-mode-button'}
+                aria-pressed={mode === 'custom'}
+                onClick={() => onModeChange('custom')}
+              >
+                Custom
+              </button>
+            </div>
+          </div>
+
           <div className="backgrounds-window__row">
             <span className="backgrounds-window__label">Background color:</span>
-            <label className="color-picker-trigger" htmlFor="viewer-background-color">
+            <label
+              className={isBackgroundColorDisabled ? 'color-picker-trigger is-disabled' : 'color-picker-trigger'}
+              htmlFor="viewer-background-color"
+            >
               <input
                 id="viewer-background-color"
                 className="color-picker-input"
                 type="color"
                 value={normalizedBackgroundColor}
                 onChange={(event) => onBackgroundColorChange(event.target.value)}
+                disabled={isBackgroundColorDisabled}
                 aria-label="Choose background color"
               />
               <span

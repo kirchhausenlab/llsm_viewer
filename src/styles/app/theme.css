@@ -2004,6 +2004,10 @@
   gap: 0.75rem;
 }
 
+.floating-window--backgrounds .backgrounds-window__mode-row {
+  flex: 1 1 auto;
+}
+
 .floating-window--backgrounds .backgrounds-window__label,
 .floating-window--backgrounds .backgrounds-window__checkbox {
   font-size: 0.85rem;
@@ -2033,6 +2037,11 @@
 }
 
 @media (max-width: 540px) {
+  .floating-window--backgrounds .backgrounds-window__row--mode {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
   .floating-window--backgrounds .backgrounds-window__row {
     align-items: flex-start;
   }

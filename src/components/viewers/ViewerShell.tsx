@@ -27,6 +27,7 @@ import { useViewerRecording } from './viewer-shell/hooks/useViewerRecording';
 import type { ViewerShellProps } from './viewer-shell/types';
 import type {
   DesktopViewerBackgroundConfig,
+  DesktopViewerBackgroundMode,
   DesktopViewerBackgroundSelection,
 } from './VolumeViewer.types';
 import {
@@ -106,9 +107,19 @@ function resolveViewerBackgroundConfig(
   selection: DesktopViewerBackgroundSelection,
   isDarkMode: boolean
 ): DesktopViewerBackgroundConfig {
+  const floorColor = normalizeHexColor(selection.floorColor, DEFAULT_FLOOR_COLOR);
+
+  if (selection.mode === 'default') {
+    return {
+      clearColor: null,
+      surfaceColor: null,
+      floorEnabled: selection.floorEnabled,
+      floorColor,
+    };
+  }
+
   const defaultBackgroundColor = resolveDefaultViewerBackgroundColor(isDarkMode);
   const backgroundColor = normalizeHexColor(selection.customBackgroundColor, defaultBackgroundColor);
-  const floorColor = normalizeHexColor(selection.floorColor, DEFAULT_FLOOR_COLOR);
 
   return {
     clearColor: backgroundColor,
@@ -329,6 +340,7 @@ function ViewerShell({
   const [renderingQuality, setRenderingQuality] = useState(1.1);
   const [hoverSettings, setHoverSettings] = useState<HoverSettings>(() => ({ ...DEFAULT_HOVER_SETTINGS }));
   const [backgroundSelection, setBackgroundSelection] = useState<DesktopViewerBackgroundSelection>({
+    mode: 'default',
     customBackgroundColor: null,
     floorEnabled: false,
     floorColor: DEFAULT_FLOOR_COLOR,
@@ -443,18 +455,40 @@ function ViewerShell({
 
   const handleResetBackgrounds = useCallback(() => {
     setBackgroundSelection({
+      mode: 'default',
       customBackgroundColor: null,
       floorEnabled: false,
       floorColor: DEFAULT_FLOOR_COLOR,
     });
   }, []);
 
+  const handleBackgroundModeChange = useCallback((mode: DesktopViewerBackgroundMode) => {
+    const defaultBackgroundColor = resolveDefaultViewerBackgroundColor(isDarkMode);
+    setBackgroundSelection((current) => {
+      if (mode === 'default') {
+        return {
+          ...current,
+          mode,
+        };
+      }
+
+      return {
+        ...current,
+        mode,
+        customBackgroundColor: normalizeHexColor(
+          current.customBackgroundColor,
+          defaultBackgroundColor,
+        ),
+      };
+    });
+  }, [isDarkMode]);
+
   const handleBackgroundColorChange = useCallback((color: string) => {
     const normalizedColor = normalizeHexColor(color, resolveDefaultViewerBackgroundColor(isDarkMode));
-    const defaultBackgroundColor = resolveDefaultViewerBackgroundColor(isDarkMode);
     setBackgroundSelection((current) => ({
       ...current,
-      customBackgroundColor: normalizedColor === defaultBackgroundColor ? null : normalizedColor,
+      mode: 'custom',
+      customBackgroundColor: normalizedColor,
     }));
   }, [isDarkMode]);
 
@@ -477,15 +511,21 @@ function ViewerShell({
     [backgroundSelection, isDarkMode]
   );
   const effectiveBackgroundColor = useMemo(
-    () => normalizeHexColor(backgroundSelection.customBackgroundColor, resolveDefaultViewerBackgroundColor(isDarkMode)),
-    [backgroundSelection.customBackgroundColor, isDarkMode]
+    () => {
+      const defaultBackgroundColor = resolveDefaultViewerBackgroundColor(isDarkMode);
+      if (backgroundSelection.mode === 'default') {
+        return defaultBackgroundColor;
+      }
+      return normalizeHexColor(backgroundSelection.customBackgroundColor, defaultBackgroundColor);
+    },
+    [backgroundSelection.mode, backgroundSelection.customBackgroundColor, isDarkMode]
   );
   const isBackgroundResetDisabled = useMemo(
     () =>
-      backgroundSelection.customBackgroundColor === null &&
+      backgroundSelection.mode === 'default' &&
       !backgroundSelection.floorEnabled &&
       normalizeHexColor(backgroundSelection.floorColor, DEFAULT_FLOOR_COLOR) === DEFAULT_FLOOR_COLOR,
-    [backgroundSelection.customBackgroundColor, backgroundSelection.floorEnabled, backgroundSelection.floorColor]
+    [backgroundSelection.mode, backgroundSelection.floorEnabled, backgroundSelection.floorColor]
   );
   const isFloorAvailable = modeControls.projectionMode === 'perspective';
 
@@ -2028,12 +2068,14 @@ function ViewerShell({
           resetToken,
         }}
         backgrounds={{
+          mode: backgroundSelection.mode,
           backgroundColor: effectiveBackgroundColor,
           floorEnabled: backgroundSelection.floorEnabled,
           floorColor: backgroundSelection.floorColor,
           isFloorAvailable,
           isResetDisabled: isBackgroundResetDisabled,
           onResetToDefault: handleResetBackgrounds,
+          onModeChange: handleBackgroundModeChange,
           onBackgroundColorChange: handleBackgroundColorChange,
           onFloorEnabledChange: handleFloorEnabledChange,
           onFloorColorChange: handleFloorColorChange,

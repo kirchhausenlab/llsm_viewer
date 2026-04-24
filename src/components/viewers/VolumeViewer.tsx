@@ -1765,7 +1765,7 @@ function VolumeViewer({
 
     scene.background = null;
 
-    if (isDesktopBackgroundDisabled || !background) {
+    if (isDesktopBackgroundDisabled || !background?.clearColor || !background.surfaceColor) {
       renderer.setClearColor(0x000000, 0);
       renderer.domElement.style.background = 'transparent';
       return;

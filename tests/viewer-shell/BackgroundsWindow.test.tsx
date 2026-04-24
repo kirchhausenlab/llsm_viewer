@@ -4,6 +4,7 @@ import React from 'react';
 import TestRenderer, { act } from 'react-test-renderer';
 
 import BackgroundsWindow from '../../src/components/viewers/viewer-shell/BackgroundsWindow.tsx';
+import type { DesktopViewerBackgroundMode } from '../../src/components/viewers/VolumeViewer.types.ts';
 
 type ListenerMap = Map<string, Set<(event: Event) => void>>;
 
@@ -67,11 +68,14 @@ function withEnvironmentMocks(run: () => void) {
 function createProps(
   isOpen: boolean,
   overrides: Partial<{
+    mode: DesktopViewerBackgroundMode;
     isFloorAvailable: boolean;
     floorEnabled: boolean;
+    backgroundColor: string;
   }> = {}
 ) {
   let resetCalls = 0;
+  const backgroundModeCalls: DesktopViewerBackgroundMode[] = [];
   const backgroundColorCalls: string[] = [];
   const floorEnabledCalls: boolean[] = [];
   const floorColorCalls: string[] = [];
@@ -84,13 +88,17 @@ function createProps(
       resetToken: 0,
     },
     backgrounds: {
-      backgroundColor: '#224466',
+      mode: overrides.mode ?? 'custom',
+      backgroundColor: overrides.backgroundColor ?? '#224466',
       floorEnabled: overrides.floorEnabled ?? false,
       floorColor: '#d7dbe0',
       isFloorAvailable: overrides.isFloorAvailable ?? true,
       isResetDisabled: false,
       onResetToDefault: () => {
         resetCalls += 1;
+      },
+      onModeChange: (mode: DesktopViewerBackgroundMode) => {
+        backgroundModeCalls.push(mode);
       },
       onBackgroundColorChange: (color: string) => {
         backgroundColorCalls.push(color);
@@ -106,6 +114,9 @@ function createProps(
     onClose: () => {},
     get resetCalls() {
       return resetCalls;
+    },
+    get backgroundModeCalls() {
+      return backgroundModeCalls;
     },
     get backgroundColorCalls() {
       return backgroundColorCalls;
@@ -135,18 +146,26 @@ test('backgrounds window renders nothing while closed', () => {
 test('backgrounds window renders the expected controls', () => {
   withEnvironmentMocks(() => {
     const renderer = TestRenderer.create(
-      <BackgroundsWindow {...(createProps(true) as any)} />
+      <BackgroundsWindow {...(createProps(true, {
+        mode: 'default',
+        backgroundColor: '#ffffff',
+      }) as any)} />
     );
 
     const title = renderer.root.findAllByType('h2')[0];
     const resetButton = renderer.root.findByProps({ id: 'viewer-background-reset' });
+    const defaultModeButton = renderer.root.findByProps({ id: 'viewer-background-mode-default' });
+    const customModeButton = renderer.root.findByProps({ id: 'viewer-background-mode-custom' });
     const backgroundColorInput = renderer.root.findByProps({ id: 'viewer-background-color' });
     const floorCheckbox = renderer.root.findByProps({ id: 'viewer-background-floor-enabled' });
     const floorColorInput = renderer.root.findByProps({ id: 'viewer-background-floor-color' });
 
     assert.equal(title?.children.join(''), 'Backgrounds');
     assert.equal(resetButton.children.join(''), 'Reset to Default');
-    assert.equal(backgroundColorInput.props.value, '#224466');
+    assert.equal(defaultModeButton.props['aria-pressed'], true);
+    assert.equal(customModeButton.props['aria-pressed'], false);
+    assert.equal(backgroundColorInput.props.value, '#ffffff');
+    assert.equal(backgroundColorInput.props.disabled, true);
     assert.equal(floorCheckbox.props.checked, false);
     assert.equal(floorColorInput.props.value, '#d7dbe0');
     assert.equal(floorColorInput.props.disabled, true);
@@ -159,18 +178,28 @@ test('backgrounds window renders the expected controls', () => {
 
 test('backgrounds window forwards selection and color changes', () => {
   withEnvironmentMocks(() => {
-    const props = createProps(true);
+    const props = createProps(true, {
+      mode: 'custom',
+    });
     const renderer = TestRenderer.create(
       <BackgroundsWindow {...(props as any)} />
     );
 
     const resetButton = renderer.root.findByProps({ id: 'viewer-background-reset' });
+    const defaultModeButton = renderer.root.findByProps({ id: 'viewer-background-mode-default' });
+    const customModeButton = renderer.root.findByProps({ id: 'viewer-background-mode-custom' });
     const backgroundColorInput = renderer.root.findByProps({ id: 'viewer-background-color' });
     const floorCheckbox = renderer.root.findByProps({ id: 'viewer-background-floor-enabled' });
     const floorColorInput = renderer.root.findByProps({ id: 'viewer-background-floor-color' });
 
     act(() => {
       resetButton.props.onClick();
+    });
+    act(() => {
+      defaultModeButton.props.onClick();
+    });
+    act(() => {
+      customModeButton.props.onClick();
     });
     act(() => {
       backgroundColorInput.props.onChange({ target: { value: '#123456' } });
@@ -183,6 +212,7 @@ test('backgrounds window forwards selection and color changes', () => {
     });
 
     assert.equal(props.resetCalls, 1);
+    assert.deepEqual(props.backgroundModeCalls, ['default', 'custom']);
     assert.deepEqual(props.backgroundColorCalls, ['#123456']);
     assert.deepEqual(props.floorEnabledCalls, [true]);
     assert.deepEqual(props.floorColorCalls, ['#654321']);

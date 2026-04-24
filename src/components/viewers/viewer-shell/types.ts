@@ -5,6 +5,7 @@ import type FloatingWindow from '../../widgets/FloatingWindow';
 import type PlotSettingsWindow from '../../widgets/PlotSettingsWindow';
 import type SelectedTracksWindow from '../../widgets/SelectedTracksWindow';
 import type {
+  DesktopViewerBackgroundMode,
   VolumeViewerProps,
 } from '../VolumeViewer.types';
 import type { LoadedDatasetLayer } from '../../../hooks/dataset';
@@ -325,12 +326,14 @@ export type HoverSettingsProps = {
 };
 
 export type BackgroundSettingsProps = {
+  mode: DesktopViewerBackgroundMode;
   backgroundColor: string;
   floorEnabled: boolean;
   floorColor: string;
   isFloorAvailable: boolean;
   isResetDisabled: boolean;
   onResetToDefault: () => void;
+  onModeChange: (mode: DesktopViewerBackgroundMode) => void;
   onBackgroundColorChange: (color: string) => void;
   onFloorEnabledChange: (enabled: boolean) => void;
   onFloorColorChange: (color: string) => void;
