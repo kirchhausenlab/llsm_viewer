@@ -26,6 +26,12 @@ function createPlaybackState(): PlaybackState {
   };
 }
 
+function createPressedTriggerGamepad(): Gamepad {
+  return {
+    buttons: [{ pressed: true, touched: true, value: 1 }],
+  } as unknown as Gamepad;
+}
+
 function createControllerEntry(overrides: Partial<ControllerEntry> = {}): ControllerEntry {
   const rayGeometry = new THREE.BufferGeometry();
   const rayMaterial = new THREE.LineBasicMaterial();
@@ -205,8 +211,19 @@ function createDependencies(options: {
   playbackHud?: VrPlaybackHud | null;
   applyVrPlaybackHoverState?: (...args: Parameters<ControllerRayDependencies['applyVrPlaybackHoverState']>) => void;
   clearHoverState?: (source?: 'pointer' | 'controller') => void;
+  volumeRootGroup?: THREE.Group | null;
+  volumeRootBaseOffset?: THREE.Vector3;
+  translationHandle?: THREE.Mesh | null;
+  volumeScaleHandle?: THREE.Mesh | null;
+  volumeYawHandles?: THREE.Mesh[];
+  volumePitchHandle?: THREE.Mesh | null;
+  onPlaybackHudPlacementPosition?: (position: THREE.Vector3) => void;
+  onChannelsHudPlacementPosition?: (position: THREE.Vector3) => void;
+  onTracksHudPlacementPosition?: (position: THREE.Vector3) => void;
+  onVolumeYawPitch?: (yaw: number, pitch: number) => void;
 }): ControllerRayDependencies {
   const playbackHud = options.playbackHud ?? null;
+  const volumeRootBaseOffset = options.volumeRootBaseOffset ?? new THREE.Vector3();
 
   return {
     rendererRef: ref({
@@ -223,12 +240,12 @@ function createDependencies(options: {
     vrLogRef: ref(null),
     lastControllerRaySummaryRef: ref(null),
     applyVrPlaybackHoverState: options.applyVrPlaybackHoverState ?? (() => {}),
-    applyVolumeYawPitch: () => {},
+    applyVolumeYawPitch: options.onVolumeYawPitch ?? (() => {}),
     resolveChannelsRegionFromPoint: () => null,
     resolveTracksRegionFromPoint: () => null,
-    setVrPlaybackHudPlacementPosition: () => {},
-    setVrChannelsHudPlacementPosition: () => {},
-    setVrTracksHudPlacementPosition: () => {},
+    setVrPlaybackHudPlacementPosition: options.onPlaybackHudPlacementPosition ?? (() => {}),
+    setVrChannelsHudPlacementPosition: options.onChannelsHudPlacementPosition ?? (() => {}),
+    setVrTracksHudPlacementPosition: options.onTracksHudPlacementPosition ?? (() => {}),
     setVrPlaybackHudPlacementYaw: () => {},
     setVrChannelsHudPlacementYaw: () => {},
     setVrTracksHudPlacementYaw: () => {},
@@ -249,10 +266,10 @@ function createDependencies(options: {
     applyVrChannelsSliderFromPointRef: ref(null),
     applyVrTracksSliderFromPointRef: ref(null),
     applyVrTracksScrollFromPointRef: ref(null),
-    vrTranslationHandleRef: ref(null),
-    vrVolumeScaleHandleRef: ref(null),
-    vrVolumeYawHandlesRef: ref([]),
-    vrVolumePitchHandleRef: ref(null),
+    vrTranslationHandleRef: ref(options.translationHandle ?? null),
+    vrVolumeScaleHandleRef: ref(options.volumeScaleHandle ?? null),
+    vrVolumeYawHandlesRef: ref(options.volumeYawHandles ?? []),
+    vrVolumePitchHandleRef: ref(options.volumePitchHandle ?? null),
     vrHandleWorldPointRef: ref(new THREE.Vector3()),
     vrHandleSecondaryPointRef: ref(new THREE.Vector3()),
     vrHudYawVectorRef: ref(new THREE.Vector3()),
@@ -266,9 +283,9 @@ function createDependencies(options: {
     renderVrTracksHudRef: ref(null),
     vrChannelsStateRef: ref({ channels: [], activeChannelId: null }),
     vrTracksStateRef: ref({ channels: [], activeChannelId: null }),
-    volumeRootGroupRef: ref(null),
+    volumeRootGroupRef: ref(options.volumeRootGroup ?? null),
     volumeRootCenterUnscaledRef: ref(new THREE.Vector3()),
-    volumeRootBaseOffsetRef: ref(new THREE.Vector3()),
+    volumeRootBaseOffsetRef: ref(volumeRootBaseOffset),
     volumeNormalizationScaleRef: ref(1),
     volumeAnisotropyScaleRef: ref({ x: 1, y: 1, z: 1 }),
     volumeUserScaleRef: ref(1),
@@ -325,4 +342,88 @@ function createDependencies(options: {
   assert.strictEqual(entry.hoverUiTarget?.type, 'playback-panel-grab');
   assert.strictEqual(entry.hasHoverUiPoint, true);
   assert.ok(Math.abs(entry.rayLength - 0.12) < 1e-6);
+})();
+
+(() => {
+  const selectCalls: string[] = [];
+  const entry = createControllerEntry({
+    gamepad: createPressedTriggerGamepad(),
+    onSelectStart: () => {
+      selectCalls.push('start');
+    },
+    onSelectEnd: () => {
+      selectCalls.push('end');
+    },
+  });
+  const playbackHud = createPlaybackHud();
+
+  const deps = createDependencies({
+    rendererPresenting: true,
+    controllerEntry: entry,
+    playbackHud,
+  });
+
+  const update = createControllerRayUpdater(deps);
+  update();
+
+  assert.deepStrictEqual(selectCalls, []);
+  assert.strictEqual(entry.isSelecting, false);
+  assert.strictEqual(entry.activeUiTarget, null);
+})();
+
+(() => {
+  const entry = createControllerEntry({
+    gamepad: createPressedTriggerGamepad(),
+  });
+  const playbackHud = createPlaybackHud();
+  const volumeRootGroup = new THREE.Group();
+  volumeRootGroup.position.set(1, 2, 3);
+  volumeRootGroup.scale.set(2, 3, 4);
+
+  const translationHandle = new THREE.Mesh(new THREE.SphereGeometry(0.02), new THREE.MeshBasicMaterial());
+  translationHandle.visible = true;
+  translationHandle.position.set(0, 0, 0);
+  volumeRootGroup.add(translationHandle);
+  volumeRootGroup.updateMatrixWorld(true);
+
+  const initialVolumePosition = volumeRootGroup.position.clone();
+  const initialVolumeScale = volumeRootGroup.scale.clone();
+  const initialPlaybackHudPosition = playbackHud.group.position.clone();
+  const volumeRootBaseOffset = new THREE.Vector3(1, 2, 3);
+  const initialBaseOffset = volumeRootBaseOffset.clone();
+  const placementCalls: string[] = [];
+  const volumeTransformCalls: Array<{ yaw: number; pitch: number }> = [];
+
+  const deps = createDependencies({
+    rendererPresenting: true,
+    controllerEntry: entry,
+    playbackHud,
+    volumeRootGroup,
+    volumeRootBaseOffset,
+    translationHandle,
+    onPlaybackHudPlacementPosition: () => {
+      placementCalls.push('playback');
+    },
+    onChannelsHudPlacementPosition: () => {
+      placementCalls.push('channels');
+    },
+    onTracksHudPlacementPosition: () => {
+      placementCalls.push('tracks');
+    },
+    onVolumeYawPitch: (yaw, pitch) => {
+      volumeTransformCalls.push({ yaw, pitch });
+    },
+  });
+
+  const update = createControllerRayUpdater(deps);
+  update();
+  update();
+
+  assert.strictEqual(entry.isSelecting, false);
+  assert.deepStrictEqual(placementCalls, []);
+  assert.deepStrictEqual(volumeTransformCalls, []);
+  assert.deepStrictEqual(volumeRootGroup.position.toArray(), initialVolumePosition.toArray());
+  assert.deepStrictEqual(volumeRootGroup.scale.toArray(), initialVolumeScale.toArray());
+  assert.deepStrictEqual(volumeRootBaseOffset.toArray(), initialBaseOffset.toArray());
+  assert.deepStrictEqual(playbackHud.group.position.toArray(), initialPlaybackHudPosition.toArray());
 })();

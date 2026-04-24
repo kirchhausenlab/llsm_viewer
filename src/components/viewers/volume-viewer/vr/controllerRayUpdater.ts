@@ -256,6 +256,8 @@ export function createControllerRayUpdater(
     let nextChannelsHoverRegion: VrChannelsInteractiveRegion | null = null;
     let nextTracksHoverRegion: VrTracksInteractiveRegion | null = null;
 
+    // Ray frames may update hover and continue an existing drag. Starting or ending
+    // selection belongs only to native WebXR selectstart/selectend handlers.
     for (let index = 0; index < controllersRef.current.length; index++) {
       const entry = controllersRef.current[index];
       const previousHoverTrackId = entry.hoverTrackId;
