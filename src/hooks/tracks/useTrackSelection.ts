@@ -80,6 +80,8 @@ export const useTrackSelection = ({
   const [trackSmoothing, setTrackSmoothing] = useState(0);
   const [isFullTrackTrailEnabled, setIsFullTrackTrailEnabled] = useState(true);
   const [trackTrailLength, setTrackTrailLength] = useState(DEFAULT_TRACK_TRAIL_LENGTH);
+  const [drawTrackCentroids, setDrawTrackCentroids] = useState(false);
+  const [drawTrackStartingPoints, setDrawTrackStartingPoints] = useState(true);
   const [pendingMinimumTrackLength, setPendingMinimumTrackLength] = useState(1);
   const [minimumTrackLength, setMinimumTrackLength] = useState(1);
   const [followedTrack, setFollowedTrack] = useState<FollowedTrackState>(null);
@@ -512,6 +514,14 @@ export const useTrackSelection = ({
     [clampTrailLength]
   );
 
+  const handleDrawTrackCentroidsToggle = useCallback((enabled: boolean) => {
+    setDrawTrackCentroids(enabled);
+  }, []);
+
+  const handleDrawTrackStartingPointsToggle = useCallback((enabled: boolean) => {
+    setDrawTrackStartingPoints(enabled);
+  }, []);
+
   const handleClearSelectedTracks = useCallback(() => {
     setSelectedTrackOrder([]);
     setFollowedTrack(null);
@@ -526,6 +536,8 @@ export const useTrackSelection = ({
     setTrackSmoothing(0);
     setIsFullTrackTrailEnabled(true);
     setTrackTrailLength(DEFAULT_TRACK_TRAIL_LENGTH);
+    setDrawTrackCentroids(false);
+    setDrawTrackStartingPoints(true);
     setPendingMinimumTrackLength(1);
     setMinimumTrackLength(1);
     setActiveTrackSetId(null);
@@ -542,6 +554,8 @@ export const useTrackSelection = ({
     trackSmoothing,
     isFullTrackTrailEnabled,
     trackTrailLength,
+    drawTrackCentroids,
+    drawTrackStartingPoints,
     pendingMinimumTrackLength,
     minimumTrackLength,
     followedTrack,
@@ -573,6 +587,8 @@ export const useTrackSelection = ({
     handleMinimumTrackLengthApply,
     handleTrackTrailModeChange,
     handleTrackTrailLengthChange,
+    handleDrawTrackCentroidsToggle,
+    handleDrawTrackStartingPointsToggle,
     handleSelectedTracksAmplitudeLimitsChange,
     handleSelectedTracksTimeLimitsChange,
     handleSelectedTracksAutoRange,

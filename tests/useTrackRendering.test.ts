@@ -27,6 +27,8 @@ function createTrackHook(options?: {
   clampedTimeIndex?: number;
   isFullTrackTrailEnabled?: boolean;
   trackTrailLength?: number;
+  drawTrackCentroids?: boolean;
+  drawTrackStartingPoints?: boolean;
   hasActive3DLayer?: boolean;
   onRequireTrackPayloads?: (trackSetIds: Iterable<string>) => void;
 }) {
@@ -45,6 +47,8 @@ function createTrackHook(options?: {
       trackScale: {},
       isFullTrackTrailEnabled: options?.isFullTrackTrailEnabled ?? true,
       trackTrailLength: options?.trackTrailLength ?? 10,
+      drawTrackCentroids: options?.drawTrackCentroids ?? false,
+      drawTrackStartingPoints: options?.drawTrackStartingPoints ?? true,
       selectedTrackIds: options?.selectedTrackIds ?? new Set(),
       followedTrackId: options?.followedTrackId ?? null,
       clampedTimeIndex: options?.clampedTimeIndex ?? 0,
@@ -130,6 +134,8 @@ function createTrackHook(options?: {
       trackScale: {},
       isFullTrackTrailEnabled: true,
       trackTrailLength: 10,
+      drawTrackCentroids: false,
+      drawTrackStartingPoints: true,
       selectedTrackIds: new Set(),
       followedTrackId: null,
       clampedTimeIndex: 1,
@@ -234,6 +240,8 @@ function createTrackHook(options?: {
       trackScale,
       isFullTrackTrailEnabled: false,
       trackTrailLength: 1,
+      drawTrackCentroids: false,
+      drawTrackStartingPoints: true,
       selectedTrackIds,
       followedTrackId: null,
       clampedTimeIndex,
@@ -268,6 +276,96 @@ function createTrackHook(options?: {
   assert.strictEqual(setPositionsCalls, 0, 'playback window updates must not mutate batch geometry');
   assert.ok(batchResource.visibleTimeMin <= 12);
   assert.ok(batchResource.visibleTimeMax >= 13);
+})();
+
+(() => {
+  const compiled = createCompiledTrackSet([
+    ['1', '0', '0', '0.0', '0.0', '0.0', '1.0', '0.0'],
+    ['1', '0', '1', '1.0', '0.0', '0.0', '2.0', '0.0'],
+    ['1', '0', '2', '2.0', '0.0', '0.0', '3.0', '0.0'],
+    ['1', '0', '3', '3.0', '0.0', '0.0', '4.0', '0.0']
+  ]);
+  const { hook, trackGroupRef } = createTrackHook({
+    tracks: compiled.summary.tracks,
+    payloadMap: new Map([['track-set-0', compiled.payload]]),
+    trackOpacityByTrackSet: { 'track-set-0': 1 },
+    drawTrackCentroids: true,
+    clampedTimeIndex: 2,
+    isFullTrackTrailEnabled: true
+  });
+
+  hook.act(() => hook.result.refreshTrackOverlay());
+
+  const centroids = trackGroupRef.current.children.find((child) => child.name === 'TrackCentroids:track-set-0') as
+    | THREE.InstancedMesh
+    | undefined;
+  assert.ok(centroids, 'track centroid mesh should be created');
+  assert.strictEqual(centroids.count, 1, 'centroid markers should exclude the actual start and displayed endpoint');
+  assert.strictEqual(
+    (centroids.material as THREE.MeshBasicMaterial).vertexColors,
+    false,
+    'centroid mesh should use instance colors without multiplying by missing sphere vertex colors'
+  );
+  const centroidColor = new THREE.Color();
+  centroids.getColorAt(0, centroidColor);
+  assert.equal(centroidColor.getHexString(), 'cc7ff2');
+
+  const startMarks = trackGroupRef.current.children.find((child) => child.name === 'TrackStarts:track-set-0') as
+    | { geometry: { instanceCount: number }; visible: boolean }
+    | undefined;
+  assert.ok(startMarks, 'track start marker should be created');
+  assert.strictEqual(startMarks.visible, true);
+  assert.strictEqual(startMarks.geometry.instanceCount, 1, 'actual visible track start should use one T-bar segment');
+})();
+
+(() => {
+  const compiled = createCompiledTrackSet([
+    ['1', '0', '0', '0.0', '0.0', '0.0', '1.0', '0.0'],
+    ['1', '0', '1', '1.0', '0.0', '0.0', '2.0', '0.0'],
+    ['1', '0', '2', '2.0', '0.0', '0.0', '3.0', '0.0']
+  ]);
+  const { hook, trackGroupRef } = createTrackHook({
+    tracks: compiled.summary.tracks,
+    payloadMap: new Map([['track-set-0', compiled.payload]]),
+    trackOpacityByTrackSet: { 'track-set-0': 1 },
+    drawTrackStartingPoints: false,
+    clampedTimeIndex: 2,
+    isFullTrackTrailEnabled: true
+  });
+
+  hook.act(() => hook.result.refreshTrackOverlay());
+
+  const startMarks = trackGroupRef.current.children.find((child) => child.name === 'TrackStarts:track-set-0') as
+    | { geometry: { instanceCount: number }; visible: boolean }
+    | undefined;
+  assert.ok(startMarks, 'track start marker resource should still be created');
+  assert.strictEqual(startMarks.visible, false, 'disabled starting points should hide the start marker');
+  assert.strictEqual(startMarks.geometry.instanceCount, 0);
+})();
+
+(() => {
+  const compiled = createCompiledTrackSet([
+    ['1', '0', '0', '0.0', '0.0', '0.0', '1.0', '0.0'],
+    ['1', '0', '1', '1.0', '0.0', '0.0', '2.0', '0.0'],
+    ['1', '0', '2', '2.0', '0.0', '0.0', '3.0', '0.0']
+  ]);
+  const { hook, trackGroupRef } = createTrackHook({
+    tracks: compiled.summary.tracks,
+    payloadMap: new Map([['track-set-0', compiled.payload]]),
+    trackOpacityByTrackSet: { 'track-set-0': 1 },
+    clampedTimeIndex: 2,
+    isFullTrackTrailEnabled: false,
+    trackTrailLength: 1
+  });
+
+  hook.act(() => hook.result.refreshTrackOverlay());
+
+  const startMarks = trackGroupRef.current.children.find((child) => child.name === 'TrackStarts:track-set-0') as
+    | { geometry: { instanceCount: number }; visible: boolean }
+    | undefined;
+  assert.ok(startMarks, 'track start marker should be created');
+  assert.strictEqual(startMarks.visible, false, 'start marker must not move to a truncated trail start');
+  assert.strictEqual(startMarks.geometry.instanceCount, 0);
 })();
 
 (() => {

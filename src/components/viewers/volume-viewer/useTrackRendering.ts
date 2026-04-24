@@ -4,6 +4,7 @@ import * as THREE from 'three';
 import { Line2 } from 'three/examples/jsm/lines/Line2';
 import { LineGeometry } from 'three/examples/jsm/lines/LineGeometry';
 import { LineMaterial } from 'three/examples/jsm/lines/LineMaterial';
+import { LineSegments2 } from 'three/examples/jsm/lines/LineSegments2';
 import { LineSegmentsGeometry } from 'three/examples/jsm/lines/LineSegmentsGeometry';
 
 import { createTrackColor } from '../../../shared/colorMaps/trackColors';
@@ -48,14 +49,38 @@ type OverlayGeometryCacheEntry = {
   times: Float32Array;
 };
 
+type TrackMarkerResource = {
+  key: string;
+  trackSetId: string;
+  centroids: THREE.InstancedMesh<THREE.SphereGeometry, THREE.MeshBasicMaterial>;
+  centroidMaterial: THREE.MeshBasicMaterial;
+  centroidCapacity: number;
+  startMarks: LineSegments2;
+  startGeometry: InstancedLineSegmentsGeometry;
+  startMaterial: LineMaterial;
+};
+
 type ShaderUniformSlot = { value: number };
 
 const SHARED_TRACK_END_CAP_GEOMETRY = new THREE.SphereGeometry(1, 18, 14);
+const SHARED_TRACK_BALL_GEOMETRY = new THREE.SphereGeometry(1, 12, 8);
 const TRACK_HIGHLIGHT_BLEND_TARGET = new THREE.Color(0xffffff);
 const TRACK_BATCH_SHADER_KEY = 'track-batch-window-v1';
 const MIN_TRACK_VISIBLE_TIME = -1e9;
 const MAX_TRACK_VISIBLE_TIME = 1e9;
 const TRACK_TIME_EPSILON = 1e-3;
+const TRACK_CENTROID_MIN_RADIUS = 0.11;
+const TRACK_CENTROID_RADIUS_MULTIPLIER = 0.9;
+const TRACK_START_MARKER_HALF_WIDTH_MULTIPLIER = 1.8;
+const trackMarkerMatrixTemp = new THREE.Matrix4();
+const trackMarkerColorTemp = new THREE.Color();
+const trackMarkerStartTemp = new THREE.Vector3();
+const trackMarkerNextTemp = new THREE.Vector3();
+const trackMarkerDirectionTemp = new THREE.Vector3();
+const trackMarkerReferenceTemp = new THREE.Vector3();
+const trackMarkerPerpTemp = new THREE.Vector3();
+const trackMarkerLeftTemp = new THREE.Vector3();
+const trackMarkerRightTemp = new THREE.Vector3();
 
 function sanitizeTrackOpacity(value: number | undefined): number {
   return Math.min(1, Math.max(0, value ?? DEFAULT_TRACK_OPACITY));
@@ -71,6 +96,10 @@ function getTrackResourceKey(trackId: string): string {
 
 function getTrackBatchKey(trackSetId: string): string {
   return `batch:${trackSetId}`;
+}
+
+function getTrackMarkerKey(trackSetId: string): string {
+  return `markers:${trackSetId}`;
 }
 
 function isTrackBatchResource(resource: TrackRenderResource): resource is TrackBatchResource {
@@ -110,12 +139,88 @@ function disposeTrackOverlayResource(trackGroup: THREE.Group, resource: TrackLin
   resource.endCapMaterial.dispose();
 }
 
+function disposeTrackMarkerResource(trackGroup: THREE.Group, resource: TrackMarkerResource): void {
+  trackGroup.remove(resource.centroids);
+  trackGroup.remove(resource.startMarks);
+  resource.centroidMaterial.dispose();
+  resource.startGeometry.dispose();
+  resource.startMaterial.dispose();
+}
+
 function disposeTrackResource(trackGroup: THREE.Group, resource: TrackRenderResource): void {
   if (resource.kind === 'batch') {
     disposeTrackBatchResource(trackGroup, resource);
     return;
   }
   disposeTrackOverlayResource(trackGroup, resource);
+}
+
+function getTrackCentroidBaseIndex(track: CompiledTrackSummary, centroidIndex: number): number {
+  return (track.centroidOffset + centroidIndex) * 4;
+}
+
+function getTrackCentroidTime(
+  track: CompiledTrackSummary,
+  payload: CompiledTrackSetPayload,
+  centroidIndex: number
+): number {
+  return payload.centroidData[getTrackCentroidBaseIndex(track, centroidIndex)] ?? Number.NEGATIVE_INFINITY;
+}
+
+function setTrackCentroidVector(
+  target: THREE.Vector3,
+  track: CompiledTrackSummary,
+  payload: CompiledTrackSetPayload,
+  centroidIndex: number,
+  offsetX: number,
+  offsetY: number
+): THREE.Vector3 {
+  const base = getTrackCentroidBaseIndex(track, centroidIndex);
+  return target.set(
+    (payload.centroidData[base + 1] ?? 0) + offsetX,
+    (payload.centroidData[base + 2] ?? 0) + offsetY,
+    payload.centroidData[base + 3] ?? 0
+  );
+}
+
+function findFirstTrackCentroidIndexAtOrAfter(
+  track: CompiledTrackSummary,
+  payload: CompiledTrackSetPayload,
+  targetTime: number
+): number {
+  let low = 0;
+  let high = track.centroidCount;
+
+  while (low < high) {
+    const mid = Math.floor((low + high) / 2);
+    if (getTrackCentroidTime(track, payload, mid) < targetTime) {
+      low = mid + 1;
+    } else {
+      high = mid;
+    }
+  }
+
+  return low;
+}
+
+function findLastTrackCentroidIndexAtOrBefore(
+  track: CompiledTrackSummary,
+  payload: CompiledTrackSetPayload,
+  targetTime: number
+): number {
+  let low = 0;
+  let high = track.centroidCount;
+
+  while (low < high) {
+    const mid = Math.floor((low + high) / 2);
+    if (getTrackCentroidTime(track, payload, mid) <= targetTime) {
+      low = mid + 1;
+    } else {
+      high = mid;
+    }
+  }
+
+  return low - 1;
 }
 
 function resolveTrackOffset(
@@ -252,6 +357,105 @@ function buildBatchSegmentBuffers(
   return { positions, colors, times, segmentTrackIds };
 }
 
+function resolveTrackBaseColor(track: Pick<CompiledTrackSummary, 'trackNumber'>, colorMode: TrackColorMode): THREE.Color {
+  return colorMode.type === 'uniform'
+    ? new THREE.Color(colorMode.color)
+    : createTrackColor(track.trackNumber);
+}
+
+function resolveTrackCentroidRadius(lineWidth: number): number {
+  return Math.max(computeTrackEndCapRadius(lineWidth) * TRACK_CENTROID_RADIUS_MULTIPLIER, TRACK_CENTROID_MIN_RADIUS);
+}
+
+function ensureTrackMarkerResource(
+  trackGroup: THREE.Group,
+  existingResource: TrackMarkerResource | undefined,
+  key: string,
+  trackSetId: string,
+  centroidCapacity: number,
+  opacity: number,
+  lineWidth: number,
+  containerNode: HTMLDivElement | null
+): TrackMarkerResource {
+  if (existingResource && existingResource.centroidCapacity >= centroidCapacity) {
+    existingResource.centroidMaterial.opacity = opacity;
+    existingResource.centroidMaterial.needsUpdate = true;
+    existingResource.startMaterial.opacity = opacity;
+    existingResource.startMaterial.linewidth = lineWidth;
+    setLineMaterialResolution(existingResource.startMaterial, containerNode);
+    existingResource.startMaterial.needsUpdate = true;
+    return existingResource;
+  }
+
+  if (existingResource) {
+    disposeTrackMarkerResource(trackGroup, existingResource);
+  }
+
+  const centroidMaterial = new THREE.MeshBasicMaterial({
+    color: new THREE.Color(0xffffff),
+    transparent: true,
+    opacity,
+    depthTest: false,
+    depthWrite: false
+  });
+  const centroids = new THREE.InstancedMesh(
+    SHARED_TRACK_BALL_GEOMETRY,
+    centroidMaterial,
+    Math.max(centroidCapacity, 1)
+  );
+  centroids.name = `TrackCentroids:${trackSetId}`;
+  centroids.renderOrder = 1002;
+  centroids.frustumCulled = false;
+  centroids.visible = false;
+  centroids.count = 0;
+
+  const startGeometry = new LineSegmentsGeometry() as InstancedLineSegmentsGeometry;
+  startGeometry.setPositions([]);
+  startGeometry.setColors([]);
+
+  const startMaterial = new LineMaterial({
+    color: new THREE.Color(0xffffff),
+    linewidth: lineWidth,
+    transparent: true,
+    opacity,
+    depthTest: false,
+    depthWrite: false
+  });
+  startMaterial.vertexColors = true;
+  setLineMaterialResolution(startMaterial, containerNode);
+
+  const startMarks = new LineSegments2(startGeometry, startMaterial);
+  startMarks.name = `TrackStarts:${trackSetId}`;
+  startMarks.renderOrder = 1003;
+  startMarks.frustumCulled = false;
+  startMarks.visible = false;
+
+  trackGroup.add(centroids);
+  trackGroup.add(startMarks);
+
+  return {
+    key,
+    trackSetId,
+    centroids,
+    centroidMaterial,
+    centroidCapacity: Math.max(centroidCapacity, 1),
+    startMarks,
+    startGeometry,
+    startMaterial
+  };
+}
+
+function pushMarkerSegment(
+  positions: number[],
+  colors: number[],
+  from: THREE.Vector3,
+  to: THREE.Vector3,
+  color: THREE.Color
+): void {
+  positions.push(from.x, from.y, from.z, to.x, to.y, to.z);
+  colors.push(color.r, color.g, color.b, color.r, color.g, color.b);
+}
+
 export type UseTrackRenderingParams = {
   tracks: CompiledTrackSummary[];
   compiledTrackPayloadByTrackSet: ReadonlyMap<string, CompiledTrackSetPayload>;
@@ -264,6 +468,8 @@ export type UseTrackRenderingParams = {
   trackScale: { x?: number; y?: number; z?: number };
   isFullTrackTrailEnabled: boolean;
   trackTrailLength: number;
+  drawTrackCentroids: boolean;
+  drawTrackStartingPoints: boolean;
   selectedTrackIds: ReadonlySet<string>;
   followedTrackId: string | null;
   clampedTimeIndex: number;
@@ -288,6 +494,8 @@ export function useTrackRendering({
   trackScale: _trackScale,
   isFullTrackTrailEnabled,
   trackTrailLength,
+  drawTrackCentroids,
+  drawTrackStartingPoints,
   selectedTrackIds,
   followedTrackId,
   clampedTimeIndex,
@@ -308,6 +516,7 @@ export function useTrackRendering({
     clearHoverState
   } = useTrackHoverState();
   const overlayGeometryCacheRef = useRef<Map<string, OverlayGeometryCacheEntry>>(new Map());
+  const trackMarkerResourcesRef = useRef<Map<string, TrackMarkerResource>>(new Map());
   const pendingAppearanceUpdateRef = useRef(false);
   const animatedTrackIdsRef = useRef<Set<string>>(new Set());
 
@@ -362,6 +571,33 @@ export function useTrackRendering({
     }
     return ids;
   }, [followedTrackId, hoveredTrackId, selectedTrackIds, trackLookup, trackOpacityByTrackSet, trackSetStates]);
+
+  const markerTracksByTrackSet = useMemo(() => {
+    const map = new Map<string, CompiledTrackSummary[]>();
+
+    for (const track of tracks) {
+      if (track.centroidCount < 2) {
+        continue;
+      }
+
+      const trackSetState = trackSetStates[track.trackSetId] ?? createDefaultTrackSetState();
+      const isVisible = resolveTrackVisibilityForState(trackSetState, track.id);
+      const trackSetOpacity = sanitizeTrackOpacity(trackOpacityByTrackSet[track.trackSetId]);
+      const isHighlighted = highlightedTrackIds.has(track.id);
+      if ((!isVisible || trackSetOpacity <= 0) && !isHighlighted) {
+        continue;
+      }
+
+      const existing = map.get(track.trackSetId);
+      if (existing) {
+        existing.push(track);
+      } else {
+        map.set(track.trackSetId, [track]);
+      }
+    }
+
+    return map;
+  }, [highlightedTrackIds, trackOpacityByTrackSet, trackSetStates, tracks]);
 
   const applyTrackGroupTransform = useCallback(
     (dimensions: { width: number; height: number; depth: number } | null) => {
@@ -482,6 +718,11 @@ export function useTrackRendering({
         missingPayloadTrackSetIds.add(track.trackSetId);
       }
     }
+    for (const [trackSetId] of markerTracksByTrackSet) {
+      if (!compiledTrackPayloadByTrackSet.has(trackSetId)) {
+        missingPayloadTrackSetIds.add(trackSetId);
+      }
+    }
 
     if (missingPayloadTrackSetIds.size > 0) {
       onRequireTrackPayloads?.(missingPayloadTrackSetIds);
@@ -490,6 +731,7 @@ export function useTrackRendering({
     batchTracksByTrackSet,
     compiledTrackPayloadByTrackSet,
     highlightedTrackIds,
+    markerTracksByTrackSet,
     onRequireTrackPayloads,
     trackLookup
   ]);
@@ -857,6 +1099,162 @@ export function useTrackRendering({
   ]);
 
   useEffect(() => {
+    const trackGroup = trackGroupRef.current;
+    if (!trackGroup) {
+      return;
+    }
+
+    if (trackOverlayRevision === 0) {
+      for (const resource of trackMarkerResourcesRef.current.values()) {
+        disposeTrackMarkerResource(trackGroup, resource);
+      }
+      trackMarkerResourcesRef.current.clear();
+      return;
+    }
+
+    const nextMarkerKeys = new Set<string>();
+    const maxVisibleTime = clampedTimeIndex + TRACK_TIME_EPSILON;
+    const minVisibleTime = isFullTrackTrailEnabled
+      ? Number.NEGATIVE_INFINITY
+      : clampedTimeIndex - Math.max(0, trackTrailLength) - TRACK_TIME_EPSILON;
+
+    for (const [trackSetId, tracksForSet] of markerTracksByTrackSet) {
+      const payload = compiledTrackPayloadByTrackSet.get(trackSetId);
+      if (!payload || tracksForSet.length === 0) {
+        continue;
+      }
+
+      const key = getTrackMarkerKey(trackSetId);
+      nextMarkerKeys.add(key);
+      const trackSetOpacity = sanitizeTrackOpacity(trackOpacityByTrackSet[trackSetId]);
+      const markerOpacity = trackSetOpacity > 0 ? trackSetOpacity : DEFAULT_TRACK_OPACITY;
+      const lineWidth = sanitizeTrackLineWidth(trackLineWidthByTrackSet[trackSetId]);
+      const markerRadius = resolveTrackCentroidRadius(lineWidth);
+      const centroidCapacity = drawTrackCentroids
+        ? tracksForSet.reduce((sum, track) => sum + Math.max(track.centroidCount - 2, 0), 0)
+        : 1;
+      const existingResource = trackMarkerResourcesRef.current.get(key);
+      const resource = ensureTrackMarkerResource(
+        trackGroup,
+        existingResource,
+        key,
+        trackSetId,
+        centroidCapacity,
+        markerOpacity,
+        lineWidth,
+        containerRef.current
+      );
+      if (resource !== existingResource) {
+        trackMarkerResourcesRef.current.set(key, resource);
+      }
+
+      let centroidIndex = 0;
+      const startPositions: number[] = [];
+      const startColors: number[] = [];
+      const colorMode = trackColorModesByTrackSet[trackSetId] ?? { type: 'random' };
+
+      for (const track of tracksForSet) {
+        const firstVisibleIndex = isFullTrackTrailEnabled
+          ? 0
+          : findFirstTrackCentroidIndexAtOrAfter(track, payload, minVisibleTime);
+        const lastVisibleIndex = findLastTrackCentroidIndexAtOrBefore(track, payload, maxVisibleTime);
+        const hasVisibleSegment =
+          firstVisibleIndex >= 0 &&
+          firstVisibleIndex < track.centroidCount &&
+          lastVisibleIndex > firstVisibleIndex &&
+          lastVisibleIndex < track.centroidCount;
+        if (!hasVisibleSegment) {
+          continue;
+        }
+
+        const offset = resolveTrackOffset(track, channelTrackOffsets);
+        const color = resolveTrackBaseColor(track, colorMode);
+
+        if (drawTrackCentroids) {
+          for (let pointIndex = firstVisibleIndex + 1; pointIndex < lastVisibleIndex; pointIndex += 1) {
+            setTrackCentroidVector(trackMarkerStartTemp, track, payload, pointIndex, offset.x, offset.y);
+            trackMarkerMatrixTemp.makeScale(markerRadius, markerRadius, markerRadius);
+            trackMarkerMatrixTemp.setPosition(trackMarkerStartTemp);
+            resource.centroids.setMatrixAt(centroidIndex, trackMarkerMatrixTemp);
+            resource.centroids.setColorAt(centroidIndex, trackMarkerColorTemp.copy(color));
+            centroidIndex += 1;
+          }
+        }
+
+        if (!drawTrackStartingPoints || firstVisibleIndex !== 0) {
+          continue;
+        }
+
+        setTrackCentroidVector(trackMarkerStartTemp, track, payload, 0, offset.x, offset.y);
+        let hasDirection = false;
+        for (let pointIndex = 1; pointIndex <= lastVisibleIndex; pointIndex += 1) {
+          setTrackCentroidVector(trackMarkerNextTemp, track, payload, pointIndex, offset.x, offset.y);
+          trackMarkerDirectionTemp.subVectors(trackMarkerNextTemp, trackMarkerStartTemp);
+          if (trackMarkerDirectionTemp.lengthSq() > 1e-8) {
+            trackMarkerDirectionTemp.normalize();
+            hasDirection = true;
+            break;
+          }
+        }
+        if (!hasDirection) {
+          continue;
+        }
+
+        if (Math.abs(trackMarkerDirectionTemp.z) < 0.85) {
+          trackMarkerReferenceTemp.set(0, 0, 1);
+        } else {
+          trackMarkerReferenceTemp.set(0, 1, 0);
+        }
+        trackMarkerPerpTemp
+          .crossVectors(trackMarkerDirectionTemp, trackMarkerReferenceTemp)
+          .normalize();
+
+        const startHalfWidth = markerRadius * TRACK_START_MARKER_HALF_WIDTH_MULTIPLIER;
+        trackMarkerLeftTemp.copy(trackMarkerStartTemp).addScaledVector(trackMarkerPerpTemp, startHalfWidth);
+        trackMarkerRightTemp.copy(trackMarkerStartTemp).addScaledVector(trackMarkerPerpTemp, -startHalfWidth);
+        pushMarkerSegment(startPositions, startColors, trackMarkerLeftTemp, trackMarkerRightTemp, color);
+      }
+
+      resource.centroids.count = drawTrackCentroids ? centroidIndex : 0;
+      resource.centroids.visible = drawTrackCentroids && centroidIndex > 0;
+      resource.centroids.instanceMatrix.needsUpdate = true;
+      if (resource.centroids.instanceColor) {
+        resource.centroids.instanceColor.needsUpdate = true;
+      }
+      resource.centroidMaterial.needsUpdate = true;
+
+      resource.startGeometry.setPositions(startPositions);
+      resource.startGeometry.setColors(startColors);
+      resource.startGeometry.instanceCount = startPositions.length / 6;
+      resource.startMarks.computeLineDistances();
+      resource.startMarks.visible = startPositions.length > 0;
+    }
+
+    for (const [key, resource] of Array.from(trackMarkerResourcesRef.current.entries())) {
+      if (!nextMarkerKeys.has(key)) {
+        disposeTrackMarkerResource(trackGroup, resource);
+        trackMarkerResourcesRef.current.delete(key);
+      }
+    }
+  }, [
+    channelTrackOffsets,
+    clampedTimeIndex,
+    compiledTrackPayloadByTrackSet,
+    containerRef,
+    drawTrackCentroids,
+    drawTrackStartingPoints,
+    isFullTrackTrailEnabled,
+    markerTracksByTrackSet,
+    trackColorModesByTrackSet,
+    trackGroupRef,
+    trackLineWidthByTrackSet,
+    trackMarkerResourcesRef,
+    trackOpacityByTrackSet,
+    trackOverlayRevision,
+    trackTrailLength
+  ]);
+
+  useEffect(() => {
     for (const resource of trackLinesRef.current.values()) {
       if (resource.kind === 'batch') {
         updateTrackBatchTimeWindow(resource, clampedTimeIndex, isFullTrackTrailEnabled, trackTrailLength);
@@ -998,6 +1396,7 @@ export function useTrackRendering({
     const trackGroup = trackGroupRef.current;
     if (!trackGroup) {
       trackLinesRef.current.clear();
+      trackMarkerResourcesRef.current.clear();
       animatedTrackIdsRef.current = new Set();
       pendingAppearanceUpdateRef.current = false;
       return;
@@ -1006,7 +1405,11 @@ export function useTrackRendering({
     for (const resource of trackLinesRef.current.values()) {
       disposeTrackResource(trackGroup, resource);
     }
+    for (const resource of trackMarkerResourcesRef.current.values()) {
+      disposeTrackMarkerResource(trackGroup, resource);
+    }
     trackLinesRef.current.clear();
+    trackMarkerResourcesRef.current.clear();
     animatedTrackIdsRef.current = new Set();
     pendingAppearanceUpdateRef.current = false;
   }, [trackGroupRef, trackLinesRef]);

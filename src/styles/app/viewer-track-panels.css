@@ -287,6 +287,8 @@
   display: inline-flex;
   align-items: center;
   gap: 0.45rem;
+  min-width: 0;
+  white-space: nowrap;
 }
 
 .track-controls .track-label-button {
@@ -303,6 +305,11 @@
   cursor: pointer;
   border-radius: 0.4rem;
   transition: background 0.2s ease;
+  min-width: 0;
+}
+
+.track-controls .track-name {
+  white-space: nowrap;
 }
 
 .track-controls .track-label-button:is(:hover, :focus-visible) {

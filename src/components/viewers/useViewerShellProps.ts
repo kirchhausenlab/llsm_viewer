@@ -64,6 +64,8 @@ function mapVolumeViewerProps({
     channelTrackOffsets: viewerPanels.tracks.channelTrackOffsets,
     isFullTrackTrailEnabled: trackSettings.isFullTrailEnabled,
     trackTrailLength: trackSettings.trailLength,
+    drawTrackCentroids: trackSettings.drawCentroids,
+    drawTrackStartingPoints: trackSettings.drawStartingPoints,
     selectedTrackIds: viewerPanels.tracks.selectedTrackIds,
     followedTrackId: viewerPanels.tracks.followedTrackId,
     followedVoxel: viewerPanels.tracks.followedVoxel,

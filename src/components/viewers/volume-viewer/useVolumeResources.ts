@@ -486,7 +486,7 @@ function applyVolumeMaterialState(
   }
 }
 
-function assignVolumeMeshOnBeforeRender(
+export function assignVolumeMeshOnBeforeRender(
   mesh: THREE.Mesh,
 ): void {
   const worldCameraPosition = new THREE.Vector3();
@@ -496,6 +496,7 @@ function assignVolumeMeshOnBeforeRender(
   mesh.onBeforeRender = (_renderer, _scene, renderCamera) => {
     const shaderMaterial = mesh.material as THREE.ShaderMaterial;
     const uniforms = shaderMaterial.uniforms as ShaderUniformMap | undefined;
+    modelViewMatrix.multiplyMatrices(renderCamera.matrixWorldInverse, mesh.matrixWorld);
     const cameraUniform = uniforms?.u_cameraPos?.value as THREE.Vector3 | undefined;
     if (cameraUniform) {
       worldCameraPosition.setFromMatrixPosition(renderCamera.matrixWorld);
@@ -505,12 +506,11 @@ function assignVolumeMeshOnBeforeRender(
     }
     const modelViewProjectionUniform = uniforms?.u_modelViewProjectionMatrix?.value as THREE.Matrix4 | undefined;
     if (modelViewProjectionUniform) {
-      modelViewProjectionMatrix.multiplyMatrices(renderCamera.projectionMatrix, mesh.modelViewMatrix);
+      modelViewProjectionMatrix.multiplyMatrices(renderCamera.projectionMatrix, modelViewMatrix);
       modelViewProjectionUniform.copy(modelViewProjectionMatrix);
     }
     const modelViewUniform = uniforms?.u_modelViewMatrixVolume?.value as THREE.Matrix4 | undefined;
     if (modelViewUniform) {
-      modelViewMatrix.copy(mesh.modelViewMatrix);
       modelViewUniform.copy(modelViewMatrix);
     }
     const nearFarUniform = uniforms?.u_cameraNearFar?.value as THREE.Vector2 | undefined;

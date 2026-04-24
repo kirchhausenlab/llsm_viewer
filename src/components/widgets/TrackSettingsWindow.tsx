@@ -4,8 +4,12 @@ export default function TrackSettingsWindow({
   isFullTrailEnabled,
   trailLength,
   trailLengthExtent,
+  drawCentroids,
+  drawStartingPoints,
   onFullTrailToggle,
-  onTrailLengthChange
+  onTrailLengthChange,
+  onDrawCentroidsToggle,
+  onDrawStartingPointsToggle
 }: TrackSettingsProps) {
   return (
     <div className="global-controls">
@@ -34,6 +38,28 @@ export default function TrackSettingsWindow({
             disabled={isFullTrailEnabled}
           />
         </div>
+      </div>
+      <div className="control-row track-marker-controls">
+        <label className="control-label control-label--compact" htmlFor="track-draw-centroids-toggle">
+          <input
+            id="track-draw-centroids-toggle"
+            type="checkbox"
+            checked={drawCentroids}
+            onChange={(event) => onDrawCentroidsToggle(event.target.checked)}
+          />
+          Draw centroids
+        </label>
+      </div>
+      <div className="control-row track-marker-controls">
+        <label className="control-label control-label--compact" htmlFor="track-draw-starting-points-toggle">
+          <input
+            id="track-draw-starting-points-toggle"
+            type="checkbox"
+            checked={drawStartingPoints}
+            onChange={(event) => onDrawStartingPointsToggle(event.target.checked)}
+          />
+          Draw starting points
+        </label>
       </div>
     </div>
   );

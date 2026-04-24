@@ -546,6 +546,8 @@ export function useAppRouteState(): AppRouteState {
     trackColorModesByTrackSet,
     isFullTrackTrailEnabled,
     trackTrailLength,
+    drawTrackCentroids,
+    drawTrackStartingPoints,
     followedTrackId,
     followedTrackSetId,
     handleAddTrackSet,
@@ -567,6 +569,8 @@ export function useAppRouteState(): AppRouteState {
     handleTrackColorReset,
     handleTrackTrailModeChange,
     handleTrackTrailLengthChange,
+    handleDrawTrackCentroidsToggle,
+    handleDrawTrackStartingPointsToggle,
     handleTrackSelectionToggle,
     handleTrackFollow,
     handleTrackFollowFromViewer,
@@ -1747,8 +1751,12 @@ export function useAppRouteState(): AppRouteState {
       trackSettings: {
         isFullTrailEnabled: isFullTrackTrailEnabled,
         trailLength: trackTrailLength,
+        drawCentroids: drawTrackCentroids,
+        drawStartingPoints: drawTrackStartingPoints,
         onFullTrailToggle: handleTrackTrailModeChange,
-        onTrailLengthChange: handleTrackTrailLengthChange
+        onTrailLengthChange: handleTrackTrailLengthChange,
+        onDrawCentroidsToggle: handleDrawTrackCentroidsToggle,
+        onDrawStartingPointsToggle: handleDrawTrackStartingPointsToggle
       }
     }
   });
