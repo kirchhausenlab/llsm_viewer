@@ -316,7 +316,8 @@ export function buildViewerProp(
   orderIndex: number,
   volumeDimensions: ViewerPropVolumeDimensions,
   totalTimepoints: number,
-  voxelResolution?: VoxelResolutionValues | null
+  voxelResolution?: VoxelResolutionValues | null,
+  defaultColor = '#ffffff'
 ): ViewerProp {
   return {
     id,
@@ -325,7 +326,7 @@ export function buildViewerProp(
     typeface: 'Inter',
     dimension: '2d',
     visible: true,
-    color: '#ffffff',
+    color: defaultColor,
     bold: false,
     italic: false,
     underline: false,

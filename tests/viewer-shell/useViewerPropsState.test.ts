@@ -32,6 +32,7 @@ test('viewer props state creates sequential prop names and keeps selection in sy
   assert.equal(hook.result.props[0].screen.y, 0.5);
   assert.equal(hook.result.selectedPropId, hook.result.props[1].id);
   assert.equal(hook.result.props[0].world.flipY, true);
+  assert.equal(hook.result.props[0].color, '#ffffff');
 
   const firstPropId = hook.result.props[0].id;
   hook.act(() => {
@@ -115,4 +116,33 @@ test('viewer props state supports bulk visibility and clear all', () => {
   assert.equal(hook.result.props[0].id, 'viewer-prop-1');
   assert.equal(hook.result.props[0].name, 'Prop #1');
   hook.unmount();
+});
+
+test('viewer props state seeds new props with a light-theme text color in light mode', () => {
+  const originalDocument = globalThis.document;
+  globalThis.document = {
+    documentElement: {
+      dataset: {
+        theme: 'light'
+      }
+    }
+  } as Document;
+
+  try {
+    const hook = renderHook(() =>
+      useViewerPropsState({
+        volumeDimensions: { width: 64, height: 64, depth: 16 },
+        totalTimepoints: 4,
+      })
+    );
+
+    hook.act(() => {
+      hook.result.createProp();
+    });
+
+    assert.equal(hook.result.props[0].color, '#3a2f21');
+    hook.unmount();
+  } finally {
+    globalThis.document = originalDocument;
+  }
 });

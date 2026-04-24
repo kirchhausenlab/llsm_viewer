@@ -7,7 +7,7 @@
   height: 100%;
   padding: 0;
   gap: 0;
-  color: rgba(255, 255, 255, 0.85);
+  color: var(--text-primary);
   min-height: 0;
   box-sizing: border-box;
 }
