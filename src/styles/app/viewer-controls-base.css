@@ -36,6 +36,11 @@
   min-width: 0;
 }
 
+.global-controls .track-marker-controls {
+  align-items: center;
+  justify-content: flex-start;
+}
+
 .global-controls .viewer-mode-row {
   display: flex;
   gap: 0.5rem;

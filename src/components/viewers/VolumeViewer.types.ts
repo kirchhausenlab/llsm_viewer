@@ -253,6 +253,8 @@ export type VolumeViewerProps = {
   channelTrackOffsets: Record<string, { x: number; y: number }>;
   isFullTrackTrailEnabled: boolean;
   trackTrailLength: number;
+  drawTrackCentroids?: boolean;
+  drawTrackStartingPoints?: boolean;
   selectedTrackIds: ReadonlySet<string>;
   followedTrackId: string | null;
   followedVoxel: FollowedVoxelTarget | null;

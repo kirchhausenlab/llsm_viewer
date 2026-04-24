@@ -208,8 +208,12 @@ export type TrackSettingsProps = {
   isFullTrailEnabled: boolean;
   trailLength: number;
   trailLengthExtent: NumericRange;
+  drawCentroids: boolean;
+  drawStartingPoints: boolean;
   onFullTrailToggle: (enabled: boolean) => void;
   onTrailLengthChange: (value: number) => void;
+  onDrawCentroidsToggle: (enabled: boolean) => void;
+  onDrawStartingPointsToggle: (enabled: boolean) => void;
 };
 
 export type TracksPanelProps = {

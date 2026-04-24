@@ -226,8 +226,12 @@ function createViewerShellContainerProps(): ViewerShellContainerProps {
     trackSettings: {
       isFullTrailEnabled: true,
       trailLength: 3,
+      drawCentroids: false,
+      drawStartingPoints: true,
       onFullTrailToggle: noopWithArgs,
-      onTrailLengthChange: noopWithArgs
+      onTrailLengthChange: noopWithArgs,
+      onDrawCentroidsToggle: noopWithArgs,
+      onDrawStartingPointsToggle: noopWithArgs
     }
   };
 }
