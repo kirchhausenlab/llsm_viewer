@@ -9,8 +9,13 @@ import {
   VR_SCALE_HANDLE_RADIUS,
   VR_TRANSLATION_HANDLE_OFFSET,
   VR_TRANSLATION_HANDLE_RADIUS,
+  VR_VOLUME_BASE_OFFSET,
+  VR_VOLUME_EYE_LEVEL_OFFSET,
   VR_VOLUME_MAX_SCALE,
   VR_VOLUME_MIN_SCALE,
+  VR_VOLUME_MAX_CENTER_HEIGHT,
+  VR_VOLUME_MIN_CENTER_HEIGHT,
+  VR_VOLUME_VIEWER_DISTANCE,
 } from './constants';
 
 export type VolumeDimensions = { width: number; height: number; depth: number };
@@ -52,6 +57,74 @@ const VOLUME_WORLD_AXIS_SIGN = {
   y: -1,
   z: -1,
 } as const;
+
+const viewerPositionTemp = new THREE.Vector3();
+const viewerForwardTemp = new THREE.Vector3();
+
+export function resolveVolumeYawForViewerForward(forward: THREE.Vector3): number {
+  return Math.atan2(-forward.x, -forward.z);
+}
+
+export function resolveInitialVrVolumePlacement({
+  renderer,
+  camera,
+  target = new THREE.Vector3(),
+}: {
+  renderer: THREE.WebGLRenderer | null;
+  camera: THREE.Camera | null;
+  target?: THREE.Vector3;
+}): { baseOffset: THREE.Vector3; yaw: number; pitch: number } {
+  target.copy(VR_VOLUME_BASE_OFFSET);
+  let yaw = 0;
+
+  if (!renderer?.xr?.isPresenting || !camera) {
+    return { baseOffset: target, yaw, pitch: 0 };
+  }
+
+  const xrCamera = renderer.xr.getCamera() as THREE.Camera | null;
+  const referenceCamera = xrCamera ?? camera;
+  referenceCamera.updateMatrixWorld(true);
+  viewerPositionTemp.setFromMatrixPosition(referenceCamera.matrixWorld);
+  referenceCamera.getWorldDirection(viewerForwardTemp);
+  viewerForwardTemp.y = 0;
+
+  if (
+    !Number.isFinite(viewerPositionTemp.x) ||
+    !Number.isFinite(viewerPositionTemp.y) ||
+    !Number.isFinite(viewerPositionTemp.z) ||
+    viewerForwardTemp.lengthSq() <= 1e-8
+  ) {
+    return { baseOffset: target, yaw, pitch: 0 };
+  }
+
+  viewerForwardTemp.normalize();
+  yaw = resolveVolumeYawForViewerForward(viewerForwardTemp);
+  target.copy(viewerPositionTemp).addScaledVector(viewerForwardTemp, VR_VOLUME_VIEWER_DISTANCE);
+
+  if (viewerPositionTemp.y > 0.2) {
+    target.y = THREE.MathUtils.clamp(
+      viewerPositionTemp.y + VR_VOLUME_EYE_LEVEL_OFFSET,
+      VR_VOLUME_MIN_CENTER_HEIGHT,
+      VR_VOLUME_MAX_CENTER_HEIGHT,
+    );
+  } else {
+    target.y = VR_VOLUME_BASE_OFFSET.y;
+  }
+
+  return { baseOffset: target, yaw, pitch: 0 };
+}
+
+export function resolveInitialVrVolumeBaseOffset({
+  renderer,
+  camera,
+  target = new THREE.Vector3(),
+}: {
+  renderer: THREE.WebGLRenderer | null;
+  camera: THREE.Camera | null;
+  target?: THREE.Vector3;
+}): THREE.Vector3 {
+  return resolveInitialVrVolumePlacement({ renderer, camera, target }).baseOffset;
+}
 
 function resolveAxisScale(value: unknown): number {
   const numeric = typeof value === 'number' ? value : Number.NaN;

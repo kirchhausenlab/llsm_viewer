@@ -11,6 +11,15 @@ import {
 const clamp01 = (value: number) => Math.min(1, Math.max(0, value));
 const clampNumber = (value: number, min: number, max: number) =>
   Math.min(max, Math.max(min, value));
+const DEFAULT_VIEWER_PROP_COLOR_DARK = '#ffffff';
+const DEFAULT_VIEWER_PROP_COLOR_LIGHT = '#3a2f21';
+
+const resolveDefaultViewerPropColor = () => {
+  if (typeof document !== 'undefined' && document.documentElement.dataset.theme === 'light') {
+    return DEFAULT_VIEWER_PROP_COLOR_LIGHT;
+  }
+  return DEFAULT_VIEWER_PROP_COLOR_DARK;
+};
 
 export type UseViewerPropsStateOptions = {
   volumeDimensions: ViewerPropVolumeDimensions;
@@ -99,7 +108,8 @@ export function useViewerPropsState({
       index,
       volumeDimensions,
       totalTimepoints,
-      voxelResolution ?? null
+      voxelResolution ?? null,
+      resolveDefaultViewerPropColor()
     );
     const next = [...propsRef.current, nextProp];
     propsRef.current = next;

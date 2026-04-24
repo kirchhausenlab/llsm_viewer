@@ -2004,11 +2004,15 @@
   gap: 0.75rem;
 }
 
+.floating-window--backgrounds .backgrounds-window__mode-row {
+  flex: 1 1 auto;
+}
+
 .floating-window--backgrounds .backgrounds-window__label,
 .floating-window--backgrounds .backgrounds-window__checkbox {
   font-size: 0.85rem;
   font-weight: 600;
-  color: rgba(255, 255, 255, 0.8);
+  color: var(--text-secondary);
 }
 
 .floating-window--backgrounds .backgrounds-window__checkbox {
@@ -2033,6 +2037,11 @@
 }
 
 @media (max-width: 540px) {
+  .floating-window--backgrounds .backgrounds-window__row--mode {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
   .floating-window--backgrounds .backgrounds-window__row {
     align-items: flex-start;
   }

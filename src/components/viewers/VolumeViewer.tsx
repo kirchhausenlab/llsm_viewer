@@ -1153,6 +1153,7 @@ function VolumeViewer({
     onRendererInitialized,
     endVrSessionRequestRef,
     updateControllerRays,
+    refreshInitialVrPlacement,
   } = vrApi;
 
   useEffect(() => {
@@ -1661,6 +1662,7 @@ function VolumeViewer({
       updateCameraFrustum,
       renderBackgroundPass,
       advancePlaybackFrame,
+      refreshInitialVrPlacement,
       updateControllerRays,
       controllersRef,
       vrLog,
@@ -1765,7 +1767,7 @@ function VolumeViewer({
 
     scene.background = null;
 
-    if (isDesktopBackgroundDisabled || !background) {
+    if (isDesktopBackgroundDisabled || !background?.clearColor || !background.surfaceColor) {
       renderer.setClearColor(0x000000, 0);
       renderer.domElement.style.background = 'transparent';
       return;

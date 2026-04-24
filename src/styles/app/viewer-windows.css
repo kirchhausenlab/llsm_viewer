@@ -449,7 +449,7 @@
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.05em;
-  color: rgba(255, 255, 255, 0.74);
+  color: var(--text-secondary);
 }
 
 .props-slider-grid {
@@ -470,7 +470,7 @@
   padding: 1rem;
   border-radius: 0.8rem;
   border: 1px dashed rgba(255, 255, 255, 0.18);
-  color: rgba(255, 255, 255, 0.68);
+  color: var(--text-muted);
   box-sizing: border-box;
 }
 
@@ -492,7 +492,7 @@
 
 .props-editor-label {
   font-weight: 600;
-  color: rgba(255, 255, 255, 0.8);
+  color: var(--text-secondary);
 }
 
 .props-color-picker {
@@ -753,7 +753,7 @@
   align-items: center;
   justify-content: space-between;
   gap: 0.75rem;
-  color: rgba(255, 255, 255, 0.75);
+  color: var(--text-secondary);
 }
 
 .draw-roi-action-button {
@@ -804,7 +804,7 @@
   display: flex;
   justify-content: space-between;
   gap: 0.75rem;
-  color: rgba(255, 255, 255, 0.75);
+  color: var(--text-secondary);
 }
 
 .draw-roi-color-row {
@@ -881,7 +881,7 @@
 
 .roi-manager-empty-state {
   margin: 0;
-  color: rgba(255, 255, 255, 0.6);
+  color: var(--text-muted);
   font-size: var(--type-size-meta);
   font-weight: var(--type-weight-body);
   line-height: var(--type-line-ui);
@@ -942,7 +942,7 @@
   font-size: var(--type-size-label);
   font-weight: var(--type-weight-label);
   letter-spacing: var(--type-tracking-ui);
-  color: rgba(255, 255, 255, 0.82);
+  color: var(--text-secondary);
 }
 
 .camera-window-fieldset {
@@ -964,7 +964,7 @@
   font-size: var(--type-size-label);
   font-weight: var(--type-weight-label);
   letter-spacing: var(--type-tracking-ui);
-  color: rgba(255, 255, 255, 0.82);
+  color: var(--text-secondary);
   margin-bottom: 0.25rem;
 }
 
@@ -999,7 +999,7 @@
   font-size: var(--type-size-label);
   font-weight: var(--type-weight-label);
   letter-spacing: var(--type-tracking-ui);
-  color: rgba(255, 255, 255, 0.82);
+  color: var(--text-secondary);
 }
 
 .camera-window-section-label--centered {
@@ -1051,7 +1051,7 @@
   font-size: var(--type-size-label);
   font-weight: var(--type-weight-label);
   letter-spacing: var(--type-tracking-ui);
-  color: rgba(255, 255, 255, 0.82);
+  color: var(--text-secondary);
 }
 
 .camera-window-inline-input input {
@@ -1093,7 +1093,7 @@
 
 .camera-window-empty-state {
   margin: 0;
-  color: rgba(255, 255, 255, 0.62);
+  color: var(--text-muted);
   font-size: var(--type-size-meta);
   font-weight: var(--type-weight-body);
   line-height: var(--type-line-ui);
@@ -1153,7 +1153,7 @@
   font-weight: var(--type-weight-label);
   letter-spacing: var(--type-tracking-ui);
   line-height: var(--type-line-ui);
-  color: rgba(255, 255, 255, 0.82);
+  color: var(--text-secondary);
 }
 
 .measurements-channel-toggle input,
@@ -1204,7 +1204,7 @@
 
 .measurements-empty-state {
   margin: 0;
-  color: rgba(255, 255, 255, 0.62);
+  color: var(--text-muted);
   font-size: var(--type-size-meta);
   font-weight: var(--type-weight-body);
   line-height: var(--type-line-ui);

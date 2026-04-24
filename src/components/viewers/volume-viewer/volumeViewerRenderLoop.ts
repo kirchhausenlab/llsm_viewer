@@ -45,6 +45,7 @@ type CreateVolumeViewerRenderLoopOptions = {
   onCameraWindowStateChange?: (state: CameraWindowState | null) => void;
   advancePlaybackFrame: (timestamp: number) => void;
   refreshVrHudPlacements: () => void;
+  refreshInitialVrPlacement?: () => void;
   updateControllerRays: () => void;
   controllersRef: MutableRefObject<Array<{ hoverTrackId: string | null }>>;
   vrLog: (...args: Parameters<typeof console.debug>) => void;
@@ -75,6 +76,7 @@ export function createVolumeViewerRenderLoop({
   onCameraWindowStateChange,
   advancePlaybackFrame,
   refreshVrHudPlacements,
+  refreshInitialVrPlacement,
   updateControllerRays,
   controllersRef,
   vrLog
@@ -100,11 +102,21 @@ export function createVolumeViewerRenderLoop({
       return;
     }
 
-    applyKeyboardRotation(renderer, camera, controls);
-    applyKeyboardMovement(renderer, camera, controls);
-    controls.update();
+    const isXrPresenting = renderer.xr.isPresenting;
+    if (isXrPresenting && camera instanceof THREE.PerspectiveCamera) {
+      renderer.xr.updateCamera(camera);
+    } else {
+      applyKeyboardRotation(renderer, camera, controls);
+      applyKeyboardMovement(renderer, camera, controls);
+      controls.update();
+    }
     camera.updateMatrixWorld(true);
-    rotationTargetRef.current.copy(controls.target);
+    if (isXrPresenting) {
+      refreshInitialVrPlacement?.();
+    }
+    if (!isXrPresenting) {
+      rotationTargetRef.current.copy(controls.target);
+    }
 
     updateTrackAppearance(timestamp);
     refreshViewerProps();
@@ -234,7 +246,7 @@ export function createVolumeViewerRenderLoop({
     updateControllerRays();
     const hoveredEntry = controllersRef.current.find((entry) => entry.hoverTrackId);
     const renderSummary = {
-      presenting: renderer.xr.isPresenting,
+      presenting: isXrPresenting,
       hoveredByController: hoveredEntry?.hoverTrackId ?? null
     };
     if (

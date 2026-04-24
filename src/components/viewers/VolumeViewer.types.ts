@@ -149,15 +149,18 @@ export type VolumeViewerCaptureTarget = {
   captureImage?: () => Promise<Blob | null>;
 };
 
+export type DesktopViewerBackgroundMode = 'default' | 'custom';
+
 export type DesktopViewerBackgroundSelection = {
+  mode: DesktopViewerBackgroundMode;
   customBackgroundColor: string | null;
   floorEnabled: boolean;
   floorColor: string;
 };
 
 export type DesktopViewerBackgroundConfig = {
-  clearColor: string;
-  surfaceColor: string;
+  clearColor: string | null;
+  surfaceColor: string | null;
   floorEnabled: boolean;
   floorColor: string;
 };

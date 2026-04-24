@@ -11,7 +11,7 @@ import {
   type DesktopViewerCamera,
   type ViewerProjectionMode,
 } from '../../../hooks/useVolumeRenderSetup';
-import { VR_VOLUME_BASE_OFFSET } from './vr';
+import { resolveInitialVrVolumePlacement } from './vr';
 
 type UseVolumeViewerResetsParams = {
   projectionMode: ViewerProjectionMode;
@@ -88,16 +88,28 @@ export function useVolumeViewerResets({
   const handleResetVolume = useCallback(() => {
     const renderer = rendererRef.current;
     const isVrPresenting = renderer?.xr?.isPresenting ?? false;
+    let nextYaw = 0;
+    let nextPitch = 0;
     if (isVrPresenting) {
-      volumeRootBaseOffsetRef.current.copy(VR_VOLUME_BASE_OFFSET);
+      const placement = resolveInitialVrVolumePlacement({
+        renderer,
+        camera: cameraRef.current,
+        target: volumeRootBaseOffsetRef.current,
+      });
+      nextYaw = placement.yaw;
+      nextPitch = placement.pitch;
     } else {
       volumeRootBaseOffsetRef.current.set(0, 0, 0);
     }
 
-    volumeYawRef.current = 0;
-    volumePitchRef.current = 0;
+    volumeYawRef.current = nextYaw;
+    volumePitchRef.current = nextPitch;
     volumeUserScaleRef.current = 1;
     applyVolumeRootTransform(currentDimensionsRef.current);
+
+    if (isVrPresenting) {
+      return;
+    }
 
     const controls = controlsRef.current;
     const camera = cameraRef.current;

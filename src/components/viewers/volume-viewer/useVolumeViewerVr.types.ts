@@ -149,6 +149,7 @@ export type UseVolumeViewerVrResult = {
   onRendererInitialized: () => void;
   endVrSessionRequestRef: MutableRefObject<(() => Promise<void> | void) | null>;
   updateControllerRays: () => void;
+  refreshInitialVrPlacement: () => void;
 };
 
 export type VolumeHandleCandidate = { target: VrUiTarget; point: THREE.Vector3; distance: number };

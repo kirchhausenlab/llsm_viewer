@@ -4,8 +4,8 @@ import type { OrbitControls } from 'three/examples/jsm/controls/OrbitControls';
 
 import {
   DESKTOP_VOLUME_STEP_SCALE,
-  VR_VOLUME_BASE_OFFSET,
   VR_VOLUME_STEP_SCALE,
+  resolveInitialVrVolumePlacement,
   type VolumeDimensions,
 } from '../../vr';
 import { bindSessionRequests, createSessionLifecycle } from '../../vr/session';
@@ -45,6 +45,9 @@ export type CreateSessionHelpersParams = {
   volumeStepScaleRef: MutableRefObject<number>;
   applyVolumeStepScaleToResources: UseVolumeViewerVrResult['applyVolumeStepScaleToResources'];
   volumeRootBaseOffsetRef: MutableRefObject<THREE.Vector3>;
+  volumeYawRef: MutableRefObject<number>;
+  volumePitchRef: MutableRefObject<number>;
+  pendingInitialPlacementFramesRef: MutableRefObject<number>;
   applyVolumeRootTransform: UseVolumeViewerVrResult['applyVolumeRootTransform'];
   currentDimensionsRef: MutableRefObject<VolumeDimensions | null>;
   refreshControllerVisibility: () => void;
@@ -67,6 +70,7 @@ export type CreateSessionHelpersParams = {
 export type CreateSessionHelpersResult = {
   applySessionStartState: () => void;
   applySessionEndState: () => void;
+  refreshInitialVrPlacement: UseVolumeViewerVrResult['refreshInitialVrPlacement'];
   sessionManager: ReturnType<typeof createSessionLifecycle>['sessionManager'];
   callOnVrSessionStarted: () => void;
   callOnVrSessionEnded: () => void;
@@ -105,6 +109,9 @@ export function createSessionHelpers({
   volumeStepScaleRef,
   applyVolumeStepScaleToResources,
   volumeRootBaseOffsetRef,
+  volumeYawRef,
+  volumePitchRef,
+  pendingInitialPlacementFramesRef,
   applyVolumeRootTransform,
   currentDimensionsRef,
   refreshControllerVisibility,
@@ -125,12 +132,18 @@ export function createSessionHelpers({
 }: CreateSessionHelpersParams): CreateSessionHelpersResult {
   let previousVolumeStepScale = DESKTOP_VOLUME_STEP_SCALE;
 
-  const applySessionStartState = () => {
-    previousVolumeStepScale = volumeStepScaleRef.current;
-    applyVrFoveation();
-    applyVolumeStepScaleToResources(VR_VOLUME_STEP_SCALE);
-    volumeRootBaseOffsetRef.current.copy(VR_VOLUME_BASE_OFFSET);
+  const applyInitialVrVolumePlacement = () => {
+    const placement = resolveInitialVrVolumePlacement({
+      renderer: rendererRef.current,
+      camera: cameraRef.current,
+      target: volumeRootBaseOffsetRef.current,
+    });
+    volumeYawRef.current = placement.yaw;
+    volumePitchRef.current = placement.pitch;
     applyVolumeRootTransform(currentDimensionsRef.current);
+  };
+
+  const resetVrHudPlacementsAndControls = () => {
     refreshControllerVisibility();
     setVrPlaybackHudVisible(true);
     setVrChannelsHudVisible(true);
@@ -145,7 +158,33 @@ export function createSessionHelpers({
     updateVolumeHandles();
   };
 
+  const refreshInitialVrPlacement: UseVolumeViewerVrResult['refreshInitialVrPlacement'] = () => {
+    if (pendingInitialPlacementFramesRef.current <= 0) {
+      return;
+    }
+
+    const renderer = rendererRef.current;
+    if (!renderer?.xr?.isPresenting) {
+      pendingInitialPlacementFramesRef.current = 0;
+      return;
+    }
+
+    pendingInitialPlacementFramesRef.current -= 1;
+    applyInitialVrVolumePlacement();
+    resetVrHudPlacementsAndControls();
+  };
+
+  const applySessionStartState = () => {
+    previousVolumeStepScale = volumeStepScaleRef.current;
+    pendingInitialPlacementFramesRef.current = 1;
+    applyVrFoveation();
+    applyVolumeStepScaleToResources(VR_VOLUME_STEP_SCALE);
+    applyInitialVrVolumePlacement();
+    resetVrHudPlacementsAndControls();
+  };
+
   const applySessionEndState = () => {
+    pendingInitialPlacementFramesRef.current = 0;
     restoreVrFoveation();
     const currentStepScale = volumeStepScaleRef.current;
     const restoredStepScale =
@@ -206,6 +245,7 @@ export function createSessionHelpers({
   return {
     applySessionStartState,
     applySessionEndState,
+    refreshInitialVrPlacement,
     sessionManager,
     callOnVrSessionStarted,
     callOnVrSessionEnded,
