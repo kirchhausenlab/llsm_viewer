@@ -112,6 +112,19 @@ function createTrackHook(options?: {
   assert.ok(batchResource && batchResource.kind === 'batch', 'batch resource should be created');
   assert.strictEqual(batchResource.line.visible, true);
   assert.strictEqual(batchResource.segmentTrackIds.length, 1);
+
+  const shader = {
+    uniforms: {},
+    vertexShader: 'attribute vec3 instanceColorEnd;\nvoid main() {\n',
+    fragmentShader: 'uniform float linewidth;\nfloat alpha = opacity;\n',
+  };
+  batchResource.material.onBeforeCompile(shader as Parameters<typeof batchResource.material.onBeforeCompile>[0], null as never);
+  assert.ok('trackVisibleTimeMin' in shader.uniforms, 'track shader patch must inject the minimum time uniform');
+  assert.ok('trackVisibleTimeMax' in shader.uniforms, 'track shader patch must inject the maximum time uniform');
+  assert.match(shader.vertexShader, /attribute vec2 instanceTimeRange;/);
+  assert.match(shader.vertexShader, /varying vec2 vTrackTimeRange;/);
+  assert.match(shader.fragmentShader, /uniform float trackVisibleTimeMin;/);
+  assert.match(shader.fragmentShader, /discard;/);
 })();
 
 (() => {

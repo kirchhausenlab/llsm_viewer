@@ -1,9 +1,9 @@
 import type * as THREE from 'three';
-import type { Line2 } from 'three/examples/jsm/lines/Line2';
-import type { LineGeometry } from 'three/examples/jsm/lines/LineGeometry';
-import type { LineMaterial } from 'three/examples/jsm/lines/LineMaterial';
-import type { LineSegments2 } from 'three/examples/jsm/lines/LineSegments2';
-import type { LineSegmentsGeometry } from 'three/examples/jsm/lines/LineSegmentsGeometry';
+import type { Line2 } from 'three/addons/lines/Line2.js';
+import type { LineGeometry } from 'three/addons/lines/LineGeometry.js';
+import type { LineMaterial } from 'three/addons/lines/LineMaterial.js';
+import type { LineSegments2 } from 'three/addons/lines/LineSegments2.js';
+import type { LineSegmentsGeometry } from 'three/addons/lines/LineSegmentsGeometry.js';
 
 import type {
   VolumeBackgroundMask,

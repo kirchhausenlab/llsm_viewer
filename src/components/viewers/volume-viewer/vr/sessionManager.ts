@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import type { MutableRefObject } from 'react';
-import { XRControllerModelFactory } from 'three/examples/jsm/webxr/XRControllerModelFactory';
-import type { OrbitControls } from 'three/examples/jsm/controls/OrbitControls';
+import { XRControllerModelFactory } from 'three/addons/webxr/XRControllerModelFactory.js';
+import type { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 
 import type {
   ControllerEntry,

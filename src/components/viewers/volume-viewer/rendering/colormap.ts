@@ -19,9 +19,13 @@ export function createColormapTexture(hexColor: string) {
     data[i * 4 + 3] = Math.round(intensity * 255);
   }
   const texture = new THREE.DataTexture(data, size, 1, THREE.RGBAFormat);
-  texture.needsUpdate = true;
+  texture.type = THREE.UnsignedByteType;
+  texture.internalFormat = null;
   texture.minFilter = THREE.LinearFilter;
   texture.magFilter = THREE.LinearFilter;
+  texture.unpackAlignment = 1;
+  texture.generateMipmaps = false;
   texture.colorSpace = THREE.SRGBColorSpace;
+  texture.needsUpdate = true;
   return texture;
 }

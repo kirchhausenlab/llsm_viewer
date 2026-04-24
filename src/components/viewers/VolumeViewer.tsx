@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type MutableRefObject } from 'react';
 import * as THREE from 'three';
-import { LineMaterial } from 'three/examples/jsm/lines/LineMaterial';
-import { LineSegments2 } from 'three/examples/jsm/lines/LineSegments2';
+import { LineMaterial } from 'three/addons/lines/LineMaterial.js';
+import { LineSegments2 } from 'three/addons/lines/LineSegments2.js';
 import './viewerCommon.css';
 import './VolumeViewer.css';
 import { createEmptyDesktopViewStateMap, type DesktopViewerCamera } from '../../hooks/useVolumeRenderSetup';
@@ -42,6 +42,7 @@ import { useVolumeViewerSurfaceBinding } from './volume-viewer/useVolumeViewerSu
 import { useVolumeViewerTransformBindings } from './volume-viewer/useVolumeViewerTransformBindings';
 import { resolveVolumeViewerVrRuntime } from './volume-viewer/volumeViewerVrRuntime';
 import {
+  resolvePlaybackWarmupGateWaitMs,
   resetPlaybackWarmupGateState,
   shouldAllowPlaybackAdvanceWithWarmup,
   type PlaybackWarmupGateState,
@@ -148,6 +149,11 @@ const ROI_PREPASS_SHADER_KEY = 'roi-prepass-depth-v1';
 const ROI_TRANSMITTANCE_FALLBACK_TEXTURE = (() => {
   const texture = new THREE.DataTexture(new Uint8Array([255, 255, 255, 255]), 1, 1, THREE.RGBAFormat);
   texture.type = THREE.UnsignedByteType;
+  texture.internalFormat = null;
+  texture.minFilter = THREE.NearestFilter;
+  texture.magFilter = THREE.NearestFilter;
+  texture.unpackAlignment = 1;
+  texture.generateMipmaps = false;
   texture.needsUpdate = true;
   return texture;
 })();
@@ -492,6 +498,7 @@ function VolumeViewer({
     blockedNextIndex: null,
     blockedAtMs: null,
   });
+  const playbackStartupBufferStartedAtRef = useRef<number | null>(null);
   const hoverRaycasterRef = useRef<THREE.Raycaster | null>(null);
   const {
     containerNode,
@@ -668,6 +675,11 @@ function VolumeViewer({
       resetPlaybackWarmupGateState(playbackWarmupGateRef.current);
     }
   }, [isPlaying]);
+  useEffect(() => {
+    if (!isPlaybackStartPending) {
+      playbackStartupBufferStartedAtRef.current = null;
+    }
+  }, [isPlaybackStartPending]);
 
   const {
     playbackState,
@@ -1248,8 +1260,11 @@ function VolumeViewer({
     if (!isPlaybackStartPending || playbackDisabled) {
       return;
     }
+    const startupStartedAt = playbackStartupBufferStartedAtRef.current ?? Date.now();
+    playbackStartupBufferStartedAtRef.current = startupStartedAt;
     const requiredLayerKeys = playbackRequiredLayerKeys;
     if (requiredLayerKeys.length === 0 || playbackBufferFrames <= 0) {
+      playbackStartupBufferStartedAtRef.current = null;
       onBufferedPlaybackStart?.();
       return;
     }
@@ -1267,15 +1282,31 @@ function VolumeViewer({
       targetIndices.push(candidate);
     }
 
-    const allReady = targetIndices.every((timeIndex) => {
-      const warmupStatus = getPlaybackWarmupStatusRef.current(timeIndex, requiredLayerKeys);
-      return warmupStatus === 'ready';
-    });
-    if (allReady) {
+    const warmupStatuses = targetIndices.map((timeIndex) =>
+      getPlaybackWarmupStatusRef.current(timeIndex, requiredLayerKeys)
+    );
+    if (warmupStatuses.every((status) => status === 'ready')) {
+      playbackStartupBufferStartedAtRef.current = null;
       onBufferedPlaybackStart?.();
+      return;
     }
+
+    const waitMs = resolvePlaybackWarmupGateWaitMs(fps);
+    const elapsedMs = Math.max(0, Date.now() - startupStartedAt);
+    if (elapsedMs >= waitMs) {
+      playbackStartupBufferStartedAtRef.current = null;
+      onBufferedPlaybackStart?.();
+      return;
+    }
+
+    const timeout = window.setTimeout(() => {
+      playbackStartupBufferStartedAtRef.current = null;
+      onBufferedPlaybackStart?.();
+    }, Math.max(0, waitMs - elapsedMs));
+    return () => window.clearTimeout(timeout);
   }, [
     clampedTimeIndex,
+    fps,
     getPlaybackWarmupStatus,
     isPlaying,
     isPlaybackStartPending,

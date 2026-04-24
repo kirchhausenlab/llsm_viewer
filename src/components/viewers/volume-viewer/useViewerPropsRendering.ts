@@ -712,9 +712,10 @@ export function useViewerPropsRendering({
         }
 
         const texture = new THREE.CanvasTexture(canvas);
-        texture.colorSpace = THREE.SRGBColorSpace;
-        texture.minFilter = THREE.LinearFilter;
-        texture.magFilter = THREE.LinearFilter;
+	        texture.colorSpace = THREE.SRGBColorSpace;
+	        texture.minFilter = THREE.LinearFilter;
+	        texture.magFilter = THREE.LinearFilter;
+	        texture.generateMipmaps = false;
 
         const mesh = new THREE.Mesh(
           new THREE.PlaneGeometry(1, 1),
@@ -767,10 +768,11 @@ export function useViewerPropsRendering({
             texture.dispose();
             continue;
           }
-          const labelTexture = new THREE.CanvasTexture(labelCanvas);
-          labelTexture.colorSpace = THREE.SRGBColorSpace;
-          labelTexture.minFilter = THREE.LinearFilter;
-          labelTexture.magFilter = THREE.LinearFilter;
+	          const labelTexture = new THREE.CanvasTexture(labelCanvas);
+	          labelTexture.colorSpace = THREE.SRGBColorSpace;
+	          labelTexture.minFilter = THREE.LinearFilter;
+	          labelTexture.magFilter = THREE.LinearFilter;
+	          labelTexture.generateMipmaps = false;
           const labelMesh = new THREE.Mesh(
             new THREE.PlaneGeometry(1, 1),
             new THREE.MeshBasicMaterial({

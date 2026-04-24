@@ -1,4 +1,4 @@
-import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import * as THREE from 'three';
 
 import { DEFAULT_DESKTOP_RENDER_PIXEL_RATIO_CAP } from '../types/renderResolution';
@@ -337,8 +337,14 @@ export function createVolumeRenderContext(
   const renderer = new THREE.WebGLRenderer({
     antialias: true,
     alpha: true,
+    depth: true,
+    stencil: false,
     powerPreference: 'high-performance',
   });
+  if (!renderer.capabilities.isWebGL2) {
+    renderer.dispose();
+    throw new Error('WebGL2 is required for the volume viewer renderer.');
+  }
 
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   applyDesktopRendererPixelRatio(renderer, pixelRatioCap);
