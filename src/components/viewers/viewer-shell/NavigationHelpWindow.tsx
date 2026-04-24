@@ -224,9 +224,9 @@ function NavigationHelpWindow({
           </div>
 
           {activeTab.sections.map((section) => (
-            <div key={section.title} className="viewer-top-menu-popover-section">
-              <h4>{section.title}</h4>
-              <ul>
+            <div key={section.title} className="controls-help-window__section">
+              <h4 className="controls-help-window__section-title">{section.title}</h4>
+              <ul className="controls-help-window__list">
                 {section.items.map((item) => (
                   <li key={item}>{item}</li>
                 ))}

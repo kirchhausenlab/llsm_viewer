@@ -733,7 +733,7 @@ test('top menu track tabs support middle-click visibility toggles', () => {
   });
 });
 
-test('top menu keeps playback and Z controls in the top-row second column', () => {
+test('top menu moves playback and Z controls into the bottom-row first column', () => {
   withEnvironmentMocks(() => {
     const renderer = renderTopMenu({
       volumeTimepointCount: 5,
@@ -748,11 +748,11 @@ test('top menu keeps playback and Z controls in the top-row second column', () =
         hasClassName(node, 'viewer-top-menu-cell--top') &&
         hasClassName(node, 'viewer-top-menu-cell--column-2')
     )[0];
-    const topFourthColumn = renderer.root.findAll(
+    const bottomFirstColumn = renderer.root.findAll(
       (node) =>
         node.type === 'div' &&
-        hasClassName(node, 'viewer-top-menu-cell--top') &&
-        hasClassName(node, 'viewer-top-menu-cell--column-4')
+        hasClassName(node, 'viewer-top-menu-cell--bottom') &&
+        hasClassName(node, 'viewer-top-menu-cell--column-1')
     )[0];
     const bottomSecondColumn = renderer.root.findAll(
       (node) =>
@@ -761,10 +761,10 @@ test('top menu keeps playback and Z controls in the top-row second column', () =
         hasClassName(node, 'viewer-top-menu-cell--column-2')
     )[0];
 
-    assert.ok(topSecondColumn.findByProps({ id: 'top-menu-playback-slider' }));
-    assert.ok(topSecondColumn.findByProps({ id: 'top-menu-z-slider' }));
-    assert.equal(topFourthColumn.findAllByProps({ id: 'top-menu-playback-slider' }).length, 0);
-    assert.equal(topFourthColumn.findAllByProps({ id: 'top-menu-z-slider' }).length, 0);
+    assert.equal(topSecondColumn.findAllByProps({ id: 'top-menu-playback-slider' }).length, 0);
+    assert.equal(topSecondColumn.findAllByProps({ id: 'top-menu-z-slider' }).length, 0);
+    assert.ok(bottomFirstColumn.findByProps({ id: 'top-menu-playback-slider' }));
+    assert.ok(bottomFirstColumn.findByProps({ id: 'top-menu-z-slider' }));
     assert.equal(bottomSecondColumn.findAllByProps({ id: 'top-menu-playback-slider' }).length, 0);
     assert.equal(bottomSecondColumn.findAllByProps({ id: 'top-menu-z-slider' }).length, 0);
 
@@ -772,7 +772,7 @@ test('top menu keeps playback and Z controls in the top-row second column', () =
   });
 });
 
-test('top menu places scale, hover, and follow status in their updated columns', () => {
+test('top menu places scale and actions in the top-right cell and hover plus follow status in the bottom-right cell', () => {
   withEnvironmentMocks(() => {
     const renderer = renderTopMenu({
       currentScaleLabel: '1.25x',
@@ -793,6 +793,12 @@ test('top menu places scale, hover, and follow status in their updated columns',
         hasClassName(node, 'viewer-top-menu-cell--top') &&
         hasClassName(node, 'viewer-top-menu-cell--column-3')
     )[0];
+    const topFourthColumn = renderer.root.findAll(
+      (node) =>
+        node.type === 'div' &&
+        hasClassName(node, 'viewer-top-menu-cell--top') &&
+        hasClassName(node, 'viewer-top-menu-cell--column-4')
+    )[0];
     const bottomThirdColumn = renderer.root.findAll(
       (node) =>
         node.type === 'div' &&
@@ -806,11 +812,25 @@ test('top menu places scale, hover, and follow status in their updated columns',
         hasClassName(node, 'viewer-top-menu-cell--column-4')
     )[0];
 
-    assert.ok(
-      topThirdColumn.findAll((node) => hasClassName(node, 'viewer-top-menu-scale')).length > 0
-    );
     assert.equal(
       topThirdColumn.findAll(
+        (node) =>
+          typeof node.props.className === 'string' &&
+          node.props.className.split(' ').includes('viewer-top-menu-scale')
+      ).length,
+      0
+    );
+    assert.equal(
+      topFourthColumn.findAll(
+        (node) =>
+          typeof node.props.className === 'string' &&
+          node.props.className.split(' ').includes('viewer-top-menu-scale') &&
+          extractText(node).includes('1.25x')
+      ).length,
+      1
+    );
+    assert.equal(
+      topFourthColumn.findAll(
         (node) =>
           node.type === 'div' &&
           hasClassName(node, 'viewer-top-menu-warning--performance') &&
@@ -818,11 +838,12 @@ test('top menu places scale, hover, and follow status in their updated columns',
       ).length,
       1
     );
-    assert.ok(
-      bottomThirdColumn.findAll((node) => hasClassName(node, 'viewer-top-menu-intensity')).length > 0
+    assert.equal(
+      topFourthColumn.findAll((node) => node.type === 'button' && extractText(node) === '2D view').length,
+      1
     );
     assert.ok(
-      bottomThirdColumn.findAll((node) => hasClassName(node, 'viewer-top-menu-hover-column')).length > 0
+      bottomThirdColumn.findAll((node) => node.props.role === 'tab' && node.props.id === 'top-menu-track-tab-set-a').length > 0
     );
     assert.equal(
       bottomFourthColumn.findAll((node) => hasClassName(node, 'viewer-top-menu-follow-target')).length,
@@ -834,6 +855,12 @@ test('top menu places scale, hover, and follow status in their updated columns',
       ).length,
       1
     );
+    assert.ok(
+      bottomFourthColumn.findAll((node) => hasClassName(node, 'viewer-top-menu-intensity')).length > 0
+    );
+    assert.ok(
+      bottomFourthColumn.findAll((node) => hasClassName(node, 'viewer-top-menu-hover-column')).length > 0
+    );
     assert.equal(
       bottomFourthColumn.findAll(
         (node) =>
@@ -841,10 +868,6 @@ test('top menu places scale, hover, and follow status in their updated columns',
           extractText(node) === 'Following Tracks A track #1'
       ).length,
       1
-    );
-    assert.equal(
-      bottomFourthColumn.findAll((node) => hasClassName(node, 'viewer-top-menu-intensity')).length,
-      0
     );
 
     renderer.unmount();
@@ -872,12 +895,19 @@ test('top menu keeps all three shared column dividers even when track tabs are a
         hasClassName(node, 'viewer-top-menu-cell--bottom') &&
         hasClassName(node, 'viewer-top-menu-cell--column-2')
     )[0];
+    const bottomThirdColumn = renderer.root.findAll(
+      (node) =>
+        node.type === 'div' &&
+        hasClassName(node, 'viewer-top-menu-cell--bottom') &&
+        hasClassName(node, 'viewer-top-menu-cell--column-3')
+    )[0];
     const columnDividers = renderer.root.findAll(
       (node) => node.type === 'span' && hasClassName(node, 'viewer-top-menu-column-divider')
     );
 
-    assert.ok(bottomFirstColumn.findByProps({ id: 'channel-tab-channel-a' }));
-    assert.equal(bottomSecondColumn.findAll((node) => node.props.role === 'tab').length, 0);
+    assert.ok(bottomFirstColumn.findByProps({ id: 'top-menu-playback-slider' }));
+    assert.ok(bottomSecondColumn.findByProps({ id: 'channel-tab-channel-a' }));
+    assert.equal(bottomThirdColumn.findAll((node) => node.props.role === 'tab').length, 0);
     assert.equal(columnDividers.length, 3);
 
     renderer.unmount();
