@@ -139,7 +139,9 @@ export function resolveControllerUiCandidates(
     channelsCandidatePoint,
   });
   const channelsCandidate = channelsResult.candidate;
-  nextChannelsHoverRegion = channelsResult.hoverRegion;
+  if (channelsCandidate) {
+    nextChannelsHoverRegion = channelsResult.hoverRegion;
+  }
 
   const tracksResult = resolveTracksUiCandidate({
     entry,
@@ -157,7 +159,9 @@ export function resolveControllerUiCandidates(
     tracksCandidatePoint,
   });
   const tracksCandidate = tracksResult.candidate;
-  nextTracksHoverRegion = tracksResult.hoverRegion;
+  if (tracksCandidate) {
+    nextTracksHoverRegion = tracksResult.hoverRegion;
+  }
 
   const candidates: Array<AnyCandidate | null> = [playbackCandidate, channelsCandidate, tracksCandidate];
   for (const candidate of candidates) {

@@ -330,7 +330,6 @@ export function createControllerRayUpdater(
         const candidateDistance = clampUiRayLength(handleCandidateDistance);
         rayLength = Math.min(rayLength, candidateDistance);
         hoverTrackId = null;
-        nextChannelsHoverRegion = null;
       } else {
         const candidateResolution = resolveControllerUiCandidates({
           entry,

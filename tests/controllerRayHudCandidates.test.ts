@@ -234,6 +234,63 @@ test('resolveControllerUiCandidates chooses nearest category candidate', () => {
   assert.ok(typeof result.uiRayLength === 'number');
 });
 
+test('resolveControllerUiCandidates preserves previous controller HUD regions when current controller misses', () => {
+  const entry = createControllerEntry({
+    rayOrigin: new THREE.Vector3(0, 0, 0),
+    rayDirection: new THREE.Vector3(0, 1, 0),
+  });
+  const channelsRegion: VrChannelsInteractiveRegion = {
+    targetType: 'channels-layer',
+    channelId: 'channel-1',
+    layerKey: 'layer-1',
+    bounds: { minX: -1, maxX: 1, minY: -1, maxY: 1 },
+  };
+  const tracksRegion: VrTracksInteractiveRegion = {
+    targetType: 'tracks-toggle',
+    channelId: 'channel-1',
+    trackId: 'track-1',
+    bounds: { minX: -1, maxX: 1, minY: -1, maxY: 1 },
+  };
+
+  const result = resolveControllerUiCandidates({
+    entry,
+    playbackStateRef: ref(createPlaybackState()),
+    playbackHudInstance: null,
+    channelsHudInstance: null,
+    tracksHudInstance: null,
+    resolveChannelsRegionFromPoint: () => null,
+    resolveTracksRegionFromPoint: () => null,
+    applyPlaybackSliderFromWorldPointRef: ref(null),
+    applyFpsSliderFromWorldPointRef: ref(null),
+    applyVrChannelsSliderFromPointRef: ref(null),
+    applyVrTracksSliderFromPointRef: ref(null),
+    applyVrTracksScrollFromPointRef: ref(null),
+    vrHudPlaneRef: ref(new THREE.Plane()),
+    vrHudPlanePointRef: ref(new THREE.Vector3()),
+    vrHudForwardRef: ref(new THREE.Vector3(0, 0, 1)),
+    vrHandleWorldPointRef: ref(new THREE.Vector3()),
+    vrHandleSecondaryPointRef: ref(new THREE.Vector3()),
+    vrChannelsLocalPointRef: ref(new THREE.Vector3()),
+    vrTracksLocalPointRef: ref(new THREE.Vector3()),
+    playbackTouchPoint: new THREE.Vector3(),
+    playbackLocalPoint: new THREE.Vector3(),
+    playbackPlaneNormal: new THREE.Vector3(),
+    playbackSliderPoint: new THREE.Vector3(),
+    fpsSliderPoint: new THREE.Vector3(),
+    channelsTouchPoint: new THREE.Vector3(),
+    tracksTouchPoint: new THREE.Vector3(),
+    playbackCandidatePoint: new THREE.Vector3(),
+    channelsCandidatePoint: new THREE.Vector3(),
+    tracksCandidatePoint: new THREE.Vector3(),
+    uiRayLength: null,
+    nextChannelsHoverRegion: channelsRegion,
+    nextTracksHoverRegion: tracksRegion,
+  });
+
+  assert.equal(result.nextChannelsHoverRegion, channelsRegion);
+  assert.equal(result.nextTracksHoverRegion, tracksRegion);
+});
+
 test('resolvePlaybackUiCandidate returns panel-grab candidate for nearby handle', () => {
   const entry = createControllerEntry();
   const playbackHud = createPlaybackHud(0.03);
