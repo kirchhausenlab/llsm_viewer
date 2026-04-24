@@ -14,6 +14,7 @@ import type {
   VrPlaybackHud,
   VrTracksHud,
   VrTracksInteractiveRegion,
+  VrWristMenuHud,
 } from '../src/components/viewers/volume-viewer/vr/types.ts';
 
 const ref = <T,>(current: T) => ({ current });
@@ -189,6 +190,30 @@ function createTracksHud(handleX = 0.02): VrTracksHud {
   } as unknown as VrTracksHud;
 }
 
+function createWristMenuHud(): VrWristMenuHud {
+  const group = new THREE.Group();
+  group.visible = true;
+  const panel = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), new THREE.MeshBasicMaterial());
+  panel.position.set(0, 0, -1);
+  group.add(panel);
+
+  return {
+    group,
+    panel,
+    width: 1,
+    height: 1,
+    regions: [
+      {
+        targetType: 'wrist-menu-action',
+        actionId: 'view-channels',
+        bounds: { minX: -0.2, maxX: 0.2, minY: -0.2, maxY: 0.2 },
+      },
+    ],
+    hoverRegion: null,
+    actions: [],
+  } as unknown as VrWristMenuHud;
+}
+
 test('resolveControllerUiCandidates chooses nearest category candidate', () => {
   const entry = createControllerEntry();
   const playbackHud = createPlaybackHud(0.04);
@@ -201,6 +226,7 @@ test('resolveControllerUiCandidates chooses nearest category candidate', () => {
     playbackHudInstance: playbackHud,
     channelsHudInstance: channelsHud,
     tracksHudInstance: tracksHud,
+    wristMenuHuds: [],
     resolveChannelsRegionFromPoint: () => null,
     resolveTracksRegionFromPoint: () => null,
     applyPlaybackSliderFromWorldPointRef: ref(null),
@@ -222,12 +248,16 @@ test('resolveControllerUiCandidates chooses nearest category candidate', () => {
     fpsSliderPoint: new THREE.Vector3(),
     channelsTouchPoint: new THREE.Vector3(),
     tracksTouchPoint: new THREE.Vector3(),
+    wristMenuTouchPoint: new THREE.Vector3(),
     playbackCandidatePoint: new THREE.Vector3(),
     channelsCandidatePoint: new THREE.Vector3(),
     tracksCandidatePoint: new THREE.Vector3(),
+    wristMenuCandidatePoint: new THREE.Vector3(),
+    wristMenuLocalPoint: new THREE.Vector3(),
     uiRayLength: null,
     nextChannelsHoverRegion: null,
     nextTracksHoverRegion: null,
+    nextWristMenuHover: null,
   });
 
   assert.equal(entry.hoverUiTarget?.type, 'tracks-panel-grab');
@@ -258,6 +288,7 @@ test('resolveControllerUiCandidates preserves previous controller HUD regions wh
     playbackHudInstance: null,
     channelsHudInstance: null,
     tracksHudInstance: null,
+    wristMenuHuds: [],
     resolveChannelsRegionFromPoint: () => null,
     resolveTracksRegionFromPoint: () => null,
     applyPlaybackSliderFromWorldPointRef: ref(null),
@@ -279,16 +310,70 @@ test('resolveControllerUiCandidates preserves previous controller HUD regions wh
     fpsSliderPoint: new THREE.Vector3(),
     channelsTouchPoint: new THREE.Vector3(),
     tracksTouchPoint: new THREE.Vector3(),
+    wristMenuTouchPoint: new THREE.Vector3(),
     playbackCandidatePoint: new THREE.Vector3(),
     channelsCandidatePoint: new THREE.Vector3(),
     tracksCandidatePoint: new THREE.Vector3(),
+    wristMenuCandidatePoint: new THREE.Vector3(),
+    wristMenuLocalPoint: new THREE.Vector3(),
     uiRayLength: null,
     nextChannelsHoverRegion: channelsRegion,
     nextTracksHoverRegion: tracksRegion,
+    nextWristMenuHover: null,
   });
 
   assert.equal(result.nextChannelsHoverRegion, channelsRegion);
   assert.equal(result.nextTracksHoverRegion, tracksRegion);
+});
+
+test('resolveControllerUiCandidates returns wrist menu action candidates', () => {
+  const entry = createControllerEntry();
+  const wristMenuHud = createWristMenuHud();
+
+  const result = resolveControllerUiCandidates({
+    entry,
+    playbackStateRef: ref(createPlaybackState()),
+    playbackHudInstance: null,
+    channelsHudInstance: null,
+    tracksHudInstance: null,
+    wristMenuHuds: [wristMenuHud],
+    resolveChannelsRegionFromPoint: () => null,
+    resolveTracksRegionFromPoint: () => null,
+    applyPlaybackSliderFromWorldPointRef: ref(null),
+    applyFpsSliderFromWorldPointRef: ref(null),
+    applyVrChannelsSliderFromPointRef: ref(null),
+    applyVrTracksSliderFromPointRef: ref(null),
+    applyVrTracksScrollFromPointRef: ref(null),
+    vrHudPlaneRef: ref(new THREE.Plane()),
+    vrHudPlanePointRef: ref(new THREE.Vector3()),
+    vrHudForwardRef: ref(new THREE.Vector3(0, 0, 1)),
+    vrHandleWorldPointRef: ref(new THREE.Vector3()),
+    vrHandleSecondaryPointRef: ref(new THREE.Vector3()),
+    vrChannelsLocalPointRef: ref(new THREE.Vector3()),
+    vrTracksLocalPointRef: ref(new THREE.Vector3()),
+    playbackTouchPoint: new THREE.Vector3(),
+    playbackLocalPoint: new THREE.Vector3(),
+    playbackPlaneNormal: new THREE.Vector3(),
+    playbackSliderPoint: new THREE.Vector3(),
+    fpsSliderPoint: new THREE.Vector3(),
+    channelsTouchPoint: new THREE.Vector3(),
+    tracksTouchPoint: new THREE.Vector3(),
+    wristMenuTouchPoint: new THREE.Vector3(),
+    playbackCandidatePoint: new THREE.Vector3(),
+    channelsCandidatePoint: new THREE.Vector3(),
+    tracksCandidatePoint: new THREE.Vector3(),
+    wristMenuCandidatePoint: new THREE.Vector3(),
+    wristMenuLocalPoint: new THREE.Vector3(),
+    uiRayLength: null,
+    nextChannelsHoverRegion: null,
+    nextTracksHoverRegion: null,
+    nextWristMenuHover: null,
+  });
+
+  assert.equal(entry.hoverUiTarget?.type, 'wrist-menu-action');
+  assert.equal((entry.hoverUiTarget?.data as { actionId?: string } | undefined)?.actionId, 'view-channels');
+  assert.equal(result.nextWristMenuHover?.hud, wristMenuHud);
+  assert.equal(result.nextWristMenuHover?.region?.actionId, 'view-channels');
 });
 
 test('resolvePlaybackUiCandidate returns panel-grab candidate for nearby handle', () => {

@@ -89,6 +89,8 @@ export function applyControllerUiFlags({
     nextHoverTrackId = null;
   } else if (hoverUiType && hoverUiType.startsWith('tracks-')) {
     nextHoverTrackId = null;
+  } else if (hoverUiType && hoverUiType.startsWith('wrist-menu-')) {
+    nextHoverTrackId = null;
   }
 
   if (activeUiType === 'playback-slider') {
@@ -108,6 +110,8 @@ export function applyControllerUiFlags({
     nextHoverTrackId = null;
   } else if (activeUiType === 'playback-toggle-mode') {
     nextFlags.modeHoveredAny = true;
+    nextHoverTrackId = null;
+  } else if (activeUiType && activeUiType.startsWith('wrist-menu-')) {
     nextHoverTrackId = null;
   }
 

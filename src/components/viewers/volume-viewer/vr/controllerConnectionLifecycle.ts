@@ -6,6 +6,7 @@ type ControllerConnectEvent = {
   data?: {
     targetRayMode?: string;
     gamepad?: Gamepad;
+    handedness?: 'none' | 'left' | 'right' | null;
   };
 };
 
@@ -20,7 +21,13 @@ export function handleControllerConnected(
 ) {
   entry.isConnected = true;
   entry.targetRayMode = event?.data?.targetRayMode ?? null;
+  entry.handedness = event?.data?.handedness ?? null;
   entry.gamepad = event?.data?.gamepad ?? null;
+  entry.wristMenuActive = false;
+  if (entry.wristMenuHud) {
+    entry.wristMenuHud.group.visible = false;
+    entry.wristMenuHud.hoverRegion = null;
+  }
   entry.hoverTrackId = null;
   entry.hoverUiTarget = null;
   entry.activeUiTarget = null;
@@ -36,6 +43,7 @@ export function handleControllerConnected(
   entry.rayLength = 3;
   log('[VR] controller connected', index, {
     targetRayMode: entry.targetRayMode,
+    handedness: entry.handedness,
     hasGamepad: Boolean(entry.gamepad),
   });
   refreshControllers();
@@ -50,7 +58,13 @@ export function handleControllerDisconnected(
 ) {
   entry.isConnected = false;
   entry.targetRayMode = null;
+  entry.handedness = null;
   entry.gamepad = null;
+  entry.wristMenuActive = false;
+  if (entry.wristMenuHud) {
+    entry.wristMenuHud.group.visible = false;
+    entry.wristMenuHud.hoverRegion = null;
+  }
   entry.hoverTrackId = null;
   entry.hoverUiTarget = null;
   entry.activeUiTarget = null;

@@ -104,6 +104,7 @@ export function createControllerEntryConfigurator(
         volumePitchRef,
         vrHudYawVectorRef,
         vrHudPitchVectorRef,
+        vrPropsRef,
         log,
       });
     };

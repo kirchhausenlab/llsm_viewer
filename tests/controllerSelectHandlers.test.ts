@@ -10,6 +10,7 @@ import type {
   VrChannelsState,
   VrTracksInteractiveRegion,
   VrTracksState,
+  VrWristMenuHud,
 } from '../src/components/viewers/volume-viewer/vr/types.ts';
 
 const ref = <T,>(current: T) => ({ current });
@@ -73,6 +74,17 @@ function createControllerEntry(overrides: Partial<ControllerEntry> = {}): Contro
   return entry;
 }
 
+function createWristMenuHud(): VrWristMenuHud {
+  const group = new THREE.Group();
+  group.visible = false;
+  return {
+    group,
+    hoverRegion: null,
+    panelCanvas: null,
+    panelContext: null,
+  } as unknown as VrWristMenuHud;
+}
+
 function createSelectStartDeps(overrides: Record<string, unknown> = {}) {
   return {
     rendererRef: ref<THREE.WebGLRenderer | null>(null),
@@ -104,6 +116,7 @@ function createSelectStartDeps(overrides: Record<string, unknown> = {}) {
     volumePitchRef: ref(0),
     vrHudYawVectorRef: ref(new THREE.Vector3()),
     vrHudPitchVectorRef: ref(new THREE.Vector3()),
+    vrPropsRef: ref(null),
     log: () => {},
     ...overrides,
   } as const;
@@ -196,6 +209,41 @@ function createSelectEndDeps(overrides: Record<string, unknown> = {}) {
 })();
 
 (() => {
+  const wristMenuHud = createWristMenuHud();
+  const entry = createControllerEntry({
+    handedness: 'left',
+    wristMenuHud,
+  });
+
+  handleControllerSelectStart(
+    entry,
+    1,
+    createSelectStartDeps({
+      vrPropsRef: ref({
+        menuActions: [
+          {
+            id: 'view-channels',
+            group: 'View',
+            label: 'Channels',
+            onSelect: () => {},
+          },
+        ],
+      }),
+    }),
+  );
+
+  assert.equal(entry.isSelecting, true);
+  assert.equal(entry.wristMenuActive, true);
+  assert.equal(entry.activeUiTarget, null);
+  assert.equal(wristMenuHud.group.visible, true);
+
+  handleControllerSelectEnd(entry, 1, createSelectEndDeps());
+
+  assert.equal(entry.wristMenuActive, false);
+  assert.equal(wristMenuHud.group.visible, false);
+})();
+
+(() => {
   const sliderRegion: VrTracksInteractiveRegion = {
     targetType: 'tracks-slider',
     channelId: 'channel-1',
@@ -266,6 +314,42 @@ function createSelectEndDeps(overrides: Record<string, unknown> = {}) {
   assert.equal(selectedChannel, 'channel-b');
   assert.equal(channelState.activeChannelId, 'channel-b');
   assert.equal(refreshCount, 1);
+})();
+
+(() => {
+  const entry = createControllerEntry({
+    activeUiTarget: {
+      type: 'wrist-menu-action',
+      object: new THREE.Object3D(),
+      data: {
+        targetType: 'wrist-menu-action',
+        actionId: 'view-channels',
+        bounds: { minX: -1, maxX: 1, minY: -1, maxY: 1 },
+      },
+    },
+  });
+  let selectCount = 0;
+
+  handleControllerSelectEnd(
+    entry,
+    4,
+    createSelectEndDeps({
+      vrPropsRef: ref({
+        menuActions: [
+          {
+            id: 'view-channels',
+            group: 'View',
+            label: 'Channels',
+            onSelect: () => {
+              selectCount += 1;
+            },
+          },
+        ],
+      }),
+    }),
+  );
+
+  assert.equal(selectCount, 1);
 })();
 
 (() => {

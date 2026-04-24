@@ -1,5 +1,6 @@
 import type * as THREE from 'three';
 
+import type { VolumeViewerVrMenuAction } from '../../VolumeViewer.types';
 import type { TrackColorMode } from '../../../../types/tracks';
 import type { RenderStyle, SamplingMode } from '../../../../state/layerSettings';
 
@@ -44,6 +45,8 @@ export type VrUiTargetType =
   | 'tracks-master-toggle'
   | 'tracks-toggle'
   | 'tracks-follow'
+  | 'wrist-menu-panel'
+  | 'wrist-menu-action'
   | 'volume-translate-handle'
   | 'volume-scale-handle'
   | 'volume-yaw-handle'
@@ -351,10 +354,37 @@ export type VrTracksState = {
   activeChannelId: string | null;
 };
 
+export type VrWristMenuInteractiveRegion = {
+  targetType: 'wrist-menu-action';
+  actionId: string;
+  disabled?: boolean;
+  bounds: { minX: number; maxX: number; minY: number; maxY: number };
+};
+
+export type VrWristMenuHud = {
+  group: THREE.Group;
+  background: THREE.Mesh;
+  panel: THREE.Mesh;
+  panelTexture: THREE.CanvasTexture;
+  panelCanvas: HTMLCanvasElement | null;
+  panelContext: CanvasRenderingContext2D | null;
+  panelDisplayWidth: number;
+  panelDisplayHeight: number;
+  pixelRatio: number;
+  regions: VrWristMenuInteractiveRegion[];
+  actions: VolumeViewerVrMenuAction[];
+  actionsSignature: string;
+  width: number;
+  height: number;
+  hoverRegion: VrWristMenuInteractiveRegion | null;
+};
+
 export type VolumeScaleState = {
   baseLength: number;
   direction: THREE.Vector3;
 };
+
+export type ControllerHandedness = 'none' | 'left' | 'right' | null;
 
 export type ControllerEntry = {
   controller: THREE.Group;
@@ -364,13 +394,16 @@ export type ControllerEntry = {
   rayMaterial: THREE.Material;
   touchIndicator: THREE.Mesh;
   raycaster: THREE.Raycaster;
-  onConnected: (event: { data?: { targetRayMode?: string; gamepad?: Gamepad } }) => void;
+  onConnected: (event: { data?: { targetRayMode?: string; gamepad?: Gamepad; handedness?: ControllerHandedness } }) => void;
   onDisconnected: (event?: XRInputSourceEvent) => void;
   onSelectStart: (event?: XRInputSourceEvent) => void;
   onSelectEnd: (event?: XRInputSourceEvent) => void;
   isConnected: boolean;
   targetRayMode: string | null;
+  handedness?: ControllerHandedness;
   gamepad: Gamepad | null;
+  wristMenuHud?: VrWristMenuHud | null;
+  wristMenuActive?: boolean;
   hoverTrackId: string | null;
   hoverUiTarget: VrUiTarget | null;
   activeUiTarget: VrUiTarget | null;

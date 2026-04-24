@@ -85,9 +85,18 @@ export type VolumeViewerVrChannelPanel = {
   layers: VolumeViewerVrPanelLayer[];
 };
 
+export type VolumeViewerVrMenuAction = {
+  id: string;
+  group: 'File' | 'View' | 'Edit' | 'Tracks' | 'Help';
+  label: string;
+  disabled?: boolean;
+  onSelect?: () => void;
+};
+
 export type VolumeViewerVrProps = {
   isVrActive: boolean;
   isVrPassthroughSupported: boolean;
+  menuActions?: VolumeViewerVrMenuAction[];
   trackChannels: Array<{ id: string; name: string }>;
   activeTrackChannelId: string | null;
   onTrackChannelSelect: (channelId: string) => void;

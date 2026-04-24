@@ -3,6 +3,7 @@ import type {
   ControllerEntry,
   VrChannelsInteractiveRegion,
   VrTracksInteractiveRegion,
+  VrWristMenuInteractiveRegion,
 } from './types';
 
 type ControllerSelectEndDependencies = Pick<
@@ -53,9 +54,26 @@ export function handleControllerSelectEnd(
   entry.isSelecting = false;
   const activeTarget = entry.activeUiTarget;
   entry.activeUiTarget = null;
+  if (entry.wristMenuActive) {
+    entry.wristMenuActive = false;
+    if (entry.wristMenuHud) {
+      entry.wristMenuHud.group.visible = false;
+      entry.wristMenuHud.hoverRegion = null;
+    }
+    entry.hoverUiTarget = null;
+    entry.hasHoverUiPoint = false;
+    log('[VR] wrist menu hidden', index);
+    return;
+  }
   const playbackState = playbackStateRef.current;
   const vrCallbacks = vrPropsRef.current;
-  if (activeTarget?.type === 'playback-play-toggle') {
+  if (activeTarget?.type === 'wrist-menu-action' && activeTarget.data) {
+    const region = activeTarget.data as VrWristMenuInteractiveRegion;
+    const action = vrCallbacks?.menuActions?.find((candidate) => candidate.id === region.actionId);
+    if (action && !action.disabled) {
+      action.onSelect?.();
+    }
+  } else if (activeTarget?.type === 'playback-play-toggle') {
     if (!playbackState.playbackDisabled) {
       playbackState.onTogglePlayback?.();
     }

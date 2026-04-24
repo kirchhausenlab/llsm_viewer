@@ -29,6 +29,7 @@ import type {
   DesktopViewerBackgroundConfig,
   DesktopViewerBackgroundMode,
   DesktopViewerBackgroundSelection,
+  VolumeViewerVrMenuAction,
 } from './VolumeViewer.types';
 import {
   createDefaultLayerSettings,
@@ -242,7 +243,7 @@ function ViewerShell({
   trackSettings,
   trackDefaults
 }: ViewerShellProps) {
-  const { isDarkMode } = useUiTheme();
+  const { isDarkMode, toggleThemeMode } = useUiTheme();
   const {
     windowMargin,
     controlWindowWidth,
@@ -1737,9 +1738,165 @@ function ViewerShell({
       topMenu
     ]
   );
+  const vrWristMenuActions = useMemo<VolumeViewerVrMenuAction[]>(() => {
+    const actions: VolumeViewerVrMenuAction[] = [
+      {
+        id: 'file-recenter-windows',
+        group: 'File',
+        label: 'Recenter windows',
+        onSelect: topMenuProps.onResetLayout,
+      },
+      {
+        id: 'file-diagnostics',
+        group: 'File',
+        label: 'Diagnostics',
+        onSelect: topMenuProps.onOpenDiagnosticsWindow,
+      },
+      ...(topMenuProps.is3dModeAvailable
+        ? [
+            {
+              id: 'file-vr-session',
+              group: 'File' as const,
+              label: topMenuProps.vrButtonLabel,
+              disabled: topMenuProps.vrButtonDisabled,
+              onSelect: topMenuProps.onVrButtonClick,
+            },
+          ]
+        : []),
+      {
+        id: 'file-exit-viewer',
+        group: 'File',
+        label: 'Exit',
+        onSelect: topMenuProps.onReturnToLauncher,
+      },
+      {
+        id: 'view-channels',
+        group: 'View',
+        label: 'Channels',
+        onSelect: topMenuProps.onOpenChannelsWindow,
+      },
+      {
+        id: 'view-selection',
+        group: 'View',
+        label: 'View selection',
+        onSelect: topMenuProps.onOpenCameraWindow,
+      },
+      {
+        id: 'view-screen-capture',
+        group: 'View',
+        label: 'Screen capture',
+        onSelect: topMenuProps.onOpenRecordWindow,
+      },
+      {
+        id: 'view-backgrounds',
+        group: 'View',
+        label: 'Backgrounds',
+        onSelect: topMenuProps.onOpenBackgroundsWindow,
+      },
+      {
+        id: 'view-render-settings',
+        group: 'View',
+        label: 'Render settings',
+        onSelect: topMenuProps.onOpenRenderSettingsWindow,
+      },
+      {
+        id: 'view-camera-settings',
+        group: 'View',
+        label: 'Camera settings',
+        onSelect: topMenuProps.onOpenCameraSettingsWindow,
+      },
+      {
+        id: 'view-hover-settings',
+        group: 'View',
+        label: 'Hover settings',
+        onSelect: topMenuProps.onOpenHoverSettingsWindow,
+      },
+      {
+        id: 'view-reset-view',
+        group: 'View',
+        label: 'Reset view',
+        disabled: !topMenuProps.resetViewHandler,
+        onSelect: () => topMenuProps.resetViewHandler?.(),
+      },
+      {
+        id: 'view-theme',
+        group: 'View',
+        label: isDarkMode ? 'Light theme' : 'Dark theme',
+        onSelect: toggleThemeMode,
+      },
+      {
+        id: 'edit-props',
+        group: 'Edit',
+        label: 'Props',
+        onSelect: topMenuProps.onOpenPropsWindow,
+      },
+      {
+        id: 'edit-paintbrush',
+        group: 'Edit',
+        label: 'Paintbrush',
+        onSelect: topMenuProps.onOpenPaintbrush,
+      },
+      {
+        id: 'edit-draw-roi',
+        group: 'Edit',
+        label: 'Draw ROI',
+        onSelect: topMenuProps.onOpenDrawRoiWindow,
+      },
+      {
+        id: 'edit-roi-manager',
+        group: 'Edit',
+        label: 'ROI Manager',
+        onSelect: topMenuProps.onOpenRoiManagerWindow,
+      },
+      {
+        id: 'edit-set-measurements',
+        group: 'Edit',
+        label: 'Set measurements',
+        onSelect: topMenuProps.onOpenSetMeasurementsWindow,
+      },
+      {
+        id: 'tracks-window',
+        group: 'Tracks',
+        label: 'Tracks window',
+        onSelect: topMenuProps.onOpenTracksWindow,
+      },
+      {
+        id: 'tracks-amplitude-plot',
+        group: 'Tracks',
+        label: 'Amplitude plot',
+        onSelect: topMenuProps.onOpenAmplitudePlotWindow,
+      },
+      {
+        id: 'tracks-plot-settings',
+        group: 'Tracks',
+        label: 'Plot settings',
+        onSelect: topMenuProps.onOpenPlotSettingsWindow,
+      },
+      {
+        id: 'tracks-settings',
+        group: 'Tracks',
+        label: 'Tracks settings',
+        onSelect: topMenuProps.onOpenTrackSettingsWindow,
+      },
+      {
+        id: 'help-controls',
+        group: 'Help',
+        label: 'Controls',
+        onSelect: topMenuProps.openHelpMenu,
+      },
+    ];
+
+    return actions;
+  }, [isDarkMode, toggleThemeMode, topMenuProps]);
   const volumeViewerPropsWithViewerProps = useMemo(
     () => ({
       ...volumeViewerWithCaptureTarget,
+      vr: volumeViewerWithCaptureTarget.vr
+        ? {
+            ...volumeViewerWithCaptureTarget.vr,
+            menuActions: vrWristMenuActions,
+          }
+        : undefined,
       hoverSettings,
       desktopRenderResolution,
       background: resolvedViewerBackground,
@@ -1799,6 +1956,7 @@ function ViewerShell({
       setWorkingRoi,
       showAllSavedRois,
       volumeViewerProps.temporalResolution,
+      vrWristMenuActions,
       volumeViewerWithCaptureTarget,
       hoverSettings,
       desktopRenderResolution,

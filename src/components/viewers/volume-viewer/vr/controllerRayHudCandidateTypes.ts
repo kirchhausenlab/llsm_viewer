@@ -9,6 +9,8 @@ import type {
   VrPlaybackHud,
   VrTracksHud,
   VrTracksInteractiveRegion,
+  VrWristMenuHud,
+  VrWristMenuInteractiveRegion,
   VrUiTarget,
 } from './types';
 
@@ -36,7 +38,16 @@ export type TracksCandidate = {
   region: VrTracksInteractiveRegion | null;
 };
 
-export type AnyCandidate = PlaybackCandidate | ChannelsCandidate | TracksCandidate;
+export type WristMenuCandidate = {
+  category: 'wrist-menu';
+  target: VrUiTarget;
+  point: THREE.Vector3;
+  distance: number;
+  region: VrWristMenuInteractiveRegion | null;
+  hud: VrWristMenuHud;
+};
+
+export type AnyCandidate = PlaybackCandidate | ChannelsCandidate | TracksCandidate | WristMenuCandidate;
 
 export type ResolvePlaybackUiCandidateParams = {
   entry: ControllerEntry;
@@ -98,4 +109,15 @@ export type ResolveTracksUiCandidateParams = {
   vrTracksLocalPointRef: MutableRefObject<THREE.Vector3>;
   tracksTouchPoint: THREE.Vector3;
   tracksCandidatePoint: THREE.Vector3;
+};
+
+export type ResolveWristMenuUiCandidateParams = {
+  entry: ControllerEntry;
+  wristMenuHuds: VrWristMenuHud[];
+  vrHudPlaneRef: MutableRefObject<THREE.Plane>;
+  vrHudPlanePointRef: MutableRefObject<THREE.Vector3>;
+  vrHudForwardRef: MutableRefObject<THREE.Vector3>;
+  wristMenuLocalPoint: THREE.Vector3;
+  wristMenuTouchPoint: THREE.Vector3;
+  wristMenuCandidatePoint: THREE.Vector3;
 };

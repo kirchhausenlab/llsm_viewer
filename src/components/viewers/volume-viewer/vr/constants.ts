@@ -50,6 +50,21 @@ export const VR_TRACKS_FONT_SIZES = {
   small: 26,
 } as const;
 
+export const VR_WRIST_MENU_PANEL_WIDTH = 0.66;
+export const VR_WRIST_MENU_PANEL_HEIGHT = 0.58;
+export const VR_WRIST_MENU_CANVAS_WIDTH = 1180;
+export const VR_WRIST_MENU_CANVAS_HEIGHT = 1040;
+export const VR_WRIST_MENU_FONT_FAMILY = VR_CHANNELS_FONT_FAMILY;
+export const vrWristMenuFont = (weight: string, size: number) =>
+  `${weight} ${size}px ${VR_WRIST_MENU_FONT_FAMILY}`;
+export const VR_WRIST_MENU_FONT_SIZES = {
+  heading: 42,
+  group: 28,
+  button: 27,
+  smallButton: 23,
+  emptyState: 30,
+} as const;
+
 export const VR_HUD_MIN_HEIGHT = 0;
 export const VR_HUD_FRONT_MARGIN = 0.24;
 export const VR_HUD_LATERAL_MARGIN = 0.1;

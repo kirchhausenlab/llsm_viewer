@@ -15,6 +15,8 @@ import type {
   VrTracksInteractiveRegion,
   VrTracksState,
   VrUiTarget,
+  VrWristMenuHud,
+  VrWristMenuInteractiveRegion,
 } from './types';
 import { clampUiRayLength } from './controllerHudInteractions';
 import { resolveVolumeRayDomain } from './controllerRayVolumeDomain';
@@ -205,9 +207,12 @@ export function createControllerRayUpdater(
   const fpsSliderPoint = new THREE.Vector3();
   const channelsTouchPoint = new THREE.Vector3();
   const tracksTouchPoint = new THREE.Vector3();
+  const wristMenuTouchPoint = new THREE.Vector3();
   const playbackCandidatePoint = new THREE.Vector3();
   const channelsCandidatePoint = new THREE.Vector3();
   const tracksCandidatePoint = new THREE.Vector3();
+  const wristMenuCandidatePoint = new THREE.Vector3();
+  const wristMenuLocalPoint = new THREE.Vector3();
   const translationHandleWorldPoint = new THREE.Vector3();
   const rotationCenterWorldPoint = new THREE.Vector3();
   const rotationDirectionTemp = new THREE.Vector3();
@@ -255,6 +260,9 @@ export function createControllerRayUpdater(
     let uiFlags = createEmptyControllerUiFlags();
     let nextChannelsHoverRegion: VrChannelsInteractiveRegion | null = null;
     let nextTracksHoverRegion: VrTracksInteractiveRegion | null = null;
+    let nextWristMenuHover:
+      | { hud: VrWristMenuHud; region: VrWristMenuInteractiveRegion | null }
+      | null = null;
 
     // Ray frames may update hover and continue an existing drag. Starting or ending
     // selection belongs only to native WebXR selectstart/selectend handlers.
@@ -291,6 +299,9 @@ export function createControllerRayUpdater(
       const playbackHudInstance = vrPlaybackHudRef.current;
       const channelsHudInstance = vrChannelsHudRef.current;
       const tracksHudInstance = vrTracksHudRef.current;
+      const wristMenuHuds = controllersRef.current
+        .map((candidateEntry) => candidateEntry.wristMenuHud ?? null)
+        .filter((hud): hud is VrWristMenuHud => Boolean(hud));
       const {
         handleCandidateTarget,
         handleCandidatePoint,
@@ -339,6 +350,7 @@ export function createControllerRayUpdater(
           playbackHudInstance,
           channelsHudInstance,
           tracksHudInstance,
+          wristMenuHuds,
           resolveChannelsRegionFromPoint,
           resolveTracksRegionFromPoint,
           applyPlaybackSliderFromWorldPointRef,
@@ -360,16 +372,21 @@ export function createControllerRayUpdater(
           fpsSliderPoint,
           channelsTouchPoint,
           tracksTouchPoint,
+          wristMenuTouchPoint,
           playbackCandidatePoint,
           channelsCandidatePoint,
           tracksCandidatePoint,
+          wristMenuCandidatePoint,
+          wristMenuLocalPoint,
           uiRayLength,
           nextChannelsHoverRegion,
           nextTracksHoverRegion,
+          nextWristMenuHover,
         });
         uiRayLength = candidateResolution.uiRayLength;
         nextChannelsHoverRegion = candidateResolution.nextChannelsHoverRegion;
         nextTracksHoverRegion = candidateResolution.nextTracksHoverRegion;
+        nextWristMenuHover = candidateResolution.nextWristMenuHover;
       }
       const uiType = entry.hoverUiTarget ? entry.hoverUiTarget.type : null;
       const uiState = applyControllerUiFlags({
@@ -447,6 +464,7 @@ export function createControllerRayUpdater(
       uiFlags,
       nextChannelsHoverRegion,
       nextTracksHoverRegion,
+      nextWristMenuHover,
       hoveredByController,
       visibleLinesCount: visibleLines.length,
       controllers: controllersRef.current,

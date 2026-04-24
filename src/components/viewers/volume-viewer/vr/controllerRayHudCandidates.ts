@@ -9,12 +9,15 @@ import type {
   VrPlaybackHud,
   VrTracksHud,
   VrTracksInteractiveRegion,
+  VrWristMenuHud,
+  VrWristMenuInteractiveRegion,
 } from './types';
 import { clampUiRayLength } from './controllerHudInteractions';
 import type { AnyCandidate } from './controllerRayHudCandidateTypes';
 import { resolvePlaybackUiCandidate } from './controllerRayPlaybackCandidates';
 import { resolveChannelsUiCandidate } from './controllerRayChannelsCandidates';
 import { resolveTracksUiCandidate } from './controllerRayTracksCandidates';
+import { resolveWristMenuUiCandidate } from './controllerRayWristMenuCandidates';
 
 export type ResolveControllerUiCandidatesDeps = {
   entry: ControllerEntry;
@@ -22,6 +25,7 @@ export type ResolveControllerUiCandidatesDeps = {
   playbackHudInstance: VrPlaybackHud | null;
   channelsHudInstance: VrChannelsHud | null;
   tracksHudInstance: VrTracksHud | null;
+  wristMenuHuds: VrWristMenuHud[];
   resolveChannelsRegionFromPoint: (
     hud: VrChannelsHud,
     point: THREE.Vector3,
@@ -55,18 +59,27 @@ export type ResolveControllerUiCandidatesDeps = {
   fpsSliderPoint: THREE.Vector3;
   channelsTouchPoint: THREE.Vector3;
   tracksTouchPoint: THREE.Vector3;
+  wristMenuTouchPoint: THREE.Vector3;
   playbackCandidatePoint: THREE.Vector3;
   channelsCandidatePoint: THREE.Vector3;
   tracksCandidatePoint: THREE.Vector3;
+  wristMenuCandidatePoint: THREE.Vector3;
+  wristMenuLocalPoint: THREE.Vector3;
   uiRayLength: number | null;
   nextChannelsHoverRegion: VrChannelsInteractiveRegion | null;
   nextTracksHoverRegion: VrTracksInteractiveRegion | null;
+  nextWristMenuHover:
+    | { hud: VrWristMenuHud; region: VrWristMenuInteractiveRegion | null }
+    | null;
 };
 
 export type ResolveControllerUiCandidatesResult = {
   uiRayLength: number | null;
   nextChannelsHoverRegion: VrChannelsInteractiveRegion | null;
   nextTracksHoverRegion: VrTracksInteractiveRegion | null;
+  nextWristMenuHover:
+    | { hud: VrWristMenuHud; region: VrWristMenuInteractiveRegion | null }
+    | null;
 };
 
 export function resolveControllerUiCandidates(
@@ -78,6 +91,7 @@ export function resolveControllerUiCandidates(
     playbackHudInstance,
     channelsHudInstance,
     tracksHudInstance,
+    wristMenuHuds,
     resolveChannelsRegionFromPoint,
     resolveTracksRegionFromPoint,
     applyPlaybackSliderFromWorldPointRef,
@@ -99,11 +113,14 @@ export function resolveControllerUiCandidates(
     fpsSliderPoint,
     channelsTouchPoint,
     tracksTouchPoint,
+    wristMenuTouchPoint,
     playbackCandidatePoint,
     channelsCandidatePoint,
     tracksCandidatePoint,
+    wristMenuCandidatePoint,
+    wristMenuLocalPoint,
   } = deps;
-  let { uiRayLength, nextChannelsHoverRegion, nextTracksHoverRegion } = deps;
+  let { uiRayLength, nextChannelsHoverRegion, nextTracksHoverRegion, nextWristMenuHover } = deps;
 
   const playbackCandidate = resolvePlaybackUiCandidate({
     entry,
@@ -163,7 +180,27 @@ export function resolveControllerUiCandidates(
     nextTracksHoverRegion = tracksResult.hoverRegion;
   }
 
-  const candidates: Array<AnyCandidate | null> = [playbackCandidate, channelsCandidate, tracksCandidate];
+  const wristMenuResult = resolveWristMenuUiCandidate({
+    entry,
+    wristMenuHuds,
+    vrHudPlaneRef,
+    vrHudPlanePointRef,
+    vrHudForwardRef,
+    wristMenuLocalPoint,
+    wristMenuTouchPoint,
+    wristMenuCandidatePoint,
+  });
+  const wristMenuCandidate = wristMenuResult.candidate;
+  if (wristMenuResult.hover) {
+    nextWristMenuHover = wristMenuResult.hover;
+  }
+
+  const candidates: Array<AnyCandidate | null> = [
+    playbackCandidate,
+    channelsCandidate,
+    tracksCandidate,
+    wristMenuCandidate,
+  ];
   for (const candidate of candidates) {
     if (!candidate) {
       continue;
@@ -183,6 +220,11 @@ export function resolveControllerUiCandidates(
   if (tracksDistance < chosenDistance) {
     chosenCandidate = tracksCandidate;
   }
+  const wristMenuDistance = wristMenuCandidate?.distance ?? Number.POSITIVE_INFINITY;
+  const chosenWithTracksDistance = chosenCandidate?.distance ?? Number.POSITIVE_INFINITY;
+  if (wristMenuDistance < chosenWithTracksDistance) {
+    chosenCandidate = wristMenuCandidate;
+  }
 
   if (chosenCandidate) {
     entry.hoverUiTarget = chosenCandidate.target;
@@ -194,6 +236,11 @@ export function resolveControllerUiCandidates(
       nextChannelsHoverRegion = chosenCandidate.region;
     } else if (chosenCandidate.category === 'tracks' && chosenCandidate.region) {
       nextTracksHoverRegion = chosenCandidate.region;
+    } else if (chosenCandidate.category === 'wrist-menu') {
+      nextWristMenuHover = {
+        hud: chosenCandidate.hud,
+        region: chosenCandidate.region,
+      };
     }
   }
 
@@ -201,5 +248,6 @@ export function resolveControllerUiCandidates(
     uiRayLength,
     nextChannelsHoverRegion,
     nextTracksHoverRegion,
+    nextWristMenuHover,
   };
 }

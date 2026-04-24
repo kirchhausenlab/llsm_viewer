@@ -6,6 +6,8 @@ import type {
   VrTracksHud,
   VrTracksInteractiveRegion,
   VrTracksState,
+  VrWristMenuHud,
+  VrWristMenuInteractiveRegion,
 } from './types';
 import {
   isSameChannelsRegion,
@@ -14,11 +16,15 @@ import {
   type ControllerRaySummary,
 } from './controllerRayRegionState';
 import type { ControllerUiFlagState } from './controllerRayUiFlags';
+import { renderVrWristMenuHud } from './hudRenderersWristMenu';
 
 export function finalizeControllerRayFrame(params: {
   uiFlags: ControllerUiFlagState;
   nextChannelsHoverRegion: VrChannelsInteractiveRegion | null;
   nextTracksHoverRegion: VrTracksInteractiveRegion | null;
+  nextWristMenuHover:
+    | { hud: VrWristMenuHud; region: VrWristMenuInteractiveRegion | null }
+    | null;
   hoveredByController: { trackId: string; position: { x: number; y: number } | null } | null;
   visibleLinesCount: number;
   controllers: ControllerEntry[];
@@ -48,6 +54,7 @@ export function finalizeControllerRayFrame(params: {
     uiFlags,
     nextChannelsHoverRegion,
     nextTracksHoverRegion,
+    nextWristMenuHover,
     hoveredByController,
     visibleLinesCount,
     controllers,
@@ -84,6 +91,18 @@ export function finalizeControllerRayFrame(params: {
   if (vrTracksHud && !isSameTracksRegion(vrTracksHud.hoverRegion, nextTracksHoverRegion)) {
     vrTracksHud.hoverRegion = nextTracksHoverRegion;
     renderVrTracksHud?.(vrTracksHud, vrTracksState);
+  }
+
+  for (const entry of controllers) {
+    const hud = entry.wristMenuHud ?? null;
+    if (!hud) {
+      continue;
+    }
+    const nextRegion = nextWristMenuHover?.hud === hud ? nextWristMenuHover.region : null;
+    if (hud.hoverRegion?.actionId !== nextRegion?.actionId) {
+      hud.hoverRegion = nextRegion;
+      renderVrWristMenuHud(hud, hud.actions);
+    }
   }
 
   const summary: ControllerRaySummary = {

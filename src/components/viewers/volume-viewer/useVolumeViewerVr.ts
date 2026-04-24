@@ -326,6 +326,11 @@ export function useVolumeViewerVr({
           entry.translateGrabOffset = null;
           entry.volumeRotationState = null;
           entry.hudRotationState = null;
+          entry.wristMenuActive = false;
+          if (entry.wristMenuHud) {
+            entry.wristMenuHud.group.visible = false;
+            entry.wristMenuHud.hoverRegion = null;
+          }
         } else {
           anyVisible = true;
         }

@@ -10,6 +10,7 @@ export function isVrUiTargetType(value: unknown): value is VrUiTargetType {
     value.startsWith('playback-') ||
     value.startsWith('channels-') ||
     value.startsWith('tracks-') ||
+    value.startsWith('wrist-menu-') ||
     value.startsWith('volume-')
   );
 }

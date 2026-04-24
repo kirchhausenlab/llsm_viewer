@@ -9,6 +9,7 @@ import type {
   WebXRFoveationManager,
 } from './types';
 import { VR_CONTROLLER_TOUCH_RADIUS } from './constants';
+import { createVrWristMenuHud } from './hudFactory';
 
 export type VrSessionManagerOptions = {
   rendererRef: MutableRefObject<THREE.WebGLRenderer | null>;
@@ -393,6 +394,13 @@ export class VrSessionManager {
       touchIndicator.visible = false;
       controller.add(touchIndicator);
 
+      const wristMenuHud = createVrWristMenuHud();
+      if (wristMenuHud) {
+        wristMenuHud.group.visible = false;
+        wristMenuHud.group.position.set(0.1, -0.08, 0.16);
+        controller.add(wristMenuHud.group);
+      }
+
       const model = controllerModelFactory.createControllerModel(grip);
       grip.add(model);
 
@@ -417,7 +425,10 @@ export class VrSessionManager {
         onSelectEnd: () => undefined,
         isConnected: false,
         targetRayMode: null,
+        handedness: null,
         gamepad: null,
+        wristMenuHud,
+        wristMenuActive: false,
         hoverTrackId: null,
         hoverUiTarget: null,
         activeUiTarget: null,
@@ -487,6 +498,19 @@ export class VrSessionManager {
         }).removeEventListener('selectend', onSelectEnd);
         entry.controller.remove(entry.ray);
         entry.controller.remove(entry.touchIndicator);
+        if (entry.wristMenuHud) {
+          entry.controller.remove(entry.wristMenuHud.group);
+          entry.wristMenuHud.group.traverse((object) => {
+            if ((object as THREE.Mesh).isMesh) {
+              const mesh = object as THREE.Mesh;
+              mesh.geometry.dispose?.();
+              const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+              materials.forEach((material) => material?.dispose?.());
+            }
+          });
+          entry.wristMenuHud.panelTexture.dispose();
+          entry.wristMenuHud = null;
+        }
         entry.touchIndicator.geometry?.dispose?.();
         (entry.touchIndicator.material as THREE.Material | undefined)?.dispose?.();
         scene.remove(entry.controller);
@@ -535,6 +559,11 @@ export class VrSessionManager {
       entry.translateGrabOffset = null;
       entry.scaleGrabOffset = null;
       entry.volumeScaleState = null;
+      entry.wristMenuActive = false;
+      if (entry.wristMenuHud) {
+        entry.wristMenuHud.group.visible = false;
+        entry.wristMenuHud.hoverRegion = null;
+      }
     }
     const controls = this.controlsRef.current;
     if (controls) {
