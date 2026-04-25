@@ -7,7 +7,7 @@ import {
   applyWristMenuGripPlacement,
 } from '../src/components/viewers/volume-viewer/vr/wristMenuPlacement.ts';
 
-const EPSILON = 1e-12;
+const EPSILON = 1e-3;
 
 function assertVectorClose(actual: THREE.Vector3, expected: THREE.Vector3): void {
   assert.ok(
@@ -16,7 +16,17 @@ function assertVectorClose(actual: THREE.Vector3, expected: THREE.Vector3): void
   );
 }
 
-test('wrist menu placement keeps the wrist offset and faces the watch pose viewer', () => {
+function createMeasuredWatchGrip(): THREE.Group {
+  const grip = new THREE.Group();
+  const gripX = new THREE.Vector3(-0.096, -0.984, 0.151).normalize();
+  const gripYRaw = new THREE.Vector3(-0.965, 0.129, 0.230).normalize();
+  const gripZ = new THREE.Vector3().crossVectors(gripX, gripYRaw).normalize();
+  const gripY = new THREE.Vector3().crossVectors(gripZ, gripX).normalize();
+  grip.quaternion.setFromRotationMatrix(new THREE.Matrix4().makeBasis(gripX, gripY, gripZ));
+  return grip;
+}
+
+test('wrist menu placement keeps the wrist offset', () => {
   const group = new THREE.Group();
   group.position.set(1, 2, 3);
   group.rotation.set(-Math.PI / 2, Math.PI / 3, Math.PI / 4);
@@ -32,10 +42,23 @@ test('wrist menu placement keeps the wrist offset and faces the watch pose viewe
       WRIST_MENU_GRIP_OFFSET.z,
     ),
   );
+});
 
-  const panelForward = new THREE.Vector3(0, 0, 1).applyQuaternion(group.quaternion).normalize();
-  const panelUp = new THREE.Vector3(0, 1, 0).applyQuaternion(group.quaternion).normalize();
+test('wrist menu calibration maps the measured watch pose to book axes', () => {
+  const grip = createMeasuredWatchGrip();
+  const group = new THREE.Group();
+  grip.add(group);
 
-  assertVectorClose(panelForward, new THREE.Vector3(0, 0, -1));
+  applyWristMenuGripPlacement(group);
+  grip.updateMatrixWorld(true);
+
+  const worldQuaternion = new THREE.Quaternion();
+  group.getWorldQuaternion(worldQuaternion);
+  const panelForward = new THREE.Vector3(0, 0, 1).applyQuaternion(worldQuaternion).normalize();
+  const panelUp = new THREE.Vector3(0, 1, 0).applyQuaternion(worldQuaternion).normalize();
+  const panelRight = new THREE.Vector3(1, 0, 0).applyQuaternion(worldQuaternion).normalize();
+
+  assertVectorClose(panelForward, new THREE.Vector3(0, 0, 1));
   assertVectorClose(panelUp, new THREE.Vector3(0, 1, 0));
+  assertVectorClose(panelRight, new THREE.Vector3(1, 0, 0));
 });
