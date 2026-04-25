@@ -10,6 +10,7 @@ import type {
 } from './types';
 import { VR_CONTROLLER_TOUCH_RADIUS } from './constants';
 import { createVrWristMenuHud } from './hudFactory';
+import { applyWristMenuGripPlacement } from './wristMenuPlacement';
 
 export type VrSessionManagerOptions = {
   rendererRef: MutableRefObject<THREE.WebGLRenderer | null>;
@@ -399,8 +400,7 @@ export class VrSessionManager {
       const wristMenuHud = createVrWristMenuHud();
       if (wristMenuHud) {
         wristMenuHud.group.visible = false;
-        wristMenuHud.group.position.set(0, 0.055, 0.18);
-        wristMenuHud.group.rotation.set(-Math.PI / 2, 0, 0);
+        applyWristMenuGripPlacement(wristMenuHud.group);
         grip.add(wristMenuHud.group);
       }
 
