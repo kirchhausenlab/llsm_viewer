@@ -19,11 +19,11 @@ function assertMatrixClose(actual: THREE.Matrix4, expected: THREE.Matrix4, messa
   const perspectiveShader = VolumeRenderShaderVariants.mip.fragmentShader;
   assert.match(
     perspectiveShader,
-    /vec3 rayOrigin = nearpos;\s*vec3 rawDir = farpos - nearpos;/s,
+    /vec3 rayOrigin = u_cameraPos;\s*vec3 rawDir = farpos - rayOrigin;/s,
   );
   assert.doesNotMatch(
     perspectiveShader,
-    /vec3 rayOrigin = u_cameraPos;\s*vec3 rawDir = v_position - rayOrigin;/s,
+    /#define VOLUME_CAMERA_ORTHOGRAPHIC/,
   );
 })();
 

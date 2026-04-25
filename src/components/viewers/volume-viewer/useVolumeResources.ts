@@ -3795,6 +3795,7 @@ export function useVolumeResources({
 
           const mesh = new THREE.Mesh(geometry, material);
           mesh.visible = isPlaybackWarmup ? false : layer.visible;
+          mesh.frustumCulled = false;
           mesh.renderOrder = resolveLayerRenderOrder(index, layer);
           mesh.position.set(layer.offsetX, layer.offsetY, 0);
           assignVolumeMeshOnBeforeRender(mesh);
@@ -4188,6 +4189,9 @@ export function useVolumeResources({
         }
         resources.paletteTexture = segmentationPaletteTexture;
         mesh.visible = isPlaybackWarmup ? false : layer.visible;
+        if (resources.mode === '3d') {
+          mesh.frustumCulled = false;
+        }
         mesh.renderOrder = resolveLayerRenderOrder(index, layer);
 
         if (resources.mode === '3d' && layer.renderStyle === RENDER_STYLE_BL) {

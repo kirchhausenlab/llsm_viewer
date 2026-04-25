@@ -2047,8 +2047,13 @@ const volumeRenderFragmentShader = /* glsl */ `
       vec3 farpos = v_farpos.xyz / v_farpos.w;
       vec3 nearpos = v_nearpos.xyz / v_nearpos.w;
 
-      vec3 rayOrigin = nearpos;
-      vec3 rawDir = farpos - nearpos;
+      #if defined(VOLUME_CAMERA_ORTHOGRAPHIC)
+        vec3 rayOrigin = nearpos;
+        vec3 rawDir = farpos - nearpos;
+      #else
+        vec3 rayOrigin = u_cameraPos;
+        vec3 rawDir = farpos - rayOrigin;
+      #endif
       float rawDirLength = length(rawDir);
       if (rawDirLength < EPSILON) {
         discard;

@@ -49,6 +49,10 @@ export function useVolumeViewerVr({
   volumeStepScaleRef,
   volumeYawRef,
   volumePitchRef,
+  vrTranslationHandleRef: providedVrTranslationHandleRef,
+  vrVolumeScaleHandleRef: providedVrVolumeScaleHandleRef,
+  vrVolumeYawHandlesRef: providedVrVolumeYawHandlesRef,
+  vrVolumePitchHandleRef: providedVrVolumePitchHandleRef,
   trackGroupRef,
   resourcesRef,
   trackLinesRef,
@@ -153,10 +157,14 @@ export function useVolumeViewerVr({
   const vrHudYawQuaternionRef = useRef(new THREE.Quaternion());
   const vrHudYawVectorRef = useRef(new THREE.Vector3());
   const vrHudPitchVectorRef = useRef(new THREE.Vector3());
-  const vrTranslationHandleRef = useRef<THREE.Mesh | null>(null);
-  const vrVolumeScaleHandleRef = useRef<THREE.Mesh | null>(null);
-  const vrVolumeYawHandlesRef = useRef<THREE.Mesh[]>([]);
-  const vrVolumePitchHandleRef = useRef<THREE.Mesh | null>(null);
+  const internalVrTranslationHandleRef = useRef<THREE.Mesh | null>(null);
+  const internalVrVolumeScaleHandleRef = useRef<THREE.Mesh | null>(null);
+  const internalVrVolumeYawHandlesRef = useRef<THREE.Mesh[]>([]);
+  const internalVrVolumePitchHandleRef = useRef<THREE.Mesh | null>(null);
+  const vrTranslationHandleRef = providedVrTranslationHandleRef ?? internalVrTranslationHandleRef;
+  const vrVolumeScaleHandleRef = providedVrVolumeScaleHandleRef ?? internalVrVolumeScaleHandleRef;
+  const vrVolumeYawHandlesRef = providedVrVolumeYawHandlesRef ?? internalVrVolumeYawHandlesRef;
+  const vrVolumePitchHandleRef = providedVrVolumePitchHandleRef ?? internalVrVolumePitchHandleRef;
   const vrHandleLocalPointRef = useRef(new THREE.Vector3());
   const vrHandleWorldPointRef = useRef(new THREE.Vector3());
   const vrHandleSecondaryPointRef = useRef(new THREE.Vector3());

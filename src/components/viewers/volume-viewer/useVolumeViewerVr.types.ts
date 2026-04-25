@@ -44,6 +44,10 @@ export type UseVolumeViewerVrParams = {
   volumeStepScaleRef: MutableRefObject<number>;
   volumeYawRef: MutableRefObject<number>;
   volumePitchRef: MutableRefObject<number>;
+  vrTranslationHandleRef?: MutableRefObject<THREE.Mesh | null>;
+  vrVolumeScaleHandleRef?: MutableRefObject<THREE.Mesh | null>;
+  vrVolumeYawHandlesRef?: MutableRefObject<THREE.Mesh[]>;
+  vrVolumePitchHandleRef?: MutableRefObject<THREE.Mesh | null>;
   trackGroupRef: MutableRefObject<THREE.Group | null>;
   resourcesRef: MutableRefObject<Map<string, VolumeResources>>;
   timeIndexRef: MutableRefObject<number>;

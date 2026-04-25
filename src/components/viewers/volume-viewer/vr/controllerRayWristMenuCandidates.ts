@@ -60,9 +60,7 @@ export function resolveWristMenuUiCandidate({
   const regionMargin = activeWristMenu
     ? VR_WRIST_MENU_PROXIMITY_MARGIN * 1.5
     : VR_WRIST_MENU_PROXIMITY_MARGIN;
-  const proximityDepth = activeWristMenu
-    ? VR_WRIST_MENU_PROXIMITY_DEPTH * 1.25
-    : VR_WRIST_MENU_PROXIMITY_DEPTH;
+  const proximityDepth = VR_WRIST_MENU_PROXIMITY_DEPTH;
 
   const findNearestRegion = (
     hud: WristMenuCandidate['hud'],
