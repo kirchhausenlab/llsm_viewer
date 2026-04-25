@@ -111,4 +111,10 @@ test('right wrist status HUD is placed from the controller ray and faces back al
   group.getWorldQuaternion(worldQuaternion);
   const panelForward = new THREE.Vector3(0, 0, 1).applyQuaternion(worldQuaternion).normalize();
   assertVectorClose(panelForward, new THREE.Vector3(0, 0, 1));
+
+  const controllerRayDirection = new THREE.Vector3(0, 0, -1);
+  assert.ok(
+    group.position.dot(controllerRayDirection) < 0,
+    'expected right wrist status HUD to sit behind the controller ray origin',
+  );
 });

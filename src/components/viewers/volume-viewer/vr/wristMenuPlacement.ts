@@ -9,7 +9,7 @@ export const WRIST_MENU_FACE_OFFSET_METERS = 0.15;
 export const WRIST_STATUS_RAY_OFFSET = Object.freeze({
   x: 0.14,
   y: -0.09,
-  z: -0.34,
+  z: 0.1,
 });
 
 function headDiagnosticToDefaultWorld(right: number, up: number, forward: number): THREE.Vector3 {
