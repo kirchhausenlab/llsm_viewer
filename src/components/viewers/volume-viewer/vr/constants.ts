@@ -8,12 +8,12 @@ export const VR_PLAYBACK_PANEL_HEIGHT = 0.36;
 export const VR_PLAYBACK_MIN_FPS = 1;
 export const VR_PLAYBACK_MAX_FPS = 60;
 export const VR_PLAYBACK_VERTICAL_OFFSET = 0;
-export const VR_PLAYBACK_CAMERA_ANCHOR_OFFSET = new THREE.Vector3(0, -0.18, -0.65);
+export const VR_PLAYBACK_CAMERA_ANCHOR_OFFSET = new THREE.Vector3(0, -0.16, -0.5);
 
 export const VR_CHANNELS_PANEL_WIDTH = 0.6;
 export const VR_CHANNELS_PANEL_HEIGHT = 0.6;
 export const VR_CHANNELS_VERTICAL_OFFSET = 0;
-export const VR_CHANNELS_CAMERA_ANCHOR_OFFSET = new THREE.Vector3(0.4, -0.18, -0.65);
+export const VR_CHANNELS_CAMERA_ANCHOR_OFFSET = new THREE.Vector3(0.34, -0.16, -0.52);
 export const VR_CHANNELS_CANVAS_WIDTH = 1184;
 export const VR_CHANNELS_CANVAS_MIN_HEIGHT = 1184;
 export const VR_CHANNELS_FONT_FAMILY = '"Inter", "Segoe UI", sans-serif';
@@ -32,7 +32,7 @@ export const VR_CHANNELS_FONT_SIZES = {
 export const VR_TRACKS_PANEL_WIDTH = 0.58;
 export const VR_TRACKS_PANEL_HEIGHT = 0.64;
 export const VR_TRACKS_VERTICAL_OFFSET = -0.12;
-export const VR_TRACKS_CAMERA_ANCHOR_OFFSET = new THREE.Vector3(0.7, -0.22, -0.7);
+export const VR_TRACKS_CAMERA_ANCHOR_OFFSET = new THREE.Vector3(0.58, -0.2, -0.55);
 export const VR_TRACKS_CANVAS_WIDTH = 1180;
 export const VR_TRACKS_CANVAS_HEIGHT = 1320;
 export const VR_TRACKS_FONT_FAMILY = VR_CHANNELS_FONT_FAMILY;
@@ -65,12 +65,26 @@ export const VR_WRIST_MENU_FONT_SIZES = {
   emptyState: 30,
 } as const;
 
+export const VR_WRIST_STATUS_PANEL_WIDTH = 0.34;
+export const VR_WRIST_STATUS_PANEL_HEIGHT = 0.18;
+export const VR_WRIST_STATUS_CANVAS_WIDTH = 680;
+export const VR_WRIST_STATUS_CANVAS_HEIGHT = 360;
+export const VR_WRIST_STATUS_FONT_FAMILY = VR_CHANNELS_FONT_FAMILY;
+export const vrWristStatusFont = (weight: string, size: number) =>
+  `${weight} ${size}px ${VR_WRIST_STATUS_FONT_FAMILY}`;
+export const VR_WRIST_STATUS_FONT_SIZES = {
+  heading: 34,
+  body: 30,
+  value: 31,
+  small: 24,
+} as const;
+
 export const VR_HUD_MIN_HEIGHT = 0;
 export const VR_HUD_FRONT_MARGIN = 0.24;
 export const VR_HUD_LATERAL_MARGIN = 0.1;
 export const VR_HUD_PLACEMENT_EPSILON = 1e-4;
-export const VR_VOLUME_BASE_OFFSET = new THREE.Vector3(0, 1.25, -1.35);
-export const VR_VOLUME_VIEWER_DISTANCE = 1.35;
+export const VR_VOLUME_BASE_OFFSET = new THREE.Vector3(0, 1.22, -1.0);
+export const VR_VOLUME_VIEWER_DISTANCE = 1.0;
 export const VR_VOLUME_EYE_LEVEL_OFFSET = -0.25;
 export const VR_VOLUME_MIN_CENTER_HEIGHT = 0.9;
 export const VR_VOLUME_MAX_CENTER_HEIGHT = 1.55;

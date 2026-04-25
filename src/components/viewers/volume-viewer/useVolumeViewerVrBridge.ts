@@ -5,6 +5,7 @@ import type { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 
 import type { CompiledTrackSummary, TrackColorMode } from '../../../types/tracks';
 import type { TrackSetState } from '../../../types/channelTracks';
+import type { HoveredVoxelInfo } from '../../../types/hover';
 import type {
   MovementState,
   TrackRenderResource,
@@ -44,6 +45,7 @@ export type VolumeViewerVrBridgeOptions = {
   volumePitchRef: MutableRefObject<number>;
   trackGroupRef: MutableRefObject<THREE.Group | null>;
   resourcesRef: MutableRefObject<Map<string, VolumeResources>>;
+  hoverIntensityRef: MutableRefObject<HoveredVoxelInfo | null>;
   timeIndexRef: MutableRefObject<number>;
   movementStateRef: MutableRefObject<MovementState>;
   trackLinesRef: MutableRefObject<Map<string, TrackRenderResource>>;
@@ -74,6 +76,8 @@ export type VolumeViewerVrBridgeOptions = {
   followedTrackId: string | null;
   updateHoverState: (trackId: string | null, position: { x: number; y: number } | null, source?: 'pointer' | 'controller') => void;
   clearHoverState: (source?: 'pointer' | 'controller') => void;
+  updateVoxelHoverFromControllerRay: (origin: THREE.Vector3, direction: THREE.Vector3) => void;
+  clearVoxelHover: () => void;
   onResetVolume: () => void;
   onResetHudPlacement: () => void;
   onTrackFollowRequest: (trackId: string) => void;
@@ -108,6 +112,7 @@ export function useVolumeViewerVrBridge(options: VolumeViewerVrBridgeOptions) {
     volumePitchRef,
     trackGroupRef,
     resourcesRef,
+    hoverIntensityRef,
     timeIndexRef,
     movementStateRef,
     trackLinesRef,
@@ -128,6 +133,8 @@ export function useVolumeViewerVrBridge(options: VolumeViewerVrBridgeOptions) {
     followedTrackId,
     updateHoverState,
     clearHoverState,
+    updateVoxelHoverFromControllerRay,
+    clearVoxelHover,
     onResetVolume,
     onResetHudPlacement,
     onTrackFollowRequest,
@@ -244,6 +251,7 @@ export function useVolumeViewerVrBridge(options: VolumeViewerVrBridgeOptions) {
             vrVolumePitchHandleRef: fallbackVolumePitchHandleRef,
             trackGroupRef,
             resourcesRef,
+            hoverIntensityRef,
             timeIndexRef,
             movementStateRef,
             trackLinesRef,
@@ -264,6 +272,8 @@ export function useVolumeViewerVrBridge(options: VolumeViewerVrBridgeOptions) {
             followedTrackId,
             updateHoverState,
             clearHoverState,
+            updateVoxelHoverFromControllerRay,
+            clearVoxelHover,
             onResetVolume,
             onResetHudPlacement,
             onTrackFollowRequest,
@@ -297,6 +307,7 @@ export function useVolumeViewerVrBridge(options: VolumeViewerVrBridgeOptions) {
       fallbackVolumePitchHandleRef,
       trackGroupRef,
       resourcesRef,
+      hoverIntensityRef,
       timeIndexRef,
       movementStateRef,
       trackLinesRef,
@@ -317,6 +328,8 @@ export function useVolumeViewerVrBridge(options: VolumeViewerVrBridgeOptions) {
       followedTrackId,
       updateHoverState,
       clearHoverState,
+      updateVoxelHoverFromControllerRay,
+      clearVoxelHover,
       onResetVolume,
       onResetHudPlacement,
       onTrackFollowRequest,

@@ -10,6 +10,7 @@ import type {
   VolumeViewerVrProps,
 } from '../VolumeViewer.types';
 import type { TrackSetState } from '../../../types/channelTracks';
+import type { HoveredVoxelInfo } from '../../../types/hover';
 import type { CompiledTrackSummary, TrackColorMode } from '../../../types/tracks';
 import type {
   ControllerEntry,
@@ -50,6 +51,7 @@ export type UseVolumeViewerVrParams = {
   vrVolumePitchHandleRef?: MutableRefObject<THREE.Mesh | null>;
   trackGroupRef: MutableRefObject<THREE.Group | null>;
   resourcesRef: MutableRefObject<Map<string, VolumeResources>>;
+  hoverIntensityRef: MutableRefObject<HoveredVoxelInfo | null>;
   timeIndexRef: MutableRefObject<number>;
   movementStateRef: MutableRefObject<MovementState>;
   trackLinesRef: MutableRefObject<Map<string, TrackRenderResource>>;
@@ -84,6 +86,8 @@ export type UseVolumeViewerVrParams = {
     source?: 'pointer' | 'controller'
   ) => void;
   clearHoverState: (source?: 'pointer' | 'controller') => void;
+  updateVoxelHoverFromControllerRay: (origin: THREE.Vector3, direction: THREE.Vector3) => void;
+  clearVoxelHover: () => void;
   onResetVolume: () => void;
   onResetHudPlacement: () => void;
   onTrackFollowRequest: (trackId: string) => void;

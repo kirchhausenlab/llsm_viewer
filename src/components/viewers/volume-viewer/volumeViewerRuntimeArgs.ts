@@ -27,6 +27,7 @@ export type VolumeViewerVrBridgeOptionGroups = {
     | 'volumePitchRef'
     | 'trackGroupRef'
     | 'resourcesRef'
+    | 'hoverIntensityRef'
     | 'timeIndexRef'
     | 'movementStateRef'
     | 'trackLinesRef'
@@ -56,6 +57,8 @@ export type VolumeViewerVrBridgeOptionGroups = {
     VolumeViewerVrBridgeOptions,
     | 'updateHoverState'
     | 'clearHoverState'
+    | 'updateVoxelHoverFromControllerRay'
+    | 'clearVoxelHover'
     | 'onResetVolume'
     | 'onResetHudPlacement'
     | 'onTrackFollowRequest'

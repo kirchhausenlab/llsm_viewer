@@ -2,6 +2,7 @@ import type { MutableRefObject } from 'react';
 import * as THREE from 'three';
 import { Line2 } from 'three/addons/lines/Line2.js';
 
+import type { HoveredVoxelInfo } from '../../../../types/hover';
 import type { TrackRenderResource } from '../../VolumeViewer.types';
 import type {
   ControllerEntry,
@@ -31,6 +32,7 @@ import { resolveControllerUiCandidates } from './controllerRayHudCandidates';
 import { applyControllerHudTransforms } from './controllerRayHudTransforms';
 import { resolveControllerTrackIntersection } from './controllerRayTrackIntersections';
 import { finalizeControllerRayFrame } from './controllerRayFrameFinalize';
+import { renderVrWristStatusHud } from './hudRenderersWristStatus';
 
 export type ControllerRayDependencies = {
   rendererRef: MutableRefObject<THREE.WebGLRenderer | null>;
@@ -126,6 +128,11 @@ export type ControllerRayDependencies = {
     ((trackId: string | null, position: { x: number; y: number } | null, source?: 'pointer' | 'controller') => void) | null
   >;
   vrClearHoverStateRef: MutableRefObject<((source?: 'pointer' | 'controller') => void) | null>;
+  vrUpdateVoxelHoverFromControllerRayRef: MutableRefObject<
+    ((origin: THREE.Vector3, direction: THREE.Vector3) => void) | null
+  >;
+  vrClearVoxelHoverRef: MutableRefObject<(() => void) | null>;
+  hoverIntensityRef: MutableRefObject<HoveredVoxelInfo | null>;
 };
 
 
@@ -196,6 +203,9 @@ export function createControllerRayUpdater(
     volumePitchRef,
     vrUpdateHoverStateRef,
     vrClearHoverStateRef,
+    vrUpdateVoxelHoverFromControllerRayRef,
+    vrClearVoxelHoverRef,
+    hoverIntensityRef,
   } = deps;
 
   const controllerTempMatrix = new THREE.Matrix4();
@@ -220,6 +230,9 @@ export function createControllerRayUpdater(
   const scaleHandleWorldPoint = new THREE.Vector3();
   const scaleDirectionTemp = new THREE.Vector3();
   const scaleTargetWorldPoint = new THREE.Vector3();
+
+  const isRightController = (entry: ControllerEntry, index: number): boolean =>
+    entry.handedness === 'right' || (entry.handedness == null && index === 1);
 
   return () => {
     const renderer = rendererRef.current;
@@ -257,6 +270,7 @@ export function createControllerRayUpdater(
     }
 
     let hoveredByController: { trackId: string; position: { x: number; y: number } | null } | null = null;
+    let updatedVoxelHoverFromController = false;
     let uiFlags = createEmptyControllerUiFlags();
     let nextChannelsHoverRegion: VrChannelsInteractiveRegion | null = null;
     let nextTracksHoverRegion: VrTracksInteractiveRegion | null = null;
@@ -280,6 +294,12 @@ export function createControllerRayUpdater(
         if (previousHoverTrackId !== entry.hoverTrackId || previousUiType !== null) {
           log?.('[VR] controller hover cleared', index);
         }
+        if (isRightController(entry, index)) {
+          entry.wristStatusActive = false;
+          if (entry.wristStatusHud) {
+            entry.wristStatusHud.group.visible = false;
+          }
+        }
         continue;
       }
 
@@ -288,6 +308,14 @@ export function createControllerRayUpdater(
       entry.rayDirection.set(0, 0, -1).applyMatrix4(controllerTempMatrix).normalize();
       entry.raycaster.ray.origin.copy(entry.rayOrigin);
       entry.raycaster.ray.direction.copy(entry.rayDirection);
+
+      if (isRightController(entry, index)) {
+        vrUpdateVoxelHoverFromControllerRayRef.current?.(entry.rayOrigin, entry.rayDirection);
+        updatedVoxelHoverFromController = true;
+        if (entry.wristStatusActive && entry.wristStatusHud) {
+          renderVrWristStatusHud(entry.wristStatusHud, hoverIntensityRef.current);
+        }
+      }
 
       let rayLength = 3;
       let hoverTrackId: string | null = null;
@@ -458,6 +486,10 @@ export function createControllerRayUpdater(
       if (!hoveredByController && hoverTrackId) {
         hoveredByController = { trackId: hoverTrackId, position: hoverPosition };
       }
+    }
+
+    if (!updatedVoxelHoverFromController) {
+      vrClearVoxelHoverRef.current?.();
     }
 
     const summary = finalizeControllerRayFrame({

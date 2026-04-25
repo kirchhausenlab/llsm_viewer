@@ -22,6 +22,10 @@ import {
   VR_WRIST_MENU_CANVAS_WIDTH,
   VR_WRIST_MENU_PANEL_HEIGHT,
   VR_WRIST_MENU_PANEL_WIDTH,
+  VR_WRIST_STATUS_CANVAS_HEIGHT,
+  VR_WRIST_STATUS_CANVAS_WIDTH,
+  VR_WRIST_STATUS_PANEL_HEIGHT,
+  VR_WRIST_STATUS_PANEL_WIDTH,
 } from './constants';
 import type {
   PlaybackState,
@@ -29,6 +33,7 @@ import type {
   VrPlaybackHud,
   VrTracksHud,
   VrWristMenuHud,
+  VrWristStatusHud,
   VrUiTargetType,
 } from './types';
 import { setVrPlaybackLabel, setVrPlaybackProgressFraction } from './hudMutators';
@@ -845,5 +850,75 @@ export function createVrWristMenuHud(): VrWristMenuHud | null {
     width: VR_WRIST_MENU_PANEL_WIDTH,
     height: VR_WRIST_MENU_PANEL_HEIGHT,
     hoverRegion: null,
+  };
+}
+
+export function createVrWristStatusHud(): VrWristStatusHud | null {
+  if (typeof document === 'undefined') {
+    return null;
+  }
+  const group = new THREE.Group();
+  group.name = 'VrWristStatusHud';
+
+  const backgroundMaterial = new THREE.MeshBasicMaterial({
+    color: 0x10161d,
+    transparent: true,
+    opacity: 0.9,
+    side: THREE.DoubleSide,
+    depthWrite: false,
+  });
+  const background = new THREE.Mesh(
+    new THREE.PlaneGeometry(VR_WRIST_STATUS_PANEL_WIDTH, VR_WRIST_STATUS_PANEL_HEIGHT),
+    backgroundMaterial,
+  );
+  background.position.set(0, 0, 0);
+  group.add(background);
+
+  const panelCanvas = document.createElement('canvas');
+  const panelDisplayWidth = VR_WRIST_STATUS_CANVAS_WIDTH;
+  const panelDisplayHeight = VR_WRIST_STATUS_CANVAS_HEIGHT;
+  const pixelRatio = typeof window !== 'undefined' ? Math.min(2, window.devicePixelRatio || 1) : 1;
+  panelCanvas.width = Math.round(panelDisplayWidth * pixelRatio);
+  panelCanvas.height = Math.round(panelDisplayHeight * pixelRatio);
+  const panelContext = panelCanvas.getContext('2d');
+  if (!panelContext) {
+    return null;
+  }
+  panelContext.imageSmoothingEnabled = true;
+  panelContext.imageSmoothingQuality = 'high';
+
+  const panelTexture = new THREE.CanvasTexture(panelCanvas);
+  panelTexture.colorSpace = THREE.SRGBColorSpace;
+  panelTexture.minFilter = THREE.LinearFilter;
+  panelTexture.magFilter = THREE.LinearFilter;
+  panelTexture.generateMipmaps = false;
+
+  const panelMaterial = new THREE.MeshBasicMaterial({
+    map: panelTexture,
+    transparent: true,
+    opacity: 1,
+    side: THREE.DoubleSide,
+    depthWrite: false,
+  });
+  const panel = new THREE.Mesh(
+    new THREE.PlaneGeometry(VR_WRIST_STATUS_PANEL_WIDTH, VR_WRIST_STATUS_PANEL_HEIGHT),
+    panelMaterial,
+  );
+  panel.position.set(0, 0, VR_HUD_SURFACE_OFFSET);
+  group.add(panel);
+
+  return {
+    group,
+    background,
+    panel,
+    panelTexture,
+    panelCanvas,
+    panelContext,
+    panelDisplayWidth,
+    panelDisplayHeight,
+    pixelRatio,
+    width: VR_WRIST_STATUS_PANEL_WIDTH,
+    height: VR_WRIST_STATUS_PANEL_HEIGHT,
+    lastSignature: '',
   };
 }

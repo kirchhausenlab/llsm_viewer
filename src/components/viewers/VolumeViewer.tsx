@@ -1082,6 +1082,33 @@ function VolumeViewer({
     hoveredVoxelRef,
   });
 
+  const {
+    updateVoxelHover,
+    updateVoxelHoverFromControllerRay,
+    resetHoverState,
+    markHoverInitializationFailed,
+    markHoverInitialized,
+    teardownHover,
+  } = useVolumeHover({
+    layersRef,
+    resourcesRef,
+    hoverRaycasterRef,
+    volumeRootGroupRef,
+    volumeStepScaleRef,
+    hoveredVoxelRef,
+    rendererRef,
+    cameraRef,
+    applyHoverHighlightToResources,
+    emitHoverVoxel,
+    clearVoxelHover,
+    reportVoxelHoverAbort,
+    clearVoxelHoverDebug,
+    setHoverNotReady,
+    isAdditiveBlending,
+    zClipFrontFraction,
+    hoverSettings: resolvedHoverSettings,
+  });
+
   const vrBridgeOptions = buildVolumeViewerVrBridgeOptions({
     vr,
     refs: {
@@ -1105,6 +1132,7 @@ function VolumeViewer({
       volumePitchRef,
       trackGroupRef,
       resourcesRef,
+      hoverIntensityRef,
       timeIndexRef,
       movementStateRef,
       trackLinesRef,
@@ -1131,6 +1159,8 @@ function VolumeViewer({
     callbacks: {
       updateHoverState,
       clearHoverState,
+      updateVoxelHoverFromControllerRay,
+      clearVoxelHover,
       onResetVolume: requestVolumeReset,
       onResetHudPlacement: requestHudPlacementReset,
       onTrackFollowRequest: handleTrackFollowRequest,
@@ -1319,31 +1349,6 @@ function VolumeViewer({
     playbackWindow,
     totalTimepoints,
   ]);
-  const {
-    updateVoxelHover,
-    resetHoverState,
-    markHoverInitializationFailed,
-    markHoverInitialized,
-    teardownHover,
-  } = useVolumeHover({
-    layersRef,
-    resourcesRef,
-    hoverRaycasterRef,
-    volumeRootGroupRef,
-    volumeStepScaleRef,
-    hoveredVoxelRef,
-    rendererRef,
-    cameraRef,
-    applyHoverHighlightToResources,
-    emitHoverVoxel,
-    clearVoxelHover,
-    reportVoxelHoverAbort,
-    clearVoxelHoverDebug,
-    setHoverNotReady,
-    isAdditiveBlending,
-    zClipFrontFraction,
-    hoverSettings: resolvedHoverSettings,
-  });
   useVolumeViewerResets({
     projectionMode,
     rendererRef,

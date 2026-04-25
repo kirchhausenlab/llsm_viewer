@@ -6,7 +6,9 @@ import {
   WRIST_MENU_BASE_GRIP_OFFSET,
   WRIST_MENU_FACE_OFFSET_METERS,
   WRIST_MENU_GRIP_OFFSET,
+  WRIST_STATUS_RAY_OFFSET,
   applyWristMenuGripPlacement,
+  applyWristStatusRayPlacement,
 } from '../src/components/viewers/volume-viewer/vr/wristMenuPlacement.ts';
 
 const EPSILON = 1e-3;
@@ -86,4 +88,27 @@ test('wrist menu position moves fifteen centimeters toward the viewer in the mea
     hudPosition.sub(basePosition),
     new THREE.Vector3(0, 0, WRIST_MENU_FACE_OFFSET_METERS),
   );
+});
+
+test('right wrist status HUD is placed from the controller ray and faces back along it', () => {
+  const controller = new THREE.Group();
+  const group = new THREE.Group();
+  controller.add(group);
+
+  applyWristStatusRayPlacement(group);
+  controller.updateMatrixWorld(true);
+
+  assertVectorClose(
+    group.position,
+    new THREE.Vector3(
+      WRIST_STATUS_RAY_OFFSET.x,
+      WRIST_STATUS_RAY_OFFSET.y,
+      WRIST_STATUS_RAY_OFFSET.z,
+    ),
+  );
+
+  const worldQuaternion = new THREE.Quaternion();
+  group.getWorldQuaternion(worldQuaternion);
+  const panelForward = new THREE.Vector3(0, 0, 1).applyQuaternion(worldQuaternion).normalize();
+  assertVectorClose(panelForward, new THREE.Vector3(0, 0, 1));
 });

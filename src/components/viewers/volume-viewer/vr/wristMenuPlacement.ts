@@ -6,6 +6,11 @@ export const WRIST_MENU_BASE_GRIP_OFFSET = Object.freeze({
   z: 0.18,
 });
 export const WRIST_MENU_FACE_OFFSET_METERS = 0.15;
+export const WRIST_STATUS_RAY_OFFSET = Object.freeze({
+  x: 0.14,
+  y: -0.09,
+  z: -0.34,
+});
 
 function headDiagnosticToDefaultWorld(right: number, up: number, forward: number): THREE.Vector3 {
   return new THREE.Vector3(right, up, -forward).normalize();
@@ -68,4 +73,13 @@ export function applyWristMenuGripPlacement(group: THREE.Object3D): void {
     WRIST_MENU_GRIP_OFFSET.z,
   );
   group.quaternion.copy(WRIST_MENU_GRIP_QUATERNION);
+}
+
+export function applyWristStatusRayPlacement(group: THREE.Object3D): void {
+  group.position.set(
+    WRIST_STATUS_RAY_OFFSET.x,
+    WRIST_STATUS_RAY_OFFSET.y,
+    WRIST_STATUS_RAY_OFFSET.z,
+  );
+  group.quaternion.identity();
 }

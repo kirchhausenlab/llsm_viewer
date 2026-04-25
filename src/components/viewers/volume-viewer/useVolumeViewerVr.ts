@@ -55,6 +55,7 @@ export function useVolumeViewerVr({
   vrVolumePitchHandleRef: providedVrVolumePitchHandleRef,
   trackGroupRef,
   resourcesRef,
+  hoverIntensityRef,
   trackLinesRef,
   hasActive3DLayerRef,
   playbackState,
@@ -72,6 +73,8 @@ export function useVolumeViewerVr({
   followedTrackId,
   updateHoverState,
   clearHoverState,
+  updateVoxelHoverFromControllerRay,
+  clearVoxelHover,
   onResetVolume,
   onResetHudPlacement,
   onTrackFollowRequest,
@@ -134,6 +137,10 @@ export function useVolumeViewerVr({
   vrUpdateHoverStateRef.current = updateHoverState;
   const vrClearHoverStateRef = useRef(clearHoverState);
   vrClearHoverStateRef.current = clearHoverState;
+  const vrUpdateVoxelHoverFromControllerRayRef = useRef(updateVoxelHoverFromControllerRay);
+  vrUpdateVoxelHoverFromControllerRayRef.current = updateVoxelHoverFromControllerRay;
+  const vrClearVoxelHoverRef = useRef(clearVoxelHover);
+  vrClearVoxelHoverRef.current = clearVoxelHover;
 
   const lastControllerRaySummaryRef = useRef<ControllerRaySummary | null>(null);
   const updateControllerRaysRef = useRef<() => void>(() => {});
@@ -338,6 +345,10 @@ export function useVolumeViewerVr({
           if (entry.wristMenuHud) {
             entry.wristMenuHud.group.visible = false;
             entry.wristMenuHud.hoverRegion = null;
+          }
+          entry.wristStatusActive = false;
+          if (entry.wristStatusHud) {
+            entry.wristStatusHud.group.visible = false;
           }
         } else {
           anyVisible = true;
@@ -671,6 +682,7 @@ export function useVolumeViewerVr({
       updateVrChannelsHudRef,
       onTrackFollowRequestRef,
       vrPropsRef,
+      hoverIntensityRef,
       vrClearHoverStateRef,
     }),
     [
@@ -681,6 +693,7 @@ export function useVolumeViewerVr({
       onResetVolume,
       onResetHudPlacement,
       onTrackFollowRequest,
+      hoverIntensityRef,
     ],
   );
 
@@ -749,6 +762,9 @@ export function useVolumeViewerVr({
       volumePitchRef,
       vrUpdateHoverStateRef,
       vrClearHoverStateRef,
+      vrUpdateVoxelHoverFromControllerRayRef,
+      vrClearVoxelHoverRef,
+      hoverIntensityRef,
     }),
     [
       applyVrPlaybackHoverState,

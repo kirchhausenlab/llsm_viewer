@@ -176,6 +176,7 @@ export function useVolumeHover({
   const hoverSystemReadyRef = useRef(false);
   const pendingHoverEventRef = useRef<PointerEvent | MouseEvent | null>(null);
   const hoverRetryFrameRef = useRef<number | null>(null);
+  const controllerHoverRayRef = useRef(new THREE.Ray());
   const updateVoxelHoverRef = useRef<(event: PointerEvent | MouseEvent) => void>(() => {});
 
   const retryPendingVoxelHover = useCallback(() => {
@@ -230,58 +231,33 @@ export function useVolumeHover({
     updateVoxelHoverRef.current(pendingEvent);
   }, [cameraRef, hoverRaycasterRef, rendererRef, setHoverNotReady]);
 
-  const updateVoxelHover = useCallback(
-    (event: PointerEvent | MouseEvent) => {
+  const sampleVoxelHoverFromWorldRay = useCallback(
+    (
+      worldRay: THREE.Ray,
+      options: { allowXr?: boolean } = {},
+    ) => {
       if (hoverTeardownRef.current) {
         pendingHoverEventRef.current = null;
         return;
       }
 
       if (!hoverSystemReadyRef.current) {
-        if (hoverInitializationFailedRef.current) {
-          pendingHoverEventRef.current = null;
-          setHoverNotReady('Hover inactive: renderer not initialized.');
-        } else {
-          pendingHoverEventRef.current = event;
-          setHoverNotReady('Hover inactive: renderer not initialized.');
-          retryPendingVoxelHover();
-        }
+        setHoverNotReady('Hover inactive: renderer not initialized.');
         return;
       }
 
       const renderer = rendererRef.current;
-      const cameraInstance = cameraRef.current;
-      const raycasterInstance = hoverRaycasterRef.current;
-      if (!renderer || !cameraInstance || !raycasterInstance) {
-        pendingHoverEventRef.current = event;
+      if (!renderer) {
         setHoverNotReady('Hover inactive: hover dependencies missing.');
-        retryPendingVoxelHover();
         return;
       }
 
-      if (renderer.xr?.isPresenting) {
+      if (!options.allowXr && renderer.xr?.isPresenting) {
         reportVoxelHoverAbort('Hover sampling disabled while XR session is active.');
         return;
       }
       if (!hoverSettings.enabled) {
         reportVoxelHoverAbort('Hover disabled in Hover settings.');
-        return;
-      }
-
-      const domElement = renderer.domElement;
-      const rect = domElement.getBoundingClientRect();
-      const width = rect.width;
-      const height = rect.height;
-      if (width <= 0 || height <= 0) {
-        reportVoxelHoverAbort('Render surface has no measurable area.');
-        return;
-      }
-
-      const offsetX = event.clientX - rect.left;
-      const offsetY = event.clientY - rect.top;
-      if (offsetX < 0 || offsetY < 0 || offsetX > width || offsetY > height) {
-        clearVoxelHoverDebug();
-        clearVoxelHover();
         return;
       }
 
@@ -400,9 +376,7 @@ export function useVolumeHover({
         hoverBoundingBox.min.z = clampValue(clippedMinZ, hoverBoundingBox.min.z, hoverBoundingBox.max.z);
       }
 
-      hoverPointerVector.set((offsetX / width) * 2 - 1, -(offsetY / height) * 2 + 1);
-      raycasterInstance.setFromCamera(hoverPointerVector, cameraInstance);
-      hoverLocalRay.copy(raycasterInstance.ray).applyMatrix4(hoverInverseMatrix);
+      hoverLocalRay.copy(worldRay).applyMatrix4(hoverInverseMatrix);
 
       const isInsideBoundingBox = hoverBoundingBox.containsPoint(hoverLocalRay.origin);
       let hasEntry = false;
@@ -775,16 +749,12 @@ export function useVolumeHover({
     },
     [
       applyHoverHighlightToResources,
-      clearVoxelHover,
       clearVoxelHoverDebug,
       emitHoverVoxel,
-      hoverRaycasterRef,
       layersRef,
       rendererRef,
-      cameraRef,
       reportVoxelHoverAbort,
       resourcesRef,
-      retryPendingVoxelHover,
       setHoverNotReady,
       volumeRootGroupRef,
       volumeStepScaleRef,
@@ -792,6 +762,89 @@ export function useVolumeHover({
       isAdditiveBlending,
       hoverSettings,
     ],
+  );
+
+  const updateVoxelHover = useCallback(
+    (event: PointerEvent | MouseEvent) => {
+      if (hoverTeardownRef.current) {
+        pendingHoverEventRef.current = null;
+        return;
+      }
+
+      if (!hoverSystemReadyRef.current) {
+        if (hoverInitializationFailedRef.current) {
+          pendingHoverEventRef.current = null;
+          setHoverNotReady('Hover inactive: renderer not initialized.');
+        } else {
+          pendingHoverEventRef.current = event;
+          setHoverNotReady('Hover inactive: renderer not initialized.');
+          retryPendingVoxelHover();
+        }
+        return;
+      }
+
+      const renderer = rendererRef.current;
+      const cameraInstance = cameraRef.current;
+      const raycasterInstance = hoverRaycasterRef.current;
+      if (!renderer || !cameraInstance || !raycasterInstance) {
+        pendingHoverEventRef.current = event;
+        setHoverNotReady('Hover inactive: hover dependencies missing.');
+        retryPendingVoxelHover();
+        return;
+      }
+
+      if (renderer.xr?.isPresenting) {
+        reportVoxelHoverAbort('Hover sampling disabled while XR session is active.');
+        return;
+      }
+
+      const domElement = renderer.domElement;
+      const rect = domElement.getBoundingClientRect();
+      const width = rect.width;
+      const height = rect.height;
+      if (width <= 0 || height <= 0) {
+        reportVoxelHoverAbort('Render surface has no measurable area.');
+        return;
+      }
+
+      const offsetX = event.clientX - rect.left;
+      const offsetY = event.clientY - rect.top;
+      if (offsetX < 0 || offsetY < 0 || offsetX > width || offsetY > height) {
+        clearVoxelHoverDebug();
+        clearVoxelHover();
+        return;
+      }
+
+      hoverPointerVector.set((offsetX / width) * 2 - 1, -(offsetY / height) * 2 + 1);
+      raycasterInstance.setFromCamera(hoverPointerVector, cameraInstance);
+      sampleVoxelHoverFromWorldRay(raycasterInstance.ray);
+    },
+    [
+      cameraRef,
+      clearVoxelHover,
+      clearVoxelHoverDebug,
+      hoverRaycasterRef,
+      rendererRef,
+      reportVoxelHoverAbort,
+      retryPendingVoxelHover,
+      sampleVoxelHoverFromWorldRay,
+      setHoverNotReady,
+    ],
+  );
+
+  const updateVoxelHoverFromControllerRay = useCallback(
+    (origin: THREE.Vector3, direction: THREE.Vector3) => {
+      const ray = controllerHoverRayRef.current;
+      ray.origin.copy(origin);
+      ray.direction.copy(direction);
+      if (ray.direction.lengthSq() <= 1e-10) {
+        reportVoxelHoverAbort('Controller hover ray has no direction.');
+        return;
+      }
+      ray.direction.normalize();
+      sampleVoxelHoverFromWorldRay(ray, { allowXr: true });
+    },
+    [reportVoxelHoverAbort, sampleVoxelHoverFromWorldRay],
   );
   updateVoxelHoverRef.current = updateVoxelHover;
 
@@ -841,6 +894,7 @@ export function useVolumeHover({
   return {
     hoverRaycasterRef,
     updateVoxelHover,
+    updateVoxelHoverFromControllerRay,
     retryPendingVoxelHover,
     resetHoverState,
     markHoverInitializationFailed,

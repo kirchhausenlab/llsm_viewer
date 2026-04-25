@@ -221,6 +221,8 @@ function createDependencies(options: {
   onChannelsHudPlacementPosition?: (position: THREE.Vector3) => void;
   onTracksHudPlacementPosition?: (position: THREE.Vector3) => void;
   onVolumeYawPitch?: (yaw: number, pitch: number) => void;
+  updateVoxelHoverFromControllerRay?: (origin: THREE.Vector3, direction: THREE.Vector3) => void;
+  clearVoxelHover?: () => void;
 }): ControllerRayDependencies {
   const playbackHud = options.playbackHud ?? null;
   const volumeRootBaseOffset = options.volumeRootBaseOffset ?? new THREE.Vector3();
@@ -293,6 +295,9 @@ function createDependencies(options: {
     volumePitchRef: ref(0),
     vrUpdateHoverStateRef: ref(null),
     vrClearHoverStateRef: ref(options.clearHoverState ?? (() => {})),
+    vrUpdateVoxelHoverFromControllerRayRef: ref(options.updateVoxelHoverFromControllerRay ?? null),
+    vrClearVoxelHoverRef: ref(options.clearVoxelHover ?? null),
+    hoverIntensityRef: ref(null),
   };
 }
 
@@ -323,6 +328,34 @@ function createDependencies(options: {
     visibleLines: 0,
     hoverTrackIds: ['track-1'],
   });
+})();
+
+(() => {
+  const calls: Array<{ origin: number[]; direction: number[] }> = [];
+  const leftEntry = createControllerEntry({ handedness: 'left' });
+  const rightEntry = createControllerEntry({ handedness: 'right' });
+  rightEntry.controller.position.set(1, 2, 3);
+  rightEntry.controller.rotation.set(0, Math.PI / 2, 0);
+  leftEntry.controller.updateMatrixWorld(true);
+  rightEntry.controller.updateMatrixWorld(true);
+
+  const deps = createDependencies({
+    rendererPresenting: true,
+    controllerEntry: leftEntry,
+    updateVoxelHoverFromControllerRay: (origin, direction) => {
+      calls.push({ origin: origin.toArray(), direction: direction.toArray() });
+    },
+  });
+  deps.controllersRef.current = [leftEntry, rightEntry];
+
+  const update = createControllerRayUpdater(deps);
+  update();
+
+  assert.strictEqual(calls.length, 1);
+  assert.deepStrictEqual(calls[0]?.origin, [1, 2, 3]);
+  assert.ok(Math.abs((calls[0]?.direction[0] ?? 0) - -1) < 1e-6);
+  assert.ok(Math.abs(calls[0]?.direction[1] ?? 1) < 1e-6);
+  assert.ok(Math.abs(calls[0]?.direction[2] ?? 1) < 1e-6);
 })();
 
 (() => {

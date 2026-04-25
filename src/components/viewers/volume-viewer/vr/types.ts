@@ -379,6 +379,21 @@ export type VrWristMenuHud = {
   hoverRegion: VrWristMenuInteractiveRegion | null;
 };
 
+export type VrWristStatusHud = {
+  group: THREE.Group;
+  background: THREE.Mesh;
+  panel: THREE.Mesh;
+  panelTexture: THREE.CanvasTexture;
+  panelCanvas: HTMLCanvasElement | null;
+  panelContext: CanvasRenderingContext2D | null;
+  panelDisplayWidth: number;
+  panelDisplayHeight: number;
+  pixelRatio: number;
+  width: number;
+  height: number;
+  lastSignature: string;
+};
+
 export type VolumeScaleState = {
   baseLength: number;
   direction: THREE.Vector3;
@@ -406,6 +421,8 @@ export type ControllerEntry = {
   gamepad: Gamepad | null;
   wristMenuHud?: VrWristMenuHud | null;
   wristMenuActive?: boolean;
+  wristStatusHud?: VrWristStatusHud | null;
+  wristStatusActive?: boolean;
   hoverTrackId: string | null;
   hoverUiTarget: VrUiTarget | null;
   activeUiTarget: VrUiTarget | null;

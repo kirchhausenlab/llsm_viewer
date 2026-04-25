@@ -2,6 +2,7 @@ import type { MutableRefObject } from 'react';
 import * as THREE from 'three';
 
 import type { VolumeViewerVrProps } from '../../VolumeViewer.types';
+import type { HoveredVoxelInfo } from '../../../../types/hover';
 import type {
   PlaybackState,
   VrChannelsHud,
@@ -61,5 +62,6 @@ export type ControllerInputDependencies = {
   updateVrChannelsHudRef: MutableRefObject<(() => void) | null>;
   onTrackFollowRequestRef: MutableRefObject<((trackId: string) => void) | null>;
   vrPropsRef: MutableRefObject<VolumeViewerVrProps | null>;
+  hoverIntensityRef: MutableRefObject<HoveredVoxelInfo | null>;
   vrClearHoverStateRef: MutableRefObject<((source?: 'pointer' | 'controller') => void) | null>;
 };

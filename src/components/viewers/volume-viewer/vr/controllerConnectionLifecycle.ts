@@ -28,6 +28,10 @@ export function handleControllerConnected(
     entry.wristMenuHud.group.visible = false;
     entry.wristMenuHud.hoverRegion = null;
   }
+  entry.wristStatusActive = false;
+  if (entry.wristStatusHud) {
+    entry.wristStatusHud.group.visible = false;
+  }
   entry.hoverTrackId = null;
   entry.hoverUiTarget = null;
   entry.activeUiTarget = null;
@@ -64,6 +68,10 @@ export function handleControllerDisconnected(
   if (entry.wristMenuHud) {
     entry.wristMenuHud.group.visible = false;
     entry.wristMenuHud.hoverRegion = null;
+  }
+  entry.wristStatusActive = false;
+  if (entry.wristStatusHud) {
+    entry.wristStatusHud.group.visible = false;
   }
   entry.hoverTrackId = null;
   entry.hoverUiTarget = null;

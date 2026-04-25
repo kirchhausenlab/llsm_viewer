@@ -55,6 +55,7 @@ export function createControllerEntryConfigurator(
     updateVrChannelsHudRef,
     onTrackFollowRequestRef,
     vrPropsRef,
+    hoverIntensityRef,
     vrClearHoverStateRef,
   } = deps;
 
@@ -112,6 +113,7 @@ export function createControllerEntryConfigurator(
     entry.onSqueezeStart = () => {
       handleControllerSqueezeStart(entry, index, {
         vrPropsRef,
+        hoverIntensityRef,
         log,
       });
     };
