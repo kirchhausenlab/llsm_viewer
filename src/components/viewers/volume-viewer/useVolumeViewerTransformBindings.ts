@@ -15,6 +15,7 @@ type UseVolumeViewerTransformBindingsParams = {
   vrChannelsHudPlacementRef: MutableRefObject<VrHudPlacement | null>;
   vrTracksHudPlacementRef: MutableRefObject<VrHudPlacement | null>;
   applyVolumeRootTransform: (dimensions: VolumeDimensions | null) => void;
+  updateVolumeHandles: () => void;
   applyTrackGroupTransform: (dimensions: VolumeDimensions | null) => void;
   currentDimensionsRef: MutableRefObject<VolumeDimensions | null>;
   applyVolumeStepScaleToResources: (stepScale: number) => void;
@@ -32,6 +33,7 @@ export function useVolumeViewerTransformBindings({
   vrChannelsHudPlacementRef,
   vrTracksHudPlacementRef,
   applyVolumeRootTransform,
+  updateVolumeHandles,
   applyTrackGroupTransform,
   currentDimensionsRef,
   applyVolumeStepScaleToResources,
@@ -40,6 +42,7 @@ export function useVolumeViewerTransformBindings({
   resolvedAnisotropyScale,
 }: UseVolumeViewerTransformBindingsParams) {
   const refreshVrHudPlacements = useCallback(() => {
+    updateVolumeHandles();
     updateHudGroupFromPlacement(
       vrPlaybackHudRef.current,
       vrPlaybackHudPlacementRef.current ?? null,
@@ -53,6 +56,7 @@ export function useVolumeViewerTransformBindings({
       vrTracksHudPlacementRef.current ?? null,
     );
   }, [
+    updateVolumeHandles,
     updateHudGroupFromPlacement,
     vrChannelsHudPlacementRef,
     vrChannelsHudRef,

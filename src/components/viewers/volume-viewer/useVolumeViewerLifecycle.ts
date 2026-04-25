@@ -465,6 +465,8 @@ export function useVolumeViewerLifecycle({
     const translationHandle = new THREE.Mesh(new THREE.SphereGeometry(1, 32, 32), translationHandleMaterial);
     translationHandle.name = 'VolumeTranslateHandle';
     translationHandle.visible = false;
+    translationHandle.frustumCulled = false;
+    translationHandle.renderOrder = 1000;
     volumeRootGroup.add(translationHandle);
     vrTranslationHandleRef.current = translationHandle;
 
@@ -478,6 +480,8 @@ export function useVolumeViewerLifecycle({
     const scaleHandle = new THREE.Mesh(new THREE.SphereGeometry(1, 32, 32), scaleHandleMaterial);
     scaleHandle.name = 'VolumeScaleHandle';
     scaleHandle.visible = false;
+    scaleHandle.frustumCulled = false;
+    scaleHandle.renderOrder = 1000;
     volumeRootGroup.add(scaleHandle);
     vrVolumeScaleHandleRef.current = scaleHandle;
 
@@ -496,6 +500,8 @@ export function useVolumeViewerLifecycle({
       );
       yawHandle.name = direction > 0 ? 'VolumeYawHandleRight' : 'VolumeYawHandleLeft';
       yawHandle.visible = false;
+      yawHandle.frustumCulled = false;
+      yawHandle.renderOrder = 1000;
       volumeRootGroup.add(yawHandle);
       yawHandles.push(yawHandle);
     }
@@ -507,6 +513,8 @@ export function useVolumeViewerLifecycle({
     );
     pitchHandle.name = 'VolumePitchHandle';
     pitchHandle.visible = false;
+    pitchHandle.frustumCulled = false;
+    pitchHandle.renderOrder = 1000;
     volumeRootGroup.add(pitchHandle);
     vrVolumePitchHandleRef.current = pitchHandle;
 

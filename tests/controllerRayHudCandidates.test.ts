@@ -194,7 +194,7 @@ function createWristMenuHud(): VrWristMenuHud {
   const group = new THREE.Group();
   group.visible = true;
   const panel = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), new THREE.MeshBasicMaterial());
-  panel.position.set(0, 0, -1);
+  panel.position.set(0, 0, 0.04);
   group.add(panel);
 
   return {
@@ -327,7 +327,9 @@ test('resolveControllerUiCandidates preserves previous controller HUD regions wh
 });
 
 test('resolveControllerUiCandidates returns wrist menu action candidates', () => {
-  const entry = createControllerEntry();
+  const entry = createControllerEntry({
+    rayDirection: new THREE.Vector3(1, 0, 0),
+  });
   const wristMenuHud = createWristMenuHud();
 
   const result = resolveControllerUiCandidates({

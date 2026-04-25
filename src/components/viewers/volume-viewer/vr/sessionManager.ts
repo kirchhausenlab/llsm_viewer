@@ -8,7 +8,7 @@ import type {
   PlaybackState,
   WebXRFoveationManager,
 } from './types';
-import { VR_CONTROLLER_TOUCH_RADIUS } from './constants';
+import { VR_CONTROLLER_TOUCH_RADIUS, XR_DEPTH_NEAR } from './constants';
 import { createVrWristMenuHud } from './hudFactory';
 import { applyWristMenuGripPlacement } from './wristMenuPlacement';
 
@@ -223,6 +223,20 @@ export class VrSessionManager {
       mode: resolvedMode,
     });
 
+    const camera = this.cameraRef.current;
+    if (camera && camera.near > XR_DEPTH_NEAR) {
+      camera.near = XR_DEPTH_NEAR;
+      camera.updateProjectionMatrix();
+    }
+    try {
+      session.updateRenderState({
+        depthNear: XR_DEPTH_NEAR,
+        depthFar: Math.max(camera?.far ?? 1000, XR_DEPTH_NEAR * 2),
+      });
+    } catch (error) {
+      console.warn('Failed to update XR depth range', error);
+    }
+
     this.xrSessionRef.current = session;
     this.xrCurrentSessionModeRef.current = resolvedMode;
     const playbackState = this.playbackStateRef.current;
@@ -238,7 +252,6 @@ export class VrSessionManager {
     if (controls) {
       controls.enabled = false;
     }
-    const camera = this.cameraRef.current;
     if (camera && controls) {
       this.preVrCameraStateRef.current = {
         position: camera.position.clone(),
@@ -378,7 +391,13 @@ export class VrSessionManager {
         new THREE.Vector3(0, 0, 0),
         new THREE.Vector3(0, 0, -1),
       ]);
-      const rayMaterial = new THREE.LineBasicMaterial({ color: 0xffffff });
+      const rayMaterial = new THREE.LineBasicMaterial({
+        color: 0xffffff,
+        transparent: true,
+        opacity: 0.5,
+        depthWrite: false,
+      });
+      rayMaterial.depthTest = false;
       const ray = new THREE.Line(rayGeometry, rayMaterial);
       ray.visible = false;
       controller.add(ray);
@@ -395,7 +414,6 @@ export class VrSessionManager {
         touchIndicatorMaterial,
       );
       touchIndicator.visible = false;
-      controller.add(touchIndicator);
 
       const wristMenuHud = createVrWristMenuHud();
       if (wristMenuHud) {

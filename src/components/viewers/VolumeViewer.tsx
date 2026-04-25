@@ -1383,6 +1383,7 @@ function VolumeViewer({
     vrChannelsHudPlacementRef,
     vrTracksHudPlacementRef,
     applyVolumeRootTransform,
+    updateVolumeHandles,
     applyTrackGroupTransform,
     currentDimensionsRef,
     applyVolumeStepScaleToResources,

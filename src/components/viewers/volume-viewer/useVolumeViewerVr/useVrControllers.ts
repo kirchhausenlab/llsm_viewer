@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo } from 'react';
+import { useCallback, useEffect, useMemo, useRef } from 'react';
 
 import type { Dispatch, SetStateAction } from 'react';
 
@@ -27,6 +27,8 @@ export function useVrControllers({
     () => createInputHelpers({ controllerDeps, rayDeps, updateControllerRaysRef }),
     [controllerDeps, rayDeps, updateControllerRaysRef],
   );
+  const configureControllerEntryRef = useRef(inputHelpers.configureControllerEntry);
+  configureControllerEntryRef.current = inputHelpers.configureControllerEntry;
 
   const onRendererInitialized = useCallback(() => {
     setControllerSetupRevision((revision) => revision + 1);
@@ -51,8 +53,10 @@ export function useVrControllers({
     if (controllerSetupRevision === 0) {
       return;
     }
-    return sessionHelpers.sessionManager.setupControllers(inputHelpers.configureControllerEntry);
-  }, [controllerSetupRevision, inputHelpers.configureControllerEntry, sessionHelpers.sessionManager]);
+    return sessionHelpers.sessionManager.setupControllers((entry, index) => {
+      configureControllerEntryRef.current(entry, index);
+    });
+  }, [controllerSetupRevision, sessionHelpers.sessionManager]);
 
   return {
     ...inputHelpers,

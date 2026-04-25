@@ -1,8 +1,13 @@
-import { VR_UI_TOUCH_SURFACE_MARGIN } from './constants';
+import {
+  VR_UI_TOUCH_SURFACE_MARGIN,
+  VR_WRIST_MENU_PROXIMITY_DEPTH,
+  VR_WRIST_MENU_PROXIMITY_MARGIN,
+} from './constants';
 import type {
   ResolveWristMenuUiCandidateParams,
   WristMenuCandidate,
 } from './controllerRayHudCandidateTypes';
+import type { VrWristMenuInteractiveRegion } from './types';
 
 export type ResolveWristMenuUiCandidateResult = {
   candidate: WristMenuCandidate | null;
@@ -17,9 +22,6 @@ export type ResolveWristMenuUiCandidateResult = {
 export function resolveWristMenuUiCandidate({
   entry,
   wristMenuHuds,
-  vrHudPlaneRef,
-  vrHudPlanePointRef,
-  vrHudForwardRef,
   wristMenuLocalPoint,
   wristMenuTouchPoint,
   wristMenuCandidatePoint,
@@ -50,42 +52,83 @@ export function resolveWristMenuUiCandidate({
     wristMenuCandidatePoint.set(point.x, point.y, point.z);
   };
 
-  const plane = vrHudPlaneRef.current;
-  const planePoint = vrHudPlanePointRef.current;
-  const planeNormal = vrHudForwardRef.current;
   const activeType = entry.activeUiTarget?.type ?? null;
   const activeWristMenu = activeType ? activeType.startsWith('wrist-menu-') : false;
-  const surfaceMargin = activeWristMenu ? VR_UI_TOUCH_SURFACE_MARGIN * 1.5 : VR_UI_TOUCH_SURFACE_MARGIN;
+  const panelMargin = activeWristMenu
+    ? VR_UI_TOUCH_SURFACE_MARGIN * 1.5
+    : VR_UI_TOUCH_SURFACE_MARGIN;
+  const regionMargin = activeWristMenu
+    ? VR_WRIST_MENU_PROXIMITY_MARGIN * 1.5
+    : VR_WRIST_MENU_PROXIMITY_MARGIN;
+  const proximityDepth = activeWristMenu
+    ? VR_WRIST_MENU_PROXIMITY_DEPTH * 1.25
+    : VR_WRIST_MENU_PROXIMITY_DEPTH;
+
+  const findNearestRegion = (
+    hud: WristMenuCandidate['hud'],
+  ): VrWristMenuInteractiveRegion | null => {
+    let nearestRegion: VrWristMenuInteractiveRegion | null = null;
+    let nearestScore = Number.POSITIVE_INFINITY;
+
+    for (const regionOption of hud.regions) {
+      if (regionOption.disabled) {
+        continue;
+      }
+      const { minX, maxX, minY, maxY } = regionOption.bounds;
+      const minBoundX = Math.min(minX, maxX);
+      const maxBoundX = Math.max(minX, maxX);
+      const minBoundY = Math.min(minY, maxY);
+      const maxBoundY = Math.max(minY, maxY);
+      if (
+        wristMenuLocalPoint.x < minBoundX - regionMargin ||
+        wristMenuLocalPoint.x > maxBoundX + regionMargin ||
+        wristMenuLocalPoint.y < minBoundY - regionMargin ||
+        wristMenuLocalPoint.y > maxBoundY + regionMargin
+      ) {
+        continue;
+      }
+
+      const outsideX =
+        wristMenuLocalPoint.x < minBoundX
+          ? minBoundX - wristMenuLocalPoint.x
+          : wristMenuLocalPoint.x > maxBoundX
+            ? wristMenuLocalPoint.x - maxBoundX
+            : 0;
+      const outsideY =
+        wristMenuLocalPoint.y < minBoundY
+          ? minBoundY - wristMenuLocalPoint.y
+          : wristMenuLocalPoint.y > maxBoundY
+            ? wristMenuLocalPoint.y - maxBoundY
+            : 0;
+      const centerX = (minBoundX + maxBoundX) * 0.5;
+      const centerY = (minBoundY + maxBoundY) * 0.5;
+      const centerDistanceSq =
+        (wristMenuLocalPoint.x - centerX) * (wristMenuLocalPoint.x - centerX) +
+        (wristMenuLocalPoint.y - centerY) * (wristMenuLocalPoint.y - centerY);
+      const score = outsideX * outsideX + outsideY * outsideY + centerDistanceSq * 1e-3;
+      if (score < nearestScore) {
+        nearestScore = score;
+        nearestRegion = regionOption;
+      }
+    }
+
+    return nearestRegion;
+  };
 
   for (const hud of wristMenuHuds) {
     if (!hud.group.visible) {
       continue;
     }
 
-    hud.panel.getWorldPosition(planePoint);
-    planeNormal.set(0, 0, 1).applyQuaternion(hud.group.quaternion).normalize();
-    plane.setFromNormalAndCoplanarPoint(planeNormal, planePoint);
-
-    const denominator = planeNormal.dot(entry.rayDirection);
-    if (Math.abs(denominator) <= 1e-5) {
-      continue;
-    }
-
-    const signedDistance = plane.distanceToPoint(entry.rayOrigin);
-    const distanceAlongRay = -signedDistance / denominator;
-    if (distanceAlongRay < 0 || !Number.isFinite(distanceAlongRay)) {
-      continue;
-    }
-
-    wristMenuTouchPoint
-      .copy(entry.rayDirection)
-      .multiplyScalar(distanceAlongRay)
-      .add(entry.rayOrigin);
-    wristMenuLocalPoint.copy(wristMenuTouchPoint);
+    wristMenuLocalPoint.copy(entry.rayOrigin);
     hud.panel.worldToLocal(wristMenuLocalPoint);
+    const planeDistance = Math.abs(wristMenuLocalPoint.z);
+    if (planeDistance > proximityDepth || !Number.isFinite(planeDistance)) {
+      continue;
+    }
 
-    const halfWidth = hud.width / 2 + surfaceMargin;
-    const halfHeight = hud.height / 2 + surfaceMargin;
+    const halfWidth = hud.width / 2 + panelMargin;
+    const halfHeight = hud.height / 2 + panelMargin;
     if (
       wristMenuLocalPoint.x < -halfWidth ||
       wristMenuLocalPoint.x > halfWidth ||
@@ -95,29 +138,17 @@ export function resolveWristMenuUiCandidate({
       continue;
     }
 
-    let region = hud.regions.find((candidateRegionOption) => {
-      const { minX, maxX, minY, maxY } = candidateRegionOption.bounds;
-      const minBoundX = Math.min(minX, maxX);
-      const maxBoundX = Math.max(minX, maxX);
-      const minBoundY = Math.min(minY, maxY);
-      const maxBoundY = Math.max(minY, maxY);
-      return (
-        wristMenuLocalPoint.x >= minBoundX &&
-        wristMenuLocalPoint.x <= maxBoundX &&
-        wristMenuLocalPoint.y >= minBoundY &&
-        wristMenuLocalPoint.y <= maxBoundY
-      );
-    }) ?? null;
+    wristMenuTouchPoint.copy(wristMenuLocalPoint);
+    wristMenuTouchPoint.z = 0;
+    hud.panel.localToWorld(wristMenuTouchPoint);
 
-    if (region?.disabled) {
-      region = null;
-    }
+    const region = findNearestRegion(hud);
 
     if (region) {
       setCandidate(
         { type: 'wrist-menu-action', object: hud.panel, data: region },
         wristMenuTouchPoint,
-        distanceAlongRay,
+        planeDistance,
         hud,
         region,
       );
@@ -125,7 +156,7 @@ export function resolveWristMenuUiCandidate({
       setCandidate(
         { type: 'wrist-menu-panel', object: hud.panel },
         wristMenuTouchPoint,
-        distanceAlongRay,
+        planeDistance,
         hud,
         null,
       );

@@ -5,7 +5,7 @@ export const WRIST_MENU_BASE_GRIP_OFFSET = Object.freeze({
   y: 0.055,
   z: 0.18,
 });
-export const WRIST_MENU_FACE_OFFSET_METERS = 0.1;
+export const WRIST_MENU_FACE_OFFSET_METERS = 0.15;
 
 function headDiagnosticToDefaultWorld(right: number, up: number, forward: number): THREE.Vector3 {
   return new THREE.Vector3(right, up, -forward).normalize();
@@ -25,7 +25,6 @@ const MEASURED_WATCH_GRIP_Y_WORLD = new THREE.Vector3()
   .crossVectors(MEASURED_WATCH_GRIP_Z_WORLD, MEASURED_WATCH_GRIP_X_WORLD)
   .normalize();
 
-const DESIRED_WATCH_HUD_RIGHT_WORLD = new THREE.Vector3(1, 0, 0);
 const DESIRED_WATCH_HUD_UP_WORLD = new THREE.Vector3(0, 1, 0);
 const DESIRED_WATCH_HUD_FRONT_WORLD = new THREE.Vector3(0, 0, 1);
 
@@ -49,7 +48,7 @@ function createWristMenuGripQuaternion(): THREE.Quaternion {
 export const WRIST_MENU_GRIP_QUATERNION = createWristMenuGripQuaternion();
 
 function createWristMenuGripOffset() {
-  // Move the calibrated book-facing panel 10 cm along its own +Z direction,
+  // Move the calibrated book-facing panel 15 cm along its own +Z direction,
   // which is toward the viewer in the measured watch pose.
   const faceOffset = new THREE.Vector3(0, 0, WRIST_MENU_FACE_OFFSET_METERS)
     .applyQuaternion(WRIST_MENU_GRIP_QUATERNION);

@@ -65,7 +65,7 @@ test('wrist menu calibration maps the measured watch pose to book axes', () => {
   assertVectorClose(panelRight, new THREE.Vector3(1, 0, 0));
 });
 
-test('wrist menu position moves ten centimeters toward the viewer in the measured watch pose', () => {
+test('wrist menu position moves fifteen centimeters toward the viewer in the measured watch pose', () => {
   const grip = createMeasuredWatchGrip();
   const group = new THREE.Group();
   grip.add(group);
