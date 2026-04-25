@@ -3,6 +3,8 @@ import { test } from 'node:test';
 import * as THREE from 'three';
 
 import {
+  WRIST_MENU_BASE_GRIP_OFFSET,
+  WRIST_MENU_FACE_OFFSET_METERS,
   WRIST_MENU_GRIP_OFFSET,
   applyWristMenuGripPlacement,
 } from '../src/components/viewers/volume-viewer/vr/wristMenuPlacement.ts';
@@ -61,4 +63,27 @@ test('wrist menu calibration maps the measured watch pose to book axes', () => {
   assertVectorClose(panelForward, new THREE.Vector3(0, 0, 1));
   assertVectorClose(panelUp, new THREE.Vector3(0, 1, 0));
   assertVectorClose(panelRight, new THREE.Vector3(1, 0, 0));
+});
+
+test('wrist menu position moves ten centimeters toward the viewer in the measured watch pose', () => {
+  const grip = createMeasuredWatchGrip();
+  const group = new THREE.Group();
+  grip.add(group);
+
+  applyWristMenuGripPlacement(group);
+  grip.updateMatrixWorld(true);
+
+  const hudPosition = new THREE.Vector3();
+  group.getWorldPosition(hudPosition);
+  const basePosition = new THREE.Vector3(
+    WRIST_MENU_BASE_GRIP_OFFSET.x,
+    WRIST_MENU_BASE_GRIP_OFFSET.y,
+    WRIST_MENU_BASE_GRIP_OFFSET.z,
+  );
+  grip.localToWorld(basePosition);
+
+  assertVectorClose(
+    hudPosition.sub(basePosition),
+    new THREE.Vector3(0, 0, WRIST_MENU_FACE_OFFSET_METERS),
+  );
 });

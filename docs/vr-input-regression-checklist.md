@@ -24,6 +24,11 @@ The focused tests must cover these invariants:
 - `createControllerRayUpdater()` does not call `onSelectStart` or `onSelectEnd`, even when a controller exposes a pressed `gamepad.buttons[0]`.
 - A presenting-frame ray update with no native select event does not move HUD placement, volume position, volume scale, volume yaw, or volume pitch.
 - One controller missing a channels/tracks HUD target does not clear another controller's active HUD hover region.
+- The wrist HUD calibration maps the measured left-wrist watch pose to book axes. In
+  `tests/wristMenuPlacement.test.ts`, the measured grip pose must keep HUD `+Z`
+  facing the viewer, HUD `+Y` vertical, and HUD `+X` horizontal. Do not replace
+  the calibrated quaternion in `wristMenuPlacement.ts` with a guessed Euler or
+  controller-axis mapping.
 
 ## Quest Smoke Pass
 
@@ -35,6 +40,10 @@ Use this pass for any change touching `src/components/viewers/volume-viewer/vr/*
 - Left controller hover highlights playback, channels, and tracks HUD widgets.
 - Left controller click activates HUD widgets.
 - Right controller hover and click still work.
+- Hold the left controller in the watch pose and open the wrist HUD. The wrist
+  HUD should read like a vertical book page. Its in-HUD debug row should show
+  `hud front +Z` near `f -1`, `hud up +Y` near `u +1`, and `hud right +X`
+  near `r +1`.
 - HUD and volume dragging only start after intentionally selecting a drag or volume handle.
 - Releasing selection stops dragging immediately.
 - Exit VR and verify desktop camera/control state is restored.

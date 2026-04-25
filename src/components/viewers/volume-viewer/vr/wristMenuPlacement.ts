@@ -1,15 +1,21 @@
 import * as THREE from 'three';
 
-export const WRIST_MENU_GRIP_OFFSET = Object.freeze({
+export const WRIST_MENU_BASE_GRIP_OFFSET = Object.freeze({
   x: 0,
   y: 0.055,
   z: 0.18,
 });
+export const WRIST_MENU_FACE_OFFSET_METERS = 0.1;
 
 function headDiagnosticToDefaultWorld(right: number, up: number, forward: number): THREE.Vector3 {
   return new THREE.Vector3(right, up, -forward).normalize();
 }
 
+// Wrist HUD orientation is calibrated from an in-headset left-wrist watch pose
+// confirmed on 2026-04-25. Do not replace this with a hand-picked Euler or
+// controller-axis guess. The desired invariant is tested in
+// tests/wristMenuPlacement.test.ts: for the measured grip pose, HUD +Z faces
+// the viewer like a book page, HUD +Y is vertical, and HUD +X is horizontal.
 const MEASURED_WATCH_GRIP_X_WORLD = headDiagnosticToDefaultWorld(-0.096, -0.984, -0.151);
 const MEASURED_WATCH_GRIP_Y_WORLD_RAW = headDiagnosticToDefaultWorld(-0.965, 0.129, -0.230);
 const MEASURED_WATCH_GRIP_Z_WORLD = new THREE.Vector3()
@@ -41,6 +47,20 @@ function createWristMenuGripQuaternion(): THREE.Quaternion {
 }
 
 export const WRIST_MENU_GRIP_QUATERNION = createWristMenuGripQuaternion();
+
+function createWristMenuGripOffset() {
+  // Move the calibrated book-facing panel 10 cm along its own +Z direction,
+  // which is toward the viewer in the measured watch pose.
+  const faceOffset = new THREE.Vector3(0, 0, WRIST_MENU_FACE_OFFSET_METERS)
+    .applyQuaternion(WRIST_MENU_GRIP_QUATERNION);
+  return Object.freeze({
+    x: WRIST_MENU_BASE_GRIP_OFFSET.x + faceOffset.x,
+    y: WRIST_MENU_BASE_GRIP_OFFSET.y + faceOffset.y,
+    z: WRIST_MENU_BASE_GRIP_OFFSET.z + faceOffset.z,
+  });
+}
+
+export const WRIST_MENU_GRIP_OFFSET = createWristMenuGripOffset();
 
 export function applyWristMenuGripPlacement(group: THREE.Object3D): void {
   group.position.set(
