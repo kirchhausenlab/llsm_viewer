@@ -12,6 +12,7 @@ export function applyWristMenuGripPlacement(group: THREE.Object3D): void {
     WRIST_MENU_GRIP_OFFSET.y,
     WRIST_MENU_GRIP_OFFSET.z,
   );
-  // Leave the panel normal on grip +Z so the watch face stays upright in the watch pose.
-  group.rotation.set(0, 0, 0);
+  // In the watch pose, grip +Z is the controller's bottom/magazine direction.
+  // Face the panel back toward the viewer while keeping grip +Y as the panel up axis.
+  group.rotation.set(0, Math.PI, 0);
 }

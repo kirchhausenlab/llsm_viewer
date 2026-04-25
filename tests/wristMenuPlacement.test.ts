@@ -16,7 +16,7 @@ function assertVectorClose(actual: THREE.Vector3, expected: THREE.Vector3): void
   );
 }
 
-test('wrist menu placement keeps the wrist offset and faces out from the grip', () => {
+test('wrist menu placement keeps the wrist offset and faces the watch pose viewer', () => {
   const group = new THREE.Group();
   group.position.set(1, 2, 3);
   group.rotation.set(-Math.PI / 2, Math.PI / 3, Math.PI / 4);
@@ -36,6 +36,6 @@ test('wrist menu placement keeps the wrist offset and faces out from the grip', 
   const panelForward = new THREE.Vector3(0, 0, 1).applyQuaternion(group.quaternion).normalize();
   const panelUp = new THREE.Vector3(0, 1, 0).applyQuaternion(group.quaternion).normalize();
 
-  assertVectorClose(panelForward, new THREE.Vector3(0, 0, 1));
+  assertVectorClose(panelForward, new THREE.Vector3(0, 0, -1));
   assertVectorClose(panelUp, new THREE.Vector3(0, 1, 0));
 });
