@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 
 import { renderVrTracksHud } from '../src/components/viewers/volume-viewer/vr/hudRenderersTracks.ts';
 import { renderVrChannelsHud } from '../src/components/viewers/volume-viewer/vr/hudRenderersChannels.ts';
+import { renderVrWristMenuHud } from '../src/components/viewers/volume-viewer/vr/hudRenderersWristMenu.ts';
 import {
   RENDER_STYLE_BL,
   RENDER_STYLE_SLICE,
@@ -13,6 +14,7 @@ import type {
   VrTracksHud,
   VrTracksInteractiveRegion,
   VrTracksState,
+  VrWristMenuHud,
 } from '../src/components/viewers/volume-viewer/vr/types.ts';
 
 console.log('Starting hudRenderers tests');
@@ -82,6 +84,60 @@ function createMockCanvasContext(): MockCanvasContext {
     },
   }) as MockCanvasContext;
 }
+
+(() => {
+  const ctx = createMockCanvasContext();
+  const hud = {
+    panelCanvas: { width: 1180, height: 1040 },
+    panelContext: ctx,
+    panelDisplayWidth: 1180,
+    panelDisplayHeight: 1040,
+    panelTexture: { needsUpdate: false },
+    pixelRatio: 1,
+    regions: [],
+    hoverRegion: null,
+    actions: [],
+    debugPoseDiagnostic: {
+      note: '',
+      index: 0,
+      handedness: 'left',
+      positions: {
+        grip: [0, 0, 0],
+        controller: [0, 0, 0],
+        hud: [0, 0, 0],
+      },
+      controllerAxes: {
+        rayMinusZ: { world: [1, 0, 0], head: { right: 1, up: 0, forward: 0 } },
+        plusX: { world: [0, 1, 0], head: { right: 0, up: 1, forward: 0 } },
+        plusY: { world: [0, 0, 1], head: { right: 0, up: 0, forward: -1 } },
+        plusZ: { world: [-1, 0, 0], head: { right: -1, up: 0, forward: 0 } },
+      },
+      gripAxes: {
+        plusX: { world: [1, 0, 0], head: { right: 1, up: 0, forward: 0 } },
+        plusY: { world: [0, 1, 0], head: { right: 0, up: 1, forward: 0 } },
+        plusZ: { world: [0, 0, -1], head: { right: 0, up: 0, forward: 1 } },
+        minusZ: { world: [0, 0, 1], head: { right: 0, up: 0, forward: -1 } },
+      },
+      hudAxes: {
+        rightPlusX: { world: [-1, 0, 0], head: { right: -1, up: 0, forward: 0 } },
+        upPlusY: { world: [0, 1, 0], head: { right: 0, up: 1, forward: 0 } },
+        frontPlusZ: { world: [0, 0, 1], head: { right: 0, up: 0, forward: -1 } },
+        backMinusZ: { world: [0, 0, -1], head: { right: 0, up: 0, forward: 1 } },
+      },
+      hudLocalTransform: {
+        position: [0, 0.055, 0.18],
+        rotationXYZRadians: [0, 3.142, 0],
+      },
+    },
+  } as unknown as VrWristMenuHud;
+
+  renderVrWristMenuHud(hud, []);
+
+  assert.ok(ctx.__fillTextCalls.includes('Pose Debug'));
+  assert.ok(ctx.__fillTextCalls.includes('ctrl ray -Z'));
+  assert.ok(ctx.__fillTextCalls.includes('hud front +Z'));
+  assert.equal((hud.panelTexture as unknown as { needsUpdate: boolean }).needsUpdate, true);
+})();
 
 (() => {
   const ctx = createMockCanvasContext();

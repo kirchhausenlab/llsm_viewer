@@ -361,6 +361,50 @@ export type VrWristMenuInteractiveRegion = {
   bounds: { minX: number; maxX: number; minY: number; maxY: number };
 };
 
+export type VrWristMenuVectorTuple = [number, number, number];
+
+export type VrWristMenuDirectionSnapshot = {
+  world: VrWristMenuVectorTuple;
+  head?: {
+    right: number;
+    up: number;
+    forward: number;
+  };
+};
+
+export type VrWristMenuPoseDiagnostic = {
+  note: string;
+  index: number;
+  handedness: 'none' | 'left' | 'right' | null;
+  positions: {
+    grip: VrWristMenuVectorTuple;
+    controller: VrWristMenuVectorTuple;
+    hud: VrWristMenuVectorTuple | null;
+  };
+  controllerAxes: {
+    rayMinusZ: VrWristMenuDirectionSnapshot;
+    plusX: VrWristMenuDirectionSnapshot;
+    plusY: VrWristMenuDirectionSnapshot;
+    plusZ: VrWristMenuDirectionSnapshot;
+  };
+  gripAxes: {
+    plusX: VrWristMenuDirectionSnapshot;
+    plusY: VrWristMenuDirectionSnapshot;
+    plusZ: VrWristMenuDirectionSnapshot;
+    minusZ: VrWristMenuDirectionSnapshot;
+  };
+  hudAxes: {
+    rightPlusX: VrWristMenuDirectionSnapshot | null;
+    upPlusY: VrWristMenuDirectionSnapshot | null;
+    frontPlusZ: VrWristMenuDirectionSnapshot | null;
+    backMinusZ: VrWristMenuDirectionSnapshot | null;
+  };
+  hudLocalTransform: {
+    position: VrWristMenuVectorTuple;
+    rotationXYZRadians: VrWristMenuVectorTuple;
+  } | null;
+};
+
 export type VrWristMenuHud = {
   group: THREE.Group;
   background: THREE.Mesh;
@@ -377,6 +421,7 @@ export type VrWristMenuHud = {
   width: number;
   height: number;
   hoverRegion: VrWristMenuInteractiveRegion | null;
+  debugPoseDiagnostic: VrWristMenuPoseDiagnostic | null;
 };
 
 export type VolumeScaleState = {

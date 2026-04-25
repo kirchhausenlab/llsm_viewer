@@ -845,5 +845,6 @@ export function createVrWristMenuHud(): VrWristMenuHud | null {
     width: VR_WRIST_MENU_PANEL_WIDTH,
     height: VR_WRIST_MENU_PANEL_HEIGHT,
     hoverRegion: null,
+    debugPoseDiagnostic: null,
   };
 }
