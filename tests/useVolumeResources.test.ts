@@ -662,6 +662,8 @@ await (async () => {
   assert.ok(mipResource);
   const mipMaterial = mipResource.mesh.material as THREE.ShaderMaterial;
   assert.ok(mipMaterial.fragmentShader.includes('#define VOLUME_STYLE_MIP'));
+  assert.ok(mipMaterial.fragmentShader.includes('#define VOLUME_SOURCE_DIRECT'));
+  assert.equal(mipResource.volumeShaderSourceMode, 'direct');
 
   layers = [{ ...layers[0], renderStyle: 1 }];
   hook.rerender();
@@ -670,6 +672,8 @@ await (async () => {
   const isoMaterial = isoResource.mesh.material as THREE.ShaderMaterial;
   assert.notStrictEqual(isoMaterial, mipMaterial);
   assert.ok(isoMaterial.fragmentShader.includes('#define VOLUME_STYLE_ISO'));
+  assert.ok(isoMaterial.fragmentShader.includes('#define VOLUME_SOURCE_DIRECT'));
+  assert.equal(isoResource.volumeShaderSourceMode, 'direct');
 
   layers = [
     {
@@ -689,6 +693,8 @@ await (async () => {
   const blUniforms = blMaterial.uniforms as Record<string, { value: unknown }>;
   assert.notStrictEqual(blMaterial, isoMaterial);
   assert.ok(blMaterial.fragmentShader.includes('#define VOLUME_STYLE_BL'));
+  assert.ok(blMaterial.fragmentShader.includes('#define VOLUME_SOURCE_DIRECT'));
+  assert.equal(blResource.volumeShaderSourceMode, 'direct');
   assert.ok(blMaterial.fragmentShader.includes('compute_crosshair_axis_event'));
   assert.ok(blMaterial.fragmentShader.includes('axisXEvent = compute_crosshair_axis_event'));
   assert.ok(blMaterial.fragmentShader.includes('sampleT >= axisXEvent.x'));
@@ -746,6 +752,8 @@ await (async () => {
   const nearestMaterial = nearestResource.mesh.material as THREE.ShaderMaterial;
   const nearestUniforms = nearestMaterial.uniforms as Record<string, { value: unknown }>;
   assert.ok(nearestMaterial.fragmentShader.includes('#define VOLUME_NEAREST_VARIANT'));
+  assert.ok(nearestMaterial.fragmentShader.includes('#define VOLUME_SOURCE_DIRECT'));
+  assert.equal(nearestResource.volumeShaderSourceMode, 'direct');
   assert.equal(nearestMaterial.transparent, true);
   assert.equal(nearestMaterial.depthWrite, false);
   assert.equal(nearestMaterial.depthTest, true);
@@ -2404,6 +2412,9 @@ await (async () => {
     string,
     { value: unknown }
   >;
+  const material = resource.mesh.material as THREE.ShaderMaterial;
+  assert.equal(resource.volumeShaderSourceMode, 'atlas');
+  assert.ok(material.fragmentShader.includes('#define VOLUME_SOURCE_ATLAS'));
   assert.equal(uniforms.u_brickAtlasEnabled?.value, 1);
   assert.deepEqual((uniforms.u_brickAtlasSize?.value as THREE.Vector3).toArray(), [1, 1, 4]);
   assert.deepEqual((uniforms.u_brickAtlasSlotGrid?.value as THREE.Vector3).toArray(), [1, 1, 4]);

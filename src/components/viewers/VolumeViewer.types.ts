@@ -26,6 +26,7 @@ import type {
 import type { ViewerProp } from '../../types/viewerProps';
 import type { TemporalResolutionMetadata, VoxelResolutionValues } from '../../types/voxelResolution';
 import type { RenderStyle, SamplingMode } from '../../state/layerSettings';
+import type { VolumeRenderShaderSourceMode } from '../../shaders/volumeRenderShader';
 import type { TrackSetState } from '../../types/channelTracks';
 import type { DesktopRenderResolution } from '../../types/renderResolution';
 import type { PlaybackIndexWindow } from '../../shared/utils';
@@ -300,6 +301,7 @@ export type VolumeResources = {
   renderStyle?: RenderStyle;
   projectionMode?: ViewerProjectionMode;
   samplingMode: 'linear' | 'nearest';
+  volumeShaderSourceMode?: VolumeRenderShaderSourceMode;
   sliceBuffer?: Uint8Array | Float32Array | null;
   brickPageTable?: VolumeBrickPageTable | null;
   brickOccupancyTexture?: THREE.Data3DTexture | null;

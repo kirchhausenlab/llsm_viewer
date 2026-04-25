@@ -28,7 +28,11 @@ import {
   prepareSliceTextureFromBrickAtlas,
 } from './rendering';
 import { SliceRenderShader } from '../../../shaders/sliceRenderShader';
-import { getVolumeRenderShaderVariantKey, VolumeRenderShaderVariants } from '../../../shaders/volumeRenderShader';
+import {
+  getVolumeRenderShaderVariantKey,
+  VolumeRenderShaderVariants,
+  type VolumeRenderShaderSourceMode,
+} from '../../../shaders/volumeRenderShader';
 import { getCachedTextureData } from '../../../core/textureCache';
 import {
   createSegmentationColorTable,
@@ -551,6 +555,120 @@ function createRoiBlOcclusionMaterial(
   material.blendSrcAlpha = THREE.ZeroFactor;
   material.blendDstAlpha = THREE.OneFactor;
   return material;
+}
+
+function resolvePreferredVolumeShaderSourceMode({
+  sourceUsesVolume,
+  pageTable,
+  brickAtlas,
+  disableBrickPageTableSampling,
+}: {
+  sourceUsesVolume: boolean;
+  pageTable: VolumeBrickPageTable | null;
+  brickAtlas: VolumeBrickAtlas | null;
+  disableBrickPageTableSampling: boolean;
+}): VolumeRenderShaderSourceMode {
+  if (brickAtlas) {
+    return 'atlas';
+  }
+  if (!pageTable || !sourceUsesVolume || disableBrickPageTableSampling) {
+    return 'direct';
+  }
+  return 'atlas';
+}
+
+function resolveBoundVolumeShaderSourceMode(
+  preferredSourceMode: VolumeRenderShaderSourceMode,
+  sourceUsesVolume: boolean,
+  uniforms: ShaderUniformMap,
+): VolumeRenderShaderSourceMode {
+  const atlasEnabled = Number(uniforms.u_brickAtlasEnabled?.value ?? 0) > 0.5;
+  if (atlasEnabled) {
+    return 'atlas';
+  }
+  if (preferredSourceMode === 'atlas' && !sourceUsesVolume) {
+    return 'atlas';
+  }
+  return 'direct';
+}
+
+function getVolumeShaderForSourceMode(
+  renderStyle: RenderStyle,
+  samplingMode: 'linear' | 'nearest',
+  projectionMode: ViewerProjectionMode,
+  sourceMode: VolumeRenderShaderSourceMode,
+): { uniforms: typeof VolumeRenderShaderVariants.mip.uniforms; vertexShader: string; fragmentShader: string } {
+  return VolumeRenderShaderVariants[
+    getVolumeRenderShaderVariantKey(renderStyle, samplingMode, projectionMode, sourceMode)
+  ];
+}
+
+function createVolumeShaderMaterial(
+  shader: { vertexShader: string; fragmentShader: string },
+  uniforms: ShaderUniformMap,
+  blending: THREE.Blending,
+): THREE.ShaderMaterial {
+  const material = new THREE.ShaderMaterial({
+    uniforms,
+    vertexShader: shader.vertexShader,
+    fragmentShader: shader.fragmentShader,
+    side: THREE.BackSide,
+    transparent: true,
+    blending,
+  });
+  material.depthWrite = false;
+  material.depthTest = true;
+  applyVolumeMaterialState(material, blending);
+  return material;
+}
+
+function ensureVolumeShaderMaterial({
+  resource,
+  renderStyle,
+  samplingMode,
+  projectionMode,
+  sourceMode,
+  blending,
+}: {
+  resource: VolumeResources;
+  renderStyle: RenderStyle;
+  samplingMode: 'linear' | 'nearest';
+  projectionMode: ViewerProjectionMode;
+  sourceMode: VolumeRenderShaderSourceMode;
+  blending: THREE.Blending;
+}): boolean {
+  if (resource.mode !== '3d') {
+    return false;
+  }
+  const shader = getVolumeShaderForSourceMode(renderStyle, samplingMode, projectionMode, sourceMode);
+  const previousMaterial = resource.mesh.material as THREE.ShaderMaterial;
+  if (
+    resource.projectionMode === projectionMode &&
+    resource.volumeShaderSourceMode === sourceMode &&
+    previousMaterial.fragmentShader === shader.fragmentShader
+  ) {
+    applyVolumeMaterialState(previousMaterial, blending);
+    return false;
+  }
+
+  const nextMaterial = createVolumeShaderMaterial(
+    shader,
+    previousMaterial.uniforms as ShaderUniformMap,
+    blending,
+  );
+  resource.mesh.material = nextMaterial;
+  disposeMaterial(previousMaterial);
+  resource.projectionMode = projectionMode;
+  resource.volumeShaderSourceMode = sourceMode;
+
+  if (resource.roiBlOcclusionAlphaMesh?.material) {
+    const previousAlphaMaterial = resource.roiBlOcclusionAlphaMesh.material as THREE.ShaderMaterial;
+    const nextAlphaMaterial = createRoiBlOcclusionMaterial(shader, nextMaterial.uniforms as ShaderUniformMap);
+    resource.roiBlOcclusionAlphaMesh.material = nextAlphaMaterial;
+    disposeMaterial(previousAlphaMaterial);
+  }
+
+  return true;
 }
 
 function syncRoiBlOcclusionMeshTransform(targetMesh: THREE.Mesh | null | undefined, sourceMesh: THREE.Mesh): void {
@@ -3539,6 +3657,12 @@ export function useVolumeResources({
       const shouldDisableDirectVolumeBrickPageTableSampling =
         layer.isSegmentation ||
         (preferDirectVolumeSampling && effectiveSamplingMode === 'linear');
+      const preferredVolumeShaderSourceMode = resolvePreferredVolumeShaderSourceMode({
+        sourceUsesVolume,
+        pageTable,
+        brickAtlas,
+        disableBrickPageTableSampling: shouldDisableDirectVolumeBrickPageTableSampling || preferDirectVolumeSampling,
+      });
       const layerAdditiveEnabled = resolveLayerAdditiveEnabled(
         additiveBlendingRef.current,
       );
@@ -3614,10 +3738,12 @@ export function useVolumeResources({
 	          texture.colorSpace = expectedTextureColorSpace;
           texture.needsUpdate = true;
 
-          const shader =
-            VolumeRenderShaderVariants[
-              getVolumeRenderShaderVariantKey(layer.renderStyle, effectiveSamplingMode, projectionMode)
-            ];
+          const shader = getVolumeShaderForSourceMode(
+            layer.renderStyle,
+            effectiveSamplingMode,
+            projectionMode,
+            preferredVolumeShaderSourceMode,
+          );
           const uniforms = THREE.UniformsUtils.clone(shader.uniforms);
           uniforms.u_data.value = texture;
           if (uniforms.u_isSegmentation) {
@@ -3656,17 +3782,7 @@ export function useVolumeResources({
             uniforms.u_additive.value = layerAdditiveEnabled ? 1 : 0;
           }
 
-          const material = new THREE.ShaderMaterial({
-            uniforms,
-            vertexShader: shader.vertexShader,
-            fragmentShader: shader.fragmentShader,
-            side: THREE.BackSide,
-            transparent: true,
-            blending: layerMaterialBlending,
-          });
-          material.depthWrite = false;
-          material.depthTest = true;
-          applyVolumeMaterialState(material, layerMaterialBlending);
+          const material = createVolumeShaderMaterial(shader, uniforms as ShaderUniformMap, layerMaterialBlending);
 
           const proxyWidth = Math.max(proxyVisibleBox.max[0] - proxyVisibleBox.min[0], 1e-3);
           const proxyHeight = Math.max(proxyVisibleBox.max[1] - proxyVisibleBox.min[1], 1e-3);
@@ -3705,6 +3821,7 @@ export function useVolumeResources({
             renderStyle: layer.renderStyle,
             projectionMode,
             samplingMode: effectiveSamplingMode,
+            volumeShaderSourceMode: preferredVolumeShaderSourceMode,
             brickPageTable: pageTable,
             brickOccupancyTexture: null,
             brickMinTexture: null,
@@ -3784,8 +3901,23 @@ export function useVolumeResources({
                       disableBrickPageTableSampling: true,
                       isSegmentation: true,
                     }
-                : undefined,
+                  : undefined,
           );
+          const activeVolumeShaderSourceMode = resolveBoundVolumeShaderSourceMode(
+            preferredVolumeShaderSourceMode,
+            sourceUsesVolume,
+            uniforms as ShaderUniformMap,
+          );
+          if (ensureVolumeShaderMaterial({
+            resource: nextResource,
+            renderStyle: layer.renderStyle,
+            samplingMode: effectiveSamplingMode,
+            projectionMode,
+            sourceMode: activeVolumeShaderSourceMode,
+            blending: layerMaterialBlending,
+          })) {
+            flushRendererRenderLists();
+          }
           assignGpuResidencyUpdater({
             resource: nextResource,
             mesh,
@@ -4060,10 +4192,12 @@ export function useVolumeResources({
 
         if (resources.mode === '3d' && layer.renderStyle === RENDER_STYLE_BL) {
           if (!resources.roiBlOcclusionAlphaMesh) {
-            const shader =
-              VolumeRenderShaderVariants[
-                getVolumeRenderShaderVariantKey(layer.renderStyle, effectiveSamplingMode, projectionMode)
-              ];
+            const shader = getVolumeShaderForSourceMode(
+              layer.renderStyle,
+              effectiveSamplingMode,
+              projectionMode,
+              resources.volumeShaderSourceMode ?? preferredVolumeShaderSourceMode,
+            );
             const materialUniforms = (mesh.material as THREE.ShaderMaterial).uniforms as ShaderUniformMap;
             const alphaMaterial = createRoiBlOcclusionMaterial(shader, materialUniforms);
             const alphaMesh = new THREE.Mesh(mesh.geometry, alphaMaterial);
@@ -4082,32 +4216,17 @@ export function useVolumeResources({
         }
 
         if (resources.mode === '3d' && resources.projectionMode !== projectionMode) {
-          const previousMaterial = mesh.material as THREE.ShaderMaterial;
-          const shader =
-            VolumeRenderShaderVariants[
-              getVolumeRenderShaderVariantKey(layer.renderStyle, effectiveSamplingMode, projectionMode)
-            ];
-          const nextMaterial = new THREE.ShaderMaterial({
-            uniforms: previousMaterial.uniforms,
-            vertexShader: shader.vertexShader,
-            fragmentShader: shader.fragmentShader,
-            side: THREE.BackSide,
-            transparent: true,
+          const materialChanged = ensureVolumeShaderMaterial({
+            resource: resources,
+            renderStyle: layer.renderStyle,
+            samplingMode: effectiveSamplingMode,
+            projectionMode,
+            sourceMode: resources.volumeShaderSourceMode ?? preferredVolumeShaderSourceMode,
             blending: layerMaterialBlending,
           });
-          nextMaterial.depthWrite = false;
-          nextMaterial.depthTest = true;
-          applyVolumeMaterialState(nextMaterial, layerMaterialBlending);
-          mesh.material = nextMaterial;
-          disposeMaterial(previousMaterial);
-          resources.projectionMode = projectionMode;
-          if (resources.roiBlOcclusionAlphaMesh && resources.roiBlOcclusionAlphaMesh.material) {
-            const previousAlphaMaterial = resources.roiBlOcclusionAlphaMesh.material as THREE.ShaderMaterial;
-            const nextAlphaMaterial = createRoiBlOcclusionMaterial(shader, nextMaterial.uniforms as ShaderUniformMap);
-            resources.roiBlOcclusionAlphaMesh.material = nextAlphaMaterial;
-            disposeMaterial(previousAlphaMaterial);
+          if (materialChanged) {
+            flushRendererRenderLists();
           }
-          flushRendererRenderLists();
         }
 
         const materialUniforms = (mesh.material as THREE.ShaderMaterial).uniforms as ShaderUniformMap;
@@ -4191,6 +4310,21 @@ export function useVolumeResources({
                       }
                     : undefined
             );
+          }
+          const activeVolumeShaderSourceMode = resolveBoundVolumeShaderSourceMode(
+            preferredVolumeShaderSourceMode,
+            sourceUsesVolume,
+            materialUniforms,
+          );
+          if (ensureVolumeShaderMaterial({
+            resource: resources,
+            renderStyle: layer.renderStyle,
+            samplingMode: effectiveSamplingMode,
+            projectionMode,
+            sourceMode: activeVolumeShaderSourceMode,
+            blending: layerMaterialBlending,
+          })) {
+            flushRendererRenderLists();
           }
           assignGpuResidencyUpdater({
             resource: resources,

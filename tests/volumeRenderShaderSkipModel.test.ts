@@ -95,6 +95,7 @@ function createPrng(seed: number): () => number {
 
 (() => {
   const nearestShader = VolumeRenderShaderVariants['mip-nearest'].fragmentShader;
+  assert.match(nearestShader, /#define VOLUME_SOURCE_DIRECT/);
   assert.match(
     nearestShader,
     /const int MAX_SEGMENTATION_STEPS = 4096;/,
@@ -163,6 +164,17 @@ function createPrng(seed: number): () => number {
     nearestShader,
     /if \(gradientMagnitude <= EPSILON\) \{\s*return vec3\(0\.0\);\s*\}/s,
   );
+})();
+
+(() => {
+  const directShader = VolumeRenderShaderVariants.mip.fragmentShader;
+  const atlasShader = VolumeRenderShaderVariants['mip-atlas'].fragmentShader;
+  assert.match(directShader, /#define VOLUME_SOURCE_DIRECT/);
+  assert.match(directShader, /return sample_full_volume_color\(texcoords, lod\);/);
+  assert.doesNotMatch(directShader, /if \(u_brickAtlasEnabled > 0\.5\)/);
+  assert.match(atlasShader, /#define VOLUME_SOURCE_ATLAS/);
+  assert.match(atlasShader, /return sample_brick_atlas_linear_lod\(texcoords, lod\);/);
+  assert.doesNotMatch(atlasShader, /if \(u_brickAtlasEnabled > 0\.5\)/);
 })();
 
 (() => {

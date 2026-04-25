@@ -1424,21 +1424,23 @@ const volumeRenderFragmentShader = /* glsl */ `
       if (is_background_masked(safeTexcoords)) {
         return vec4(0.0);
       }
-      #if defined(VOLUME_NEAREST_VARIANT)
-        if (u_brickAtlasEnabled > 0.5) {
+      #if defined(VOLUME_SOURCE_ATLAS)
+        #if defined(VOLUME_NEAREST_VARIANT)
           vec3 nearestVoxel = floor(safeTexcoords * max(u_brickVolumeSize, vec3(1.0)));
           return sample_brick_atlas_voxel(nearestVoxel);
-        }
-        return texture(u_data, safeTexcoords);
+        #else
+          if (u_nearestSampling > 0.5) {
+            vec3 nearestVoxel = floor(safeTexcoords * max(u_brickVolumeSize, vec3(1.0)));
+            return sample_brick_atlas_voxel(nearestVoxel);
+          }
+          return sample_brick_atlas_linear_lod(texcoords, lod);
+        #endif
       #else
-      if (u_brickAtlasEnabled > 0.5) {
-        if (u_nearestSampling > 0.5) {
-          vec3 nearestVoxel = floor(safeTexcoords * max(u_brickVolumeSize, vec3(1.0)));
-          return sample_brick_atlas_voxel(nearestVoxel);
-        }
-        return sample_brick_atlas_linear_lod(texcoords, lod);
-      }
-      return sample_full_volume_color(texcoords, lod);
+        #if defined(VOLUME_NEAREST_VARIANT)
+          return texture(u_data, safeTexcoords);
+        #else
+          return sample_full_volume_color(texcoords, lod);
+        #endif
       #endif
     }
 
@@ -1461,7 +1463,6 @@ const volumeRenderFragmentShader = /* glsl */ `
       vec2 uv = (vec2(paletteX, paletteY) + vec2(0.5)) / SEGMENTATION_PALETTE_DIMENSIONS;
       return texture2D(u_segmentationPalette, uv);
     }
-
     float sample_segmentation_brick_atlas_voxel_known_base(
       vec3 voxelCoords,
       vec3 brickCoords,
@@ -1519,10 +1520,11 @@ const volumeRenderFragmentShader = /* glsl */ `
     }
 
     vec3 segmentation_sample_volume_size() {
-      if (u_brickAtlasEnabled > 0.5) {
+      #if defined(VOLUME_SOURCE_ATLAS)
         return max(u_brickVolumeSize, vec3(1.0));
-      }
-      return max(u_segmentationVolumeSize, vec3(1.0));
+      #else
+        return max(u_segmentationVolumeSize, vec3(1.0));
+      #endif
     }
 
     float sample_segmentation_full_volume_label(vec3 texcoords) {
@@ -1539,22 +1541,24 @@ const volumeRenderFragmentShader = /* glsl */ `
     }
 
     float sample_segmentation_label_at_voxel(vec3 voxelCoords) {
-      if (u_brickAtlasEnabled > 0.5) {
+      #if defined(VOLUME_SOURCE_ATLAS)
         return sample_segmentation_brick_atlas_voxel(voxelCoords);
-      }
-      vec3 safeVolumeSize = max(u_segmentationVolumeSize, vec3(1.0));
-      vec3 clampedVoxel = clamp(floor(voxelCoords + vec3(0.5)), vec3(0.0), safeVolumeSize - vec3(1.0));
-      vec3 texcoords = (clampedVoxel + vec3(0.5)) / safeVolumeSize;
-      return sample_segmentation_full_volume_label(texcoords);
+      #else
+        vec3 safeVolumeSize = max(u_segmentationVolumeSize, vec3(1.0));
+        vec3 clampedVoxel = clamp(floor(voxelCoords + vec3(0.5)), vec3(0.0), safeVolumeSize - vec3(1.0));
+        vec3 texcoords = (clampedVoxel + vec3(0.5)) / safeVolumeSize;
+        return sample_segmentation_full_volume_label(texcoords);
+      #endif
     }
 
     float sample_segmentation_label(vec3 texcoords) {
       vec3 safeTexcoords = clamp(texcoords, vec3(0.0), vec3(1.0));
-      if (u_brickAtlasEnabled > 0.5) {
+      #if defined(VOLUME_SOURCE_ATLAS)
         vec3 nearestVoxel = floor(safeTexcoords * max(u_brickVolumeSize, vec3(1.0)));
         return sample_segmentation_brick_atlas_voxel(nearestVoxel);
-      }
-      return sample_segmentation_full_volume_label(safeTexcoords);
+      #else
+        return sample_segmentation_full_volume_label(safeTexcoords);
+      #endif
     }
 
     bool segmentation_texcoords_in_bounds(vec3 texcoords) {
@@ -1686,12 +1690,13 @@ const volumeRenderFragmentShader = /* glsl */ `
       if (is_background_masked(texcoords)) {
         return vec4(0.0);
       }
-      if (u_brickAtlasEnabled > 0.5) {
+      #if defined(VOLUME_SOURCE_ATLAS)
         vec3 atlasVolumeSize = max(u_brickVolumeSize, vec3(1.0));
         vec3 atlasVoxel = floor(clamp(texcoords, vec3(0.0), vec3(1.0)) * atlasVolumeSize);
         return sample_brick_atlas_voxel(atlasVoxel);
-      }
-      return texture(u_data, texcoords);
+      #else
+        return texture(u_data, texcoords);
+      #endif
     }
 
     bool nearest_voxel_in_bounds(vec3 voxelCoords, vec3 volumeSize) {
@@ -1782,10 +1787,11 @@ const volumeRenderFragmentShader = /* glsl */ `
     }
 
     vec3 resolve_nearest_sampling_volume_size() {
-      if (u_brickAtlasEnabled > 0.5) {
+      #if defined(VOLUME_SOURCE_ATLAS)
         return max(u_brickVolumeSize, vec3(1.0));
-      }
-      return max(u_size, vec3(1.0));
+      #else
+        return max(u_size, vec3(1.0));
+      #endif
     }
 
     vec3 resolve_nearest_entry_voxel_coords(vec3 front, vec3 traversalSize, vec3 rayDir) {
@@ -2195,13 +2201,6 @@ const volumeRenderFragmentShader = /* glsl */ `
         );
         vec3 voxelStep = step * safeVolumeSize;
         vec3 voxelCoords = floor(startVoxelCoords);
-        bool useBrickAtlas = u_brickAtlasEnabled > 0.5;
-        vec3 safeGrid = max(u_brickGridSize, vec3(1.0));
-        vec3 safeChunk = max(u_brickChunkSize, vec3(1.0));
-        vec3 atlasVolumeSize = safeVolumeSize;
-        if (useBrickAtlas) {
-          atlasVolumeSize = max(u_brickVolumeSize, vec3(1.0));
-        }
         vec3 hierarchyTextureSize = vec3(1.0);
         vec3 hierarchyVolumeSize = vec3(1.0);
         vec3 hierarchyChunkSize = vec3(1.0);
@@ -2305,8 +2304,10 @@ const volumeRenderFragmentShader = /* glsl */ `
             traversedDistance = targetT;
             continue;
           }
-          vec4 colorSample = vec4(0.0);
-          if (useBrickAtlas) {
+          #if defined(VOLUME_SOURCE_ATLAS)
+            vec3 safeGrid = max(u_brickGridSize, vec3(1.0));
+            vec3 safeChunk = max(u_brickChunkSize, vec3(1.0));
+            vec3 atlasVolumeSize = max(u_brickVolumeSize, vec3(1.0));
             vec3 brickCoords = brick_coords_for_voxel(
               voxelCoords,
               safeGrid,
@@ -2314,16 +2315,16 @@ const volumeRenderFragmentShader = /* glsl */ `
               atlasVolumeSize
             );
             vec4 atlasBaseInfo = atlas_base_for_brick(brickCoords, safeGrid);
-            colorSample = sample_brick_atlas_voxel_or_missing_base(
+            vec4 colorSample = sample_brick_atlas_voxel_or_missing_base(
               voxelCoords,
               brickCoords,
               atlasBaseInfo,
               safeChunk,
               atlasVolumeSize
             );
-          } else {
-            colorSample = sample_nearest_full_volume_voxel(voxelCoords);
-          }
+          #else
+            vec4 colorSample = sample_nearest_full_volume_voxel(voxelCoords);
+          #endif
           float rawVal = luminance(colorSample);
           float normalizedVal = normalize_intensity(rawVal);
           hasVisibleSample = true;
@@ -2930,28 +2931,27 @@ const volumeRenderFragmentShader = /* glsl */ `
     #endif
   `;
 
+type VolumeRenderShaderStyleVariantKey = 'mip' | 'mip-nearest' | 'iso' | 'bl';
+type VolumeRenderShaderSourceSuffix = '' | '-atlas';
+type VolumeRenderShaderProjectionSuffix = '' | '-orthographic';
+
+export type VolumeRenderShaderSourceMode = 'direct' | 'atlas';
 export type VolumeRenderShaderVariantKey =
-  | 'mip'
-  | 'mip-nearest'
-  | 'iso'
-  | 'bl'
-  | 'mip-orthographic'
-  | 'mip-nearest-orthographic'
-  | 'iso-orthographic'
-  | 'bl-orthographic';
+  `${VolumeRenderShaderStyleVariantKey}${VolumeRenderShaderSourceSuffix}${VolumeRenderShaderProjectionSuffix}`;
 
 const createVariantFragmentShader = (variant: VolumeRenderShaderVariantKey): string => {
   const orthographicDefine = variant.includes('orthographic') ? '#define VOLUME_CAMERA_ORTHOGRAPHIC\n' : '';
-  if (variant === 'iso' || variant === 'iso-orthographic') {
-    return `${orthographicDefine}#define VOLUME_STYLE_ISO\n${volumeRenderFragmentShader}`;
+  const sourceDefine = variant.includes('-atlas') ? '#define VOLUME_SOURCE_ATLAS\n' : '#define VOLUME_SOURCE_DIRECT\n';
+  if (variant.startsWith('iso')) {
+    return `${orthographicDefine}${sourceDefine}#define VOLUME_STYLE_ISO\n${volumeRenderFragmentShader}`;
   }
-  if (variant === 'bl' || variant === 'bl-orthographic') {
-    return `${orthographicDefine}#define VOLUME_STYLE_BL\n${volumeRenderFragmentShader}`;
+  if (variant.startsWith('bl')) {
+    return `${orthographicDefine}${sourceDefine}#define VOLUME_STYLE_BL\n${volumeRenderFragmentShader}`;
   }
-  if (variant === 'mip-nearest' || variant === 'mip-nearest-orthographic') {
-    return `${orthographicDefine}#define VOLUME_STYLE_MIP\n#define VOLUME_NEAREST_VARIANT\n${volumeRenderFragmentShader}`;
+  if (variant.startsWith('mip-nearest')) {
+    return `${orthographicDefine}${sourceDefine}#define VOLUME_STYLE_MIP\n#define VOLUME_NEAREST_VARIANT\n${volumeRenderFragmentShader}`;
   }
-  return `${orthographicDefine}#define VOLUME_STYLE_MIP\n${volumeRenderFragmentShader}`;
+  return `${orthographicDefine}${sourceDefine}#define VOLUME_STYLE_MIP\n${volumeRenderFragmentShader}`;
 };
 
 const createVolumeRenderShaderVariant = (variant: VolumeRenderShaderVariantKey) => ({
@@ -2962,38 +2962,49 @@ const createVolumeRenderShaderVariant = (variant: VolumeRenderShaderVariantKey) 
 
 export const VolumeRenderShaderVariants = {
   mip: createVolumeRenderShaderVariant('mip'),
+  'mip-atlas': createVolumeRenderShaderVariant('mip-atlas'),
   'mip-orthographic': createVolumeRenderShaderVariant('mip-orthographic'),
+  'mip-atlas-orthographic': createVolumeRenderShaderVariant('mip-atlas-orthographic'),
   'mip-nearest': createVolumeRenderShaderVariant('mip-nearest'),
+  'mip-nearest-atlas': createVolumeRenderShaderVariant('mip-nearest-atlas'),
   'mip-nearest-orthographic': createVolumeRenderShaderVariant('mip-nearest-orthographic'),
+  'mip-nearest-atlas-orthographic': createVolumeRenderShaderVariant('mip-nearest-atlas-orthographic'),
   iso: createVolumeRenderShaderVariant('iso'),
+  'iso-atlas': createVolumeRenderShaderVariant('iso-atlas'),
   'iso-orthographic': createVolumeRenderShaderVariant('iso-orthographic'),
+  'iso-atlas-orthographic': createVolumeRenderShaderVariant('iso-atlas-orthographic'),
   bl: createVolumeRenderShaderVariant('bl'),
+  'bl-atlas': createVolumeRenderShaderVariant('bl-atlas'),
   'bl-orthographic': createVolumeRenderShaderVariant('bl-orthographic'),
+  'bl-atlas-orthographic': createVolumeRenderShaderVariant('bl-atlas-orthographic'),
 } as const;
 
 export const getVolumeRenderShaderVariantKey = (
   renderStyle: RenderStyle,
   samplingMode: 'linear' | 'nearest' = 'linear',
   projectionMode: ViewerProjectionMode = 'perspective',
+  sourceMode: VolumeRenderShaderSourceMode = 'direct',
 ): VolumeRenderShaderVariantKey => {
+  const sourceSuffix = sourceMode === 'atlas' ? '-atlas' : '';
   const orthographicSuffix = projectionMode === 'orthographic' ? '-orthographic' : '';
   if (renderStyle === RENDER_STYLE_ISO) {
-    return `iso${orthographicSuffix}` as VolumeRenderShaderVariantKey;
+    return `iso${sourceSuffix}${orthographicSuffix}` as VolumeRenderShaderVariantKey;
   }
   if (renderStyle === RENDER_STYLE_BL) {
-    return `bl${orthographicSuffix}` as VolumeRenderShaderVariantKey;
+    return `bl${sourceSuffix}${orthographicSuffix}` as VolumeRenderShaderVariantKey;
   }
   if (samplingMode === 'nearest') {
-    return `mip-nearest${orthographicSuffix}` as VolumeRenderShaderVariantKey;
+    return `mip-nearest${sourceSuffix}${orthographicSuffix}` as VolumeRenderShaderVariantKey;
   }
-  return `mip${orthographicSuffix}` as VolumeRenderShaderVariantKey;
+  return `mip${sourceSuffix}${orthographicSuffix}` as VolumeRenderShaderVariantKey;
 };
 
 export const getVolumeRenderShaderVariant = (
   renderStyle: RenderStyle,
   samplingMode: 'linear' | 'nearest' = 'linear',
   projectionMode: ViewerProjectionMode = 'perspective',
-) => VolumeRenderShaderVariants[getVolumeRenderShaderVariantKey(renderStyle, samplingMode, projectionMode)];
+  sourceMode: VolumeRenderShaderSourceMode = 'direct',
+) => VolumeRenderShaderVariants[getVolumeRenderShaderVariantKey(renderStyle, samplingMode, projectionMode, sourceMode)];
 
 // Backward-compatible default variant for existing imports.
 export const VolumeRenderShader = VolumeRenderShaderVariants.mip;
