@@ -243,10 +243,13 @@ export function updateVolumeHandles(params: UpdateVolumeHandlesParams) {
   const centerUnscaled = params.volumeRootCenterUnscaledRef.current;
   const halfExtents = params.volumeRootHalfExtentsRef.current;
   const translationLocal = params.vrHandleLocalPointRef.current;
+  const translationVerticalOffset =
+    (halfExtents.y + VR_TRANSLATION_HANDLE_OFFSET) /
+    Math.max(1e-6, normalizationScale * anisotropyScale.y);
 
   translationLocal.set(
     centerUnscaled.x,
-    centerUnscaled.y + (halfExtents.y + VR_TRANSLATION_HANDLE_OFFSET) / Math.max(1e-6, normalizationScale * anisotropyScale.y),
+    centerUnscaled.y - translationVerticalOffset,
     centerUnscaled.z,
   );
 
@@ -261,7 +264,7 @@ export function updateVolumeHandles(params: UpdateVolumeHandlesParams) {
   }
 
   const lateralOffset = (halfExtents.x + VR_ROTATION_HANDLE_OFFSET) / Math.max(1e-6, normalizationScale * anisotropyScale.x);
-  const verticalOffset = -(halfExtents.y + VR_ROTATION_HANDLE_OFFSET) / Math.max(1e-6, normalizationScale * anisotropyScale.y);
+  const verticalOffset = (halfExtents.y + VR_ROTATION_HANDLE_OFFSET) / Math.max(1e-6, normalizationScale * anisotropyScale.y);
   const forwardOffset = (halfExtents.z + VR_PITCH_HANDLE_FORWARD_OFFSET) / Math.max(1e-6, normalizationScale * anisotropyScale.z);
 
   yawHandles.forEach((handle, index) => {
@@ -297,9 +300,12 @@ export function updateVolumeHandles(params: UpdateVolumeHandlesParams) {
   }
 
   if (scaleHandle) {
+    const scaleVerticalOffset =
+      (halfExtents.y + VR_SCALE_HANDLE_OFFSET) /
+      Math.max(1e-6, normalizationScale * anisotropyScale.y);
     scaleHandle.position.set(
       centerUnscaled.x + (halfExtents.x + VR_SCALE_HANDLE_OFFSET) / Math.max(1e-6, normalizationScale * anisotropyScale.x),
-      centerUnscaled.y + (halfExtents.y + VR_SCALE_HANDLE_OFFSET) / Math.max(1e-6, normalizationScale * anisotropyScale.y),
+      centerUnscaled.y - scaleVerticalOffset,
       centerUnscaled.z,
     );
     scaleHandle.scale.set(

@@ -97,45 +97,13 @@ function createMockCanvasContext(): MockCanvasContext {
     regions: [],
     hoverRegion: null,
     actions: [],
-    debugPoseDiagnostic: {
-      note: '',
-      index: 0,
-      handedness: 'left',
-      positions: {
-        grip: [0, 0, 0],
-        controller: [0, 0, 0],
-        hud: [0, 0, 0],
-      },
-      controllerAxes: {
-        rayMinusZ: { world: [1, 0, 0], head: { right: 1, up: 0, forward: 0 } },
-        plusX: { world: [0, 1, 0], head: { right: 0, up: 1, forward: 0 } },
-        plusY: { world: [0, 0, 1], head: { right: 0, up: 0, forward: -1 } },
-        plusZ: { world: [-1, 0, 0], head: { right: -1, up: 0, forward: 0 } },
-      },
-      gripAxes: {
-        plusX: { world: [1, 0, 0], head: { right: 1, up: 0, forward: 0 } },
-        plusY: { world: [0, 1, 0], head: { right: 0, up: 1, forward: 0 } },
-        plusZ: { world: [0, 0, -1], head: { right: 0, up: 0, forward: 1 } },
-        minusZ: { world: [0, 0, 1], head: { right: 0, up: 0, forward: -1 } },
-      },
-      hudAxes: {
-        rightPlusX: { world: [-1, 0, 0], head: { right: -1, up: 0, forward: 0 } },
-        upPlusY: { world: [0, 1, 0], head: { right: 0, up: 1, forward: 0 } },
-        frontPlusZ: { world: [0, 0, 1], head: { right: 0, up: 0, forward: -1 } },
-        backMinusZ: { world: [0, 0, -1], head: { right: 0, up: 0, forward: 1 } },
-      },
-      hudLocalTransform: {
-        position: [0, 0.055, 0.18],
-        rotationXYZRadians: [0, 3.142, 0],
-      },
-    },
   } as unknown as VrWristMenuHud;
 
   renderVrWristMenuHud(hud, []);
 
-  assert.ok(ctx.__fillTextCalls.includes('Pose Debug'));
-  assert.ok(ctx.__fillTextCalls.includes('ctrl ray -Z'));
-  assert.ok(ctx.__fillTextCalls.includes('hud front +Z'));
+  assert.ok(ctx.__fillTextCalls.includes('Menu'));
+  assert.ok(ctx.__fillTextCalls.includes('No menu commands'));
+  assert.ok(!ctx.__fillTextCalls.includes('Pose Debug'));
   assert.equal((hud.panelTexture as unknown as { needsUpdate: boolean }).needsUpdate, true);
 })();
 

@@ -8,7 +8,7 @@ import type {
   PlaybackState,
   WebXRFoveationManager,
 } from './types';
-import { VR_CONTROLLER_TOUCH_RADIUS, XR_DEPTH_NEAR } from './constants';
+import { VR_CONTROLLER_TOUCH_RADIUS, XR_DEPTH_FAR, XR_DEPTH_NEAR } from './constants';
 import { createVrWristMenuHud } from './hudFactory';
 import { applyWristMenuGripPlacement } from './wristMenuPlacement';
 
@@ -226,12 +226,17 @@ export class VrSessionManager {
     const camera = this.cameraRef.current;
     if (camera && camera.near > XR_DEPTH_NEAR) {
       camera.near = XR_DEPTH_NEAR;
+    }
+    if (camera && camera.far < XR_DEPTH_FAR) {
+      camera.far = XR_DEPTH_FAR;
+    }
+    if (camera) {
       camera.updateProjectionMatrix();
     }
     try {
       session.updateRenderState({
         depthNear: XR_DEPTH_NEAR,
-        depthFar: Math.max(camera?.far ?? 1000, XR_DEPTH_NEAR * 2),
+        depthFar: XR_DEPTH_FAR,
       });
     } catch (error) {
       console.warn('Failed to update XR depth range', error);
@@ -414,6 +419,7 @@ export class VrSessionManager {
         touchIndicatorMaterial,
       );
       touchIndicator.visible = false;
+      controller.add(touchIndicator);
 
       const wristMenuHud = createVrWristMenuHud();
       if (wristMenuHud) {

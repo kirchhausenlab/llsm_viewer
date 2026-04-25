@@ -112,7 +112,6 @@ export function createControllerEntryConfigurator(
     entry.onSqueezeStart = () => {
       handleControllerSqueezeStart(entry, index, {
         vrPropsRef,
-        cameraRef,
         log,
       });
     };

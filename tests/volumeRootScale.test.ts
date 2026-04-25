@@ -6,6 +6,7 @@ import {
   resolveVolumeRootScale,
   resolveInitialVrVolumeBaseOffset,
   resolveInitialVrVolumePlacement,
+  updateVolumeHandles,
 } from '../src/components/viewers/volume-viewer/vr/volume.ts';
 import { computeHudFrameFromVolume } from '../src/components/viewers/volume-viewer/vr/hud.ts';
 
@@ -41,6 +42,45 @@ const approxEqual = (actual: number, expected: number, tolerance = 1e-6) => {
     y: -1,
     z: -1,
   });
+})();
+
+(() => {
+  const center = new THREE.Vector3(4.5, 3.5, 2.5);
+  const translationHandle = new THREE.Mesh();
+  const scaleHandle = new THREE.Mesh();
+  const pitchHandle = new THREE.Mesh();
+  const yawHandles = [new THREE.Mesh(), new THREE.Mesh()];
+  updateVolumeHandles({
+    rendererRef: { current: { xr: { isPresenting: true } } as unknown as THREE.WebGLRenderer },
+    volumeRootGroupRef: { current: new THREE.Group() },
+    currentDimensionsRef: { current: { width: 10, height: 8, depth: 6 } },
+    hasActive3DLayerRef: { current: true },
+    volumeNormalizationScaleRef: { current: 1 },
+    volumeAnisotropyScaleRef: { current: { x: 1, y: 1, z: 1 } },
+    volumeUserScaleRef: { current: 1 },
+    volumeRootCenterUnscaledRef: { current: center },
+    volumeRootHalfExtentsRef: { current: new THREE.Vector3(4.5, 3.5, 2.5) },
+    vrHandleLocalPointRef: { current: new THREE.Vector3() },
+    vrTranslationHandleRef: { current: translationHandle },
+    vrVolumeScaleHandleRef: { current: scaleHandle },
+    vrVolumeYawHandlesRef: { current: yawHandles },
+    vrVolumePitchHandleRef: { current: pitchHandle },
+  });
+
+  assert.ok(
+    translationHandle.position.y < center.y,
+    `expected translation handle to be vertically mirrored above the volume, got y=${translationHandle.position.y}`,
+  );
+  assert.ok(
+    scaleHandle.position.y < center.y,
+    `expected scale handle to be vertically mirrored above the volume, got y=${scaleHandle.position.y}`,
+  );
+  assert.ok(
+    pitchHandle.position.y > center.y,
+    `expected pitch handle to be vertically mirrored below the volume, got y=${pitchHandle.position.y}`,
+  );
+  assert.equal(yawHandles[0].position.y, center.y);
+  assert.equal(yawHandles[1].position.y, center.y);
 })();
 
 (() => {

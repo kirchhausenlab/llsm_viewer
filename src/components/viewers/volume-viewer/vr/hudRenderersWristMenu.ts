@@ -6,10 +6,8 @@ import {
   vrWristMenuFont,
 } from './constants';
 import type {
-  VrWristMenuDirectionSnapshot,
   VrWristMenuHud,
   VrWristMenuInteractiveRegion,
-  VrWristMenuVectorTuple,
 } from './types';
 
 const GROUP_COLUMNS: Array<Array<VolumeViewerVrMenuAction['group']>> = [
@@ -28,9 +26,6 @@ const OUTER_PADDING_X = 28;
 const OUTER_PADDING_TOP = 30;
 const HEADER_HEIGHT = 62;
 const COLUMN_GAP = 18;
-const DEBUG_PANEL_GAP = 18;
-const DEBUG_PANEL_HEIGHT = 352;
-const DEBUG_ROW_HEIGHT = 30;
 
 export function createWristMenuActionsSignature(actions: readonly VolumeViewerVrMenuAction[]): string {
   return actions
@@ -92,81 +87,6 @@ function drawRoundedRect(
   context.closePath();
 }
 
-function formatTuple(tuple: VrWristMenuVectorTuple): string {
-  return `[${tuple.map((value) => value.toFixed(3)).join(', ')}]`;
-}
-
-function formatDirection(snapshot: VrWristMenuDirectionSnapshot | null): string {
-  if (!snapshot) {
-    return 'n/a';
-  }
-  const head = snapshot.head
-    ? `H[r ${snapshot.head.right.toFixed(3)}, u ${snapshot.head.up.toFixed(3)}, f ${snapshot.head.forward.toFixed(3)}]`
-    : 'H[n/a]';
-  return `W${formatTuple(snapshot.world)} ${head}`;
-}
-
-function drawPoseDiagnostic(
-  context: CanvasRenderingContext2D,
-  hud: VrWristMenuHud,
-  displayWidth: number,
-  startY: number,
-): number {
-  const diagnostic = hud.debugPoseDiagnostic;
-  if (!diagnostic) {
-    return 0;
-  }
-
-  const x = OUTER_PADDING_X;
-  const y = startY;
-  const width = displayWidth - OUTER_PADDING_X * 2;
-  drawRoundedRect(context, x, y, width, DEBUG_PANEL_HEIGHT, 10);
-  context.fillStyle = '#17202b';
-  context.fill();
-  context.strokeStyle = 'rgba(157, 204, 255, 0.48)';
-  context.lineWidth = 2;
-  context.stroke();
-
-  context.textAlign = 'left';
-  context.textBaseline = 'middle';
-  context.fillStyle = '#f7fbff';
-  context.font = vrWristMenuFont('700', 27);
-  context.fillText('Pose Debug', x + 18, y + 30);
-
-  context.font = vrWristMenuFont('600', 20);
-  context.fillStyle = '#aebed2';
-  context.fillText('H=[right, up, forward]. Goal: ray r +1, front f -1, up u +1.', x + 178, y + 30);
-
-  const rows: Array<[string, string]> = [
-    ['ctrl ray -Z', formatDirection(diagnostic.controllerAxes.rayMinusZ)],
-    ['grip +X', formatDirection(diagnostic.gripAxes.plusX)],
-    ['grip +Y', formatDirection(diagnostic.gripAxes.plusY)],
-    ['grip +Z', formatDirection(diagnostic.gripAxes.plusZ)],
-    ['hud front +Z', formatDirection(diagnostic.hudAxes.frontPlusZ)],
-    ['hud up +Y', formatDirection(diagnostic.hudAxes.upPlusY)],
-    ['hud right +X', formatDirection(diagnostic.hudAxes.rightPlusX)],
-    [
-      'hud local',
-      diagnostic.hudLocalTransform
-        ? `pos ${formatTuple(diagnostic.hudLocalTransform.position)} rot ${formatTuple(diagnostic.hudLocalTransform.rotationXYZRadians)}`
-        : 'n/a',
-    ],
-  ];
-
-  let rowY = y + 68;
-  for (const [label, value] of rows) {
-    context.fillStyle = '#7f91a7';
-    context.font = vrWristMenuFont('700', 20);
-    context.fillText(label, x + 18, rowY);
-    context.fillStyle = '#f1f6fd';
-    context.font = vrWristMenuFont('600', 22);
-    context.fillText(value, x + 180, rowY);
-    rowY += DEBUG_ROW_HEIGHT;
-  }
-
-  return DEBUG_PANEL_HEIGHT + DEBUG_PANEL_GAP;
-}
-
 export function renderVrWristMenuHud(
   hud: VrWristMenuHud,
   actions: readonly VolumeViewerVrMenuAction[],
@@ -207,14 +127,7 @@ export function renderVrWristMenuHud(
     groupedActions.get(action.group)?.push(action);
   }
 
-  const diagnosticHeight = drawPoseDiagnostic(
-    context,
-    hud,
-    displayWidth,
-    OUTER_PADDING_TOP + HEADER_HEIGHT + 16,
-  );
-
-  const contentTop = OUTER_PADDING_TOP + HEADER_HEIGHT + 24 + diagnosticHeight;
+  const contentTop = OUTER_PADDING_TOP + HEADER_HEIGHT + 24;
   const contentWidth = displayWidth - OUTER_PADDING_X * 2;
   const columnWidth = (contentWidth - COLUMN_GAP * (GROUP_COLUMNS.length - 1)) / GROUP_COLUMNS.length;
   const nextRegions: VrWristMenuInteractiveRegion[] = [];

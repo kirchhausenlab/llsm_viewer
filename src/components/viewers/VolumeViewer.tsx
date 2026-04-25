@@ -41,6 +41,7 @@ import { useVolumeViewerRefSync } from './volume-viewer/useVolumeViewerRefSync';
 import { useVolumeViewerSurfaceBinding } from './volume-viewer/useVolumeViewerSurfaceBinding';
 import { useVolumeViewerTransformBindings } from './volume-viewer/useVolumeViewerTransformBindings';
 import { resolveVolumeViewerVrRuntime } from './volume-viewer/volumeViewerVrRuntime';
+import { XR_DEPTH_FAR, XR_DEPTH_NEAR } from './volume-viewer/vr/constants';
 import {
   resolvePlaybackWarmupGateWaitMs,
   resetPlaybackWarmupGateState,
@@ -1500,6 +1501,19 @@ function VolumeViewer({
     if (!camera) {
       return;
     }
+    if (rendererRef.current?.xr?.isPresenting) {
+      if (camera instanceof THREE.PerspectiveCamera) {
+        const clippingChanged =
+          Math.abs(camera.near - XR_DEPTH_NEAR) > 1e-6 ||
+          Math.abs(camera.far - XR_DEPTH_FAR) > 1e-4;
+        if (clippingChanged) {
+          camera.near = XR_DEPTH_NEAR;
+          camera.far = XR_DEPTH_FAR;
+          camera.updateProjectionMatrix();
+        }
+      }
+      return;
+    }
     const bounds = resolveSceneWorldBounds(currentDimensionsRef.current, volumeRootGroupRef.current);
     if (!bounds) {
       return;
@@ -1511,7 +1525,7 @@ function VolumeViewer({
     camera.near = near;
     camera.far = far;
     camera.updateProjectionMatrix();
-  }, [currentDimensionsRef, volumeRootGroupRef]);
+  }, [currentDimensionsRef, rendererRef, volumeRootGroupRef]);
 
   const renderBackgroundPass = useCallback((renderer: THREE.WebGLRenderer, camera: DesktopViewerCamera | null) => {
     renderer.clear(true, true, true);

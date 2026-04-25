@@ -31,8 +31,6 @@ import { resolveControllerUiCandidates } from './controllerRayHudCandidates';
 import { applyControllerHudTransforms } from './controllerRayHudTransforms';
 import { resolveControllerTrackIntersection } from './controllerRayTrackIntersections';
 import { finalizeControllerRayFrame } from './controllerRayFrameFinalize';
-import { renderVrWristMenuHud } from './hudRenderersWristMenu';
-import { createWristMenuPoseDiagnostic } from './wristMenuDiagnostics';
 
 export type ControllerRayDependencies = {
   rendererRef: MutableRefObject<THREE.WebGLRenderer | null>;
@@ -290,15 +288,6 @@ export function createControllerRayUpdater(
       entry.rayDirection.set(0, 0, -1).applyMatrix4(controllerTempMatrix).normalize();
       entry.raycaster.ray.origin.copy(entry.rayOrigin);
       entry.raycaster.ray.direction.copy(entry.rayDirection);
-
-      if (entry.wristMenuActive && entry.wristMenuHud?.group.visible) {
-        entry.wristMenuHud.debugPoseDiagnostic = createWristMenuPoseDiagnostic(
-          entry,
-          index,
-          cameraInstance,
-        );
-        renderVrWristMenuHud(entry.wristMenuHud, entry.wristMenuHud.actions);
-      }
 
       let rayLength = 3;
       let hoverTrackId: string | null = null;

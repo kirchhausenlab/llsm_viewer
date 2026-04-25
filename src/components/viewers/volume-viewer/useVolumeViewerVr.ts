@@ -316,7 +316,7 @@ export function useVolumeViewerVr({
         entry.controller.visible = visible;
         entry.grip.visible = visible;
         entry.ray.visible = visible;
-        entry.touchIndicator.visible = false;
+        entry.touchIndicator.visible = visible;
         visibilitySnapshot.push({
           index,
           visible,
