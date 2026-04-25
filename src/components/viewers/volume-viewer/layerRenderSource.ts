@@ -35,7 +35,11 @@ export function hasMismatchedPageTableSource(
 }
 
 export function resolveLayerRenderSource(layer: ManagedViewerLayer): LayerRenderSource | null {
-  const volume = layer.volume ?? null;
+  const candidateVolume = layer.volume ?? null;
+  const volume =
+    layer.isSegmentation && (candidateVolume as { kind?: string } | null)?.kind === 'segmentation'
+      ? null
+      : candidateVolume;
   const brickAtlas = layer.brickAtlas ?? null;
   const atlasPageTable = brickAtlas?.pageTable ?? null;
   const standalonePageTable = layer.brickPageTable ?? null;

@@ -5,7 +5,7 @@ import type {
   LODPolicyLayerDiagnostics,
   LODPromotionState
 } from '../../../core/lodPolicyDiagnostics';
-import type { PreprocessedLayerScaleManifestEntry } from '../../../shared/utils/preprocessedDataset/types';
+import type { PreprocessedAnyLayerScaleManifestEntry } from '../../../shared/utils/preprocessedDataset/types';
 import type { ViewerCameraNavigationSample } from '../../../hooks/useVolumeRenderSetup';
 import type { LaunchViewerOptions } from './types';
 import {
@@ -27,7 +27,7 @@ export type LayerPolicyRuntimeState = LODPolicyLayerDiagnostics;
 
 type CreateLodPolicyControllerOptions = {
   layerScaleLevelsByKey: Map<string, number[]>;
-  layerScalesByLevelByKey: Map<string, Map<number, PreprocessedLayerScaleManifestEntry>>;
+  layerScalesByLevelByKey: Map<string, Map<number, PreprocessedAnyLayerScaleManifestEntry>>;
   isPerformanceMode: boolean;
   isPlaying: boolean;
   isPlaybackStartPending: boolean;

@@ -5,6 +5,7 @@ import {
   type NormalizedVolume
 } from '../../../../core/volumeProcessing';
 import type { VolumeBrickAtlasTextureFormat, VolumeBrickPageTable } from '../../../../core/volumeProvider';
+import { hashSparseSegmentationLabelColor } from '../../../../shared/utils/preprocessedDataset/sparseSegmentation';
 
 export function disposeMaterial(material: THREE.Material | THREE.Material[] | null | undefined) {
   if (Array.isArray(material)) {
@@ -198,11 +199,33 @@ function sampleBrickAtlasVoxelValue(
   return source.atlasData[atlasVoxelOffset] ?? 0;
 }
 
+function sampleBrickAtlasSegmentationLabel(
+  source: BrickAtlasSliceSource,
+  voxelX: number,
+  voxelY: number,
+  voxelZ: number,
+): number {
+  if (source.textureFormat === 'rgba' && source.dataType === 'uint8') {
+    const b0 = sampleBrickAtlasVoxelValue(source, voxelX, voxelY, voxelZ, 0);
+    const b1 = sampleBrickAtlasVoxelValue(source, voxelX, voxelY, voxelZ, 1);
+    const b2 = sampleBrickAtlasVoxelValue(source, voxelX, voxelY, voxelZ, 2);
+    const b3 = sampleBrickAtlasVoxelValue(source, voxelX, voxelY, voxelZ, 3);
+    return (b0 + b1 * 0x100 + b2 * 0x10000 + b3 * 0x1000000) >>> 0;
+  }
+  if (source.textureFormat === 'rg' && source.dataType === 'uint8') {
+    const b0 = sampleBrickAtlasVoxelValue(source, voxelX, voxelY, voxelZ, 0);
+    const b1 = sampleBrickAtlasVoxelValue(source, voxelX, voxelY, voxelZ, 1);
+    return b0 + b1 * 0x100;
+  }
+  return sampleBrickAtlasVoxelValue(source, voxelX, voxelY, voxelZ, 0);
+}
+
 export function prepareSliceTextureFromBrickAtlas(
   source: BrickAtlasSliceSource,
   sliceIndex: number,
   existingBuffer: Uint8Array | Float32Array | null,
   segmentationColorTable: Uint8Array | null = null,
+  segmentationColorSeed = 0,
 ) {
   const depth = Math.max(1, source.pageTable.volumeShape[0]);
   const height = Math.max(1, source.pageTable.volumeShape[1]);
@@ -225,7 +248,7 @@ export function prepareSliceTextureFromBrickAtlas(
     for (let y = 0; y < height; y += 1) {
       for (let x = 0; x < width; x += 1) {
         const targetOffset = (y * width + x) * 4;
-        const label = sampleBrickAtlasVoxelValue(source, x, y, clampedIndex, 0);
+        const label = sampleBrickAtlasSegmentationLabel(source, x, y, clampedIndex);
         if (segmentationColorTable) {
           const colorOffset = label * 4;
           buffer[targetOffset] = segmentationColorTable[colorOffset] ?? 0;
@@ -233,11 +256,11 @@ export function prepareSliceTextureFromBrickAtlas(
           buffer[targetOffset + 2] = segmentationColorTable[colorOffset + 2] ?? 0;
           buffer[targetOffset + 3] = segmentationColorTable[colorOffset + 3] ?? 0;
         } else {
-          const clamped = Math.min(label, 255);
-          buffer[targetOffset] = clamped;
-          buffer[targetOffset + 1] = clamped;
-          buffer[targetOffset + 2] = clamped;
-          buffer[targetOffset + 3] = label > 0 ? 255 : 0;
+          const [r, g, b, a] = hashSparseSegmentationLabelColor(label, segmentationColorSeed);
+          buffer[targetOffset] = r;
+          buffer[targetOffset + 1] = g;
+          buffer[targetOffset + 2] = b;
+          buffer[targetOffset + 3] = a;
         }
       }
     }

@@ -16,7 +16,10 @@ import type {
   PreprocessedLayerManifestEntry,
   PreprocessedManifest,
 } from '../../src/shared/utils/preprocessedDataset/types.ts';
-import { PREPROCESSED_DATASET_FORMAT } from '../../src/shared/utils/preprocessedDataset/types.ts';
+import {
+  PREPROCESSED_DATASET_FORMAT,
+  isSparseSegmentationLayerManifest
+} from '../../src/shared/utils/preprocessedDataset/types.ts';
 import { shouldPreferDirectVolumeSampling } from '../../src/shared/utils/lod0Residency.ts';
 
 const MAX_BRICK_ATLAS_DEPTH_HINT = 2048;
@@ -291,11 +294,11 @@ async function loadLayerTimepointLikeViewer({
   timepoint: number;
   isPlaying: boolean;
 }): Promise<ViewerLoadSelection> {
-  const knownLevels = Array.from(new Set(layer.zarr.scales.map((scale) => scale.level))).sort((left, right) => left - right);
-  const layerScalesByLevel = new Map(layer.zarr.scales.map((scale) => [scale.level, scale]));
+  const scales = isSparseSegmentationLayerManifest(layer) ? layer.sparse.scales : layer.zarr.scales;
+  const knownLevels = Array.from(new Set(scales.map((scale) => scale.level))).sort((left, right) => left - right);
+  const layerScalesByLevel = new Map(scales.map((scale) => [scale.level, scale]));
   const canUseAtlas =
     typeof provider.getBrickAtlas === 'function' &&
-    !layer.isSegmentation &&
     layer.depth > 1;
 
   if (canUseAtlas) {
@@ -307,7 +310,8 @@ async function loadLayerTimepointLikeViewer({
 
     for (const scaleLevel of candidateScaleLevels) {
       const scale = layerScalesByLevel.get(scaleLevel) ?? null;
-      const sourceChannels = scale?.channels ?? 1;
+      const isSparseScale = Boolean(scale && 'brickSize' in scale);
+      const sourceChannels = scale && 'channels' in scale ? scale.channels : 1;
       const textureChannels = getTextureChannelCountForSourceChannels(sourceChannels);
 
       if (typeof provider.getBrickPageTable === 'function') {
@@ -316,6 +320,7 @@ async function loadLayerTimepointLikeViewer({
         const estimatedAtlasDepth = chunkDepth * pageTable.occupiedBrickCount;
         const estimatedAtlasBytes = chunkWidth * chunkHeight * estimatedAtlasDepth * textureChannels;
         const shouldPreferDirectVolume =
+          !isSparseScale &&
           scale !== null &&
           shouldPreferDirectVolumeSampling({
             scaleLevel,
@@ -339,6 +344,12 @@ async function loadLayerTimepointLikeViewer({
       try {
         const atlas = await provider.getBrickAtlas!(layerKey, timepoint, { scaleLevel });
         if (!atlas.enabled) {
+          if (isSparseScale) {
+            return {
+              residencyMode: 'atlas',
+              scaleLevel: atlas.scaleLevel,
+            };
+          }
           continue;
         }
         if (atlas.depth > MAX_BRICK_ATLAS_DEPTH_HINT) {
@@ -370,7 +381,11 @@ async function loadLayerTimepointLikeViewer({
     const scaleLevel = candidateScaleLevels[index] ?? 0;
     const isLastCandidate = index === candidateScaleLevels.length - 1;
     const scale = layerScalesByLevel.get(scaleLevel) ?? null;
-    const estimatedVolumeBytes = scale ? scale.width * scale.height * scale.depth * scale.channels : 0;
+    if (scale && 'brickSize' in scale) {
+      continue;
+    }
+    const estimatedVolumeBytes =
+      scale ? scale.width * scale.height * scale.depth * ('channels' in scale ? scale.channels : 1) : 0;
     if (!isLastCandidate && estimatedVolumeBytes > MAX_VOLUME_BYTES_HINT) {
       continue;
     }

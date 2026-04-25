@@ -1,0 +1,99 @@
+{
+  "format": "llsm-viewer-preprocessed-vnext-sparse-seg1",
+  "generatedAt": "2026-04-25T00:00:00.000Z",
+  "dataset": {
+    "movieMode": "3d",
+    "totalVolumeCount": 1,
+    "channels": [
+      {
+        "id": "channel-seg",
+        "name": "Segmentation Channel",
+        "layers": [
+          {
+            "kind": "segmentation",
+            "key": "layer-seg",
+            "label": "Layer Segmentation",
+            "channelId": "channel-seg",
+            "isSegmentation": true,
+            "volumeCount": 1,
+            "width": 1,
+            "height": 1,
+            "depth": 1,
+            "channels": 1,
+            "dataType": "uint32",
+            "labelDataType": "uint32",
+            "emptyLabel": 0,
+            "normalization": null,
+            "representation": "sparse-label-bricks-v1",
+            "brickSize": [32, 32, 32],
+            "colorSeed": 3735928559,
+            "sparse": {
+              "version": 1,
+              "labels": {
+                "format": "sparse-label-metadata-v1",
+                "path": "channels/channel-seg/layer-seg/sparse/labels.sslm",
+                "byteLength": 160,
+                "recordCount": 1,
+                "recordByteLength": 96
+              },
+              "scales": [
+                {
+                  "level": 0,
+                  "downsampleFactor": [1, 1, 1],
+                  "width": 1,
+                  "height": 1,
+                  "depth": 1,
+                  "brickSize": [32, 32, 32],
+                  "brickGridShape": [1, 1, 1],
+                  "occupiedBrickCount": 1,
+                  "nonzeroVoxelCount": 1,
+                  "directory": {
+                    "format": "sparse-brick-directory-v1",
+                    "path": "channels/channel-seg/layer-seg/sparse/scales/0/directory.ssbd",
+                    "byteLength": 144,
+                    "recordCount": 1,
+                    "recordByteLength": 80
+                  },
+                  "payload": {
+                    "format": "sparse-brick-payload-shards-v1",
+                    "shardCount": 1,
+                    "shardPathPrefix": "channels/channel-seg/layer-seg/sparse/scales/0/payloads/shard-",
+                    "shardFileExtension": ".ssbp",
+                    "targetShardBytes": 8388608,
+                    "totalPayloadBytes": 22
+                  },
+                  "occupancyHierarchy": {
+                    "format": "sparse-occupancy-hierarchy-v1",
+                    "levels": [
+                      {
+                        "level": 0,
+                        "gridShape": [1, 1, 1],
+                        "dataType": "uint8",
+                        "path": "channels/channel-seg/layer-seg/sparse/scales/0/occupancy/level-0.ssbo",
+                        "byteLength": 65,
+                        "occupiedNodeCount": 1
+                      }
+                    ]
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      }
+    ],
+    "trackSets": [],
+    "voxelResolution": {
+      "x": 120,
+      "y": 120,
+      "z": 300,
+      "unit": "nm",
+      "correctAnisotropy": false
+    },
+    "temporalResolution": {
+      "interval": 2.3,
+      "unit": "ms"
+    },
+    "anisotropyCorrection": null
+  }
+}

@@ -2,7 +2,10 @@ import type { VolumeBrickPageTable } from '../../../core/volumeProvider';
 import type { ViewerProjectionMode } from '../../../hooks/useVolumeRenderSetup';
 import type { LoadedDatasetLayer } from '../../../hooks/dataset';
 import { shouldPreferDirectVolumeSampling } from '../../../shared/utils/lod0Residency';
-import type { PreprocessedLayerScaleManifestEntry } from '../../../shared/utils/preprocessedDataset/types';
+import type {
+  PreprocessedAnyLayerScaleManifestEntry,
+  PreprocessedLayerScaleManifestEntry
+} from '../../../shared/utils/preprocessedDataset/types';
 
 export type ResidencyMode = 'atlas' | 'volume';
 
@@ -31,7 +34,23 @@ function normalizeTextureChannelCount(sourceChannels: number): number {
   return 4;
 }
 
-function estimateManifestAtlasBytes(scale: PreprocessedLayerScaleManifestEntry): number | null {
+function isSparseSegmentationScale(scale: PreprocessedAnyLayerScaleManifestEntry | null | undefined): boolean {
+  return Boolean((scale as { brickSize?: unknown; directory?: unknown } | null | undefined)?.brickSize);
+}
+
+function estimateManifestAtlasBytes(scale: PreprocessedAnyLayerScaleManifestEntry): number | null {
+  if (isSparseSegmentationScale(scale)) {
+    const sparseScale = scale as {
+      brickSize?: [number, number, number];
+      occupiedBrickCount?: number;
+    };
+    const brickSize = sparseScale.brickSize;
+    const occupiedBrickCount = sparseScale.occupiedBrickCount ?? 0;
+    if (!brickSize || occupiedBrickCount <= 0) {
+      return 0;
+    }
+    return brickSize[0] * brickSize[1] * brickSize[2] * occupiedBrickCount * 4;
+  }
   const zarr = (scale as { zarr?: PreprocessedLayerScaleManifestEntry['zarr'] }).zarr;
   const chunkShape = zarr?.data?.chunkShape ?? null;
   const leafGridShape = zarr?.skipHierarchy?.levels?.find((level) => level.level === 0)?.gridShape ?? null;
@@ -50,7 +69,7 @@ function estimateManifestAtlasBytes(scale: PreprocessedLayerScaleManifestEntry):
     Math.max(1, Math.floor(leafGridShape[0] ?? 0)) *
     Math.max(1, Math.floor(leafGridShape[1] ?? 0)) *
     Math.max(1, Math.floor(leafGridShape[2] ?? 0));
-  const textureChannels = normalizeTextureChannelCount(scale.channels ?? 1);
+  const textureChannels = normalizeTextureChannelCount('channels' in scale ? scale.channels : 1);
   return chunkDepth * chunkHeight * chunkWidth * totalBricks * textureChannels;
 }
 
@@ -78,7 +97,8 @@ export function buildLayerResidencyPreferenceMap({
       } else if (layer.depth <= 1) {
         rationale = 'single-slice-layer';
       } else if (layer.isSegmentation) {
-        rationale = 'segmentation-direct-volume';
+        mode = 'atlas';
+        rationale = 'sparse-segmentation-atlas';
       } else {
         mode = 'atlas';
         rationale = 'atlas-eligible';
@@ -102,12 +122,19 @@ export function buildPreferredResidencyDecision({
 }: {
   scaleLevel: number;
   preference: LayerResidencyPreference | null | undefined;
-  scale?: PreprocessedLayerScaleManifestEntry | null;
+  scale?: PreprocessedAnyLayerScaleManifestEntry | null;
   playbackActive?: boolean;
 }): ResidencyDecision {
   const hasPlaybackAtlas = Boolean(
     (scale as { zarr?: PreprocessedLayerScaleManifestEntry['zarr'] | undefined } | null | undefined)?.zarr?.playbackAtlas
   );
+  if (preference?.mode === 'atlas' && isSparseSegmentationScale(scale)) {
+    return {
+      mode: 'atlas',
+      scaleLevel,
+      rationale: preference.rationale,
+    };
+  }
   if (preference?.mode === 'atlas' && playbackActive && hasPlaybackAtlas) {
     return {
       mode: 'atlas',
@@ -116,7 +143,8 @@ export function buildPreferredResidencyDecision({
     };
   }
   if (preference?.mode === 'atlas' && scale) {
-    const directVolumeBytes = scale.width * scale.height * scale.depth * Math.max(1, scale.channels);
+    const directVolumeBytes =
+      scale.width * scale.height * scale.depth * Math.max(1, 'channels' in scale ? scale.channels : 1);
     const estimatedPlaybackAtlasBytes =
       ((scale as { zarr?: PreprocessedLayerScaleManifestEntry['zarr'] }).zarr?.playbackAtlas?.data?.sharding?.estimatedShardBytes) ??
       null;
@@ -156,15 +184,18 @@ export function resolveScaleAwareResidencyDecision({
   playbackActive = false,
 }: {
   preferredDecision: ResidencyDecision;
-  scale: PreprocessedLayerScaleManifestEntry | null;
+  scale: PreprocessedAnyLayerScaleManifestEntry | null;
   pageTable: VolumeBrickPageTable | null;
   playbackActive?: boolean;
 }): ResidencyDecision {
   if (preferredDecision.mode !== 'atlas' || !pageTable) {
     return preferredDecision;
   }
+  if (isSparseSegmentationScale(scale)) {
+    return preferredDecision;
+  }
 
-  const sourceChannels = scale?.channels ?? 1;
+  const sourceChannels = scale && 'channels' in scale ? scale.channels : 1;
   const textureChannels = normalizeTextureChannelCount(sourceChannels);
   const estimatedAtlasDepth = pageTable.chunkShape[0] * pageTable.occupiedBrickCount;
   const estimatedAtlasBytes =

@@ -34,6 +34,7 @@ import {
   DEFAULT_MAX_CONCURRENT_CHUNK_READS,
   DEFAULT_MAX_CONCURRENT_PREFETCH_LOADS
 } from '../../../core/volumeProvider';
+import { isSparseSegmentationLayerManifest } from '../../../shared/utils/preprocessedDataset/types';
 import { useViewerPlayback } from '../../../hooks/viewer';
 import useChannelEditing from './useChannelEditing';
 import { useRouteDatasetResetState } from './useRouteDatasetResetState';
@@ -734,7 +735,8 @@ export function useAppRouteState(): AppRouteState {
     for (const channel of manifest.dataset.channels) {
       for (const layer of channel.layers) {
         const byLevel = new Map<number, [number, number, number]>();
-        for (const scale of layer.zarr.scales) {
+        const scales = isSparseSegmentationLayerManifest(layer) ? layer.sparse.scales : layer.zarr.scales;
+        for (const scale of scales) {
           byLevel.set(scale.level, scale.downsampleFactor);
         }
         byLayer.set(layer.key, byLevel);
@@ -750,7 +752,8 @@ export function useAppRouteState(): AppRouteState {
     }
     for (const channel of manifest.dataset.channels) {
       for (const layer of channel.layers) {
-        const levels = layer.zarr.scales
+        const scales = isSparseSegmentationLayerManifest(layer) ? layer.sparse.scales : layer.zarr.scales;
+        const levels = scales
           .map((scale) => scale.level)
           .filter((level) => Number.isFinite(level));
         if (levels.length === 0) {

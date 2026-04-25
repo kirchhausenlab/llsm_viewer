@@ -18,7 +18,10 @@ import type {
 } from '../../../core/volumeProvider';
 import type { NormalizedVolume } from '../../../core/volumeProcessing';
 import { isAbortLikeError, throwIfAborted } from '../../../shared/utils/abort';
-import type { PreprocessedLayerScaleManifestEntry } from '../../../shared/utils/preprocessedDataset/types';
+import {
+  isSparseSegmentationLayerManifest,
+  type PreprocessedAnyLayerScaleManifestEntry
+} from '../../../shared/utils/preprocessedDataset/types';
 import { createLodPolicyController, type LayerPolicyRuntimeState } from '../volume-loading/lodPolicyController';
 import {
   DIAGNOSTICS_POLL_INTERVAL_MS,
@@ -239,22 +242,24 @@ export function useRouteLayerVolumes({
     }
     for (const channel of manifest.dataset.channels) {
       for (const layer of channel.layers) {
-        const levels = Array.from(new Set(layer.zarr.scales.map((scale) => scale.level))).sort((left, right) => left - right);
+        const scales = isSparseSegmentationLayerManifest(layer) ? layer.sparse.scales : layer.zarr.scales;
+        const levels = Array.from(new Set(scales.map((scale) => scale.level))).sort((left, right) => left - right);
         map.set(layer.key, levels.length > 0 ? levels : [0]);
       }
     }
     return map;
   }, [preprocessedExperiment?.manifest]);
   const layerScalesByLevelByKey = useMemo(() => {
-    const map = new Map<string, Map<number, PreprocessedLayerScaleManifestEntry>>();
+    const map = new Map<string, Map<number, PreprocessedAnyLayerScaleManifestEntry>>();
     const manifest = preprocessedExperiment?.manifest;
     if (!manifest) {
       return map;
     }
     for (const channel of manifest.dataset.channels) {
       for (const layer of channel.layers) {
-        const byLevel = new Map<number, PreprocessedLayerScaleManifestEntry>();
-        for (const scale of layer.zarr.scales) {
+        const byLevel = new Map<number, PreprocessedAnyLayerScaleManifestEntry>();
+        const scales = isSparseSegmentationLayerManifest(layer) ? layer.sparse.scales : layer.zarr.scales;
+        for (const scale of scales) {
           byLevel.set(scale.level, scale);
         }
         map.set(layer.key, byLevel);
@@ -413,10 +418,12 @@ export function useRouteLayerVolumes({
       })();
       const fallbackScaleLevel = knownLevels[knownLevels.length - 1] ?? desiredScaleLevel;
       const prefetchedPageTablesByScale = new Map<number, VolumeBrickPageTable>();
+      const preferredScale = layerScalesByLevelByKey.get(layerKey)?.get(desiredScaleLevel) ?? null;
+      const isSparseSegmentationAtlasOnly = Boolean(preferredScale && 'brickSize' in preferredScale);
       const preferredDecision = buildPreferredResidencyDecision({
         scaleLevel: desiredScaleLevel,
         preference: layerResidencyPreferenceByKeyRef.current.get(layerKey) ?? null,
-        scale: layerScalesByLevelByKey.get(layerKey)?.get(desiredScaleLevel) ?? null,
+        scale: preferredScale,
         playbackActive: isPlaying || isPlaybackStartPending,
       });
       const lastCommittedScaleLevel =
@@ -430,7 +437,7 @@ export function useRouteLayerVolumes({
         promotionStateOverride: 'warming',
       });
       const shouldLoadBrickAtlas =
-        strategy !== 'http-initial' &&
+        (strategy !== 'http-initial' || isSparseSegmentationAtlasOnly) &&
         preferredDecision.mode === 'atlas' &&
         typeof volumeProvider?.getBrickAtlas === 'function';
 
@@ -460,6 +467,9 @@ export function useRouteLayerVolumes({
               playbackActive: isPlaying || isPlaybackStartPending,
             });
             if (resolvedDecision.mode !== 'atlas') {
+              if (isSparseSegmentationAtlasOnly) {
+                continue;
+              }
               if (isDesiredScaleLevel) {
                 break;
               }
@@ -471,18 +481,63 @@ export function useRouteLayerVolumes({
             const atlas = await volumeProvider!.getBrickAtlas!(layerKey, timeIndex, { scaleLevel, signal });
             throwIfAborted(signal);
             if (!atlas.enabled) {
+              if (isSparseSegmentationAtlasOnly) {
+                const readyLatencyMs = Math.max(0, nowMs() - loadStartedAtMs);
+                updateLayerPolicyState({
+                  layerKey,
+                  desiredScaleLevel,
+                  activeScaleLevel: atlas.scaleLevel,
+                  fallbackScaleLevel,
+                  readyLatencyMs,
+                  promotionStateOverride: lod0Flags.promotionStateMachine ? 'promoted' : undefined
+                });
+                return {
+                  decision: {
+                    ...preferredDecision,
+                    scaleLevel: atlas.scaleLevel,
+                    rationale: preferredDecision.rationale,
+                  },
+                  volume: null,
+                  pageTable: atlas.pageTable,
+                  brickAtlas: atlas
+                };
+              }
               if (isDesiredScaleLevel) {
                 break;
               }
               continue;
             }
             if (atlas.data.byteLength > maxBrickAtlasBytesHint) {
+              if (isSparseSegmentationAtlasOnly) {
+                return {
+                  decision: {
+                    ...preferredDecision,
+                    scaleLevel: atlas.scaleLevel,
+                    rationale: preferredDecision.rationale,
+                  },
+                  volume: null,
+                  pageTable: atlas.pageTable,
+                  brickAtlas: atlas
+                };
+              }
               if (isDesiredScaleLevel) {
                 break;
               }
               continue;
             }
             if (atlas.depth > MAX_BRICK_ATLAS_DEPTH_HINT) {
+              if (isSparseSegmentationAtlasOnly) {
+                return {
+                  decision: {
+                    ...preferredDecision,
+                    scaleLevel: atlas.scaleLevel,
+                    rationale: preferredDecision.rationale,
+                  },
+                  volume: null,
+                  pageTable: atlas.pageTable,
+                  brickAtlas: atlas
+                };
+              }
               if (isDesiredScaleLevel) {
                 break;
               }
@@ -532,6 +587,9 @@ export function useRouteLayerVolumes({
             };
           } catch (error) {
             if (isAllocationLikeError(error)) {
+              if (isSparseSegmentationAtlasOnly) {
+                throw error;
+              }
               if (isDesiredScaleLevel) {
                 break;
               }
@@ -540,6 +598,10 @@ export function useRouteLayerVolumes({
             throw error;
           }
         }
+      }
+
+      if (isSparseSegmentationAtlasOnly) {
+        throw new Error(`Sparse segmentation atlas is unavailable for layer "${layerKey}" at timepoint ${timeIndex}.`);
       }
 
       const candidateScaleLevels = knownLevels.filter((level) => level >= desiredScaleLevel);
@@ -552,7 +614,8 @@ export function useRouteLayerVolumes({
         const scaleLevel = candidateScaleLevels[index] ?? 0;
         const isLastCandidate = index === candidateScaleLevels.length - 1;
         const scale = layerScalesByLevelByKey.get(layerKey)?.get(scaleLevel) ?? null;
-        const estimatedVolumeBytes = scale ? scale.width * scale.height * scale.depth * scale.channels : 0;
+        const estimatedVolumeBytes =
+          scale ? scale.width * scale.height * scale.depth * ('channels' in scale ? scale.channels : 1) : 0;
         if (!isLastCandidate && estimatedVolumeBytes > maxVolumeBytesHint) {
           continue;
         }

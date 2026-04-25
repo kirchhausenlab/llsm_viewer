@@ -739,6 +739,22 @@ function applyBeerLambertUniforms(uniforms: ShaderUniformMap, layer: Pick<
   }
 }
 
+function applySegmentationColorSeedUniform(uniforms: ShaderUniformMap, layerKey: string): void {
+  if (!('u_segmentationColorSeedBytes' in uniforms)) {
+    return;
+  }
+  const seed = createSegmentationSeed(layerKey);
+  const value = uniforms.u_segmentationColorSeedBytes.value;
+  if (value && typeof value === 'object' && 'set' in value && typeof value.set === 'function') {
+    (value as THREE.Vector4).set(
+      (seed & 0xff) / 255,
+      ((seed >>> 8) & 0xff) / 255,
+      ((seed >>> 16) & 0xff) / 255,
+      (Math.floor(seed / 0x1000000) & 0xff) / 255,
+    );
+  }
+}
+
 function createByte3dTexture(
   data: TextureSourceArray,
   width: number,
@@ -2740,7 +2756,7 @@ function applyBrickPageTableUniforms(
   }
 
   const precomputedSubcell = resolvedPageTable.subcell ?? null;
-  const allowSubcellTexture = !options?.isSegmentation;
+  const allowSubcellTexture = true;
   const canUsePrecomputedSubcell =
     allowSubcellTexture &&
     precomputedSubcell !== null &&
@@ -3768,6 +3784,7 @@ export function useVolumeResources({
           uniforms.u_nearestSampling.value = effectiveSamplingMode === 'nearest' ? 1 : 0;
           applyAdaptiveLodUniforms(uniforms as ShaderUniformMap, effectiveSamplingMode, projectionMode);
           applyBeerLambertUniforms(uniforms as ShaderUniformMap, layer);
+          applySegmentationColorSeedUniform(uniforms as ShaderUniformMap, layer.key);
           if (uniforms.u_segmentationLabels) {
             uniforms.u_segmentationLabels.value = layer.isSegmentation ? texture : FALLBACK_SEGMENTATION_LABEL_TEXTURE;
           }
@@ -3958,12 +3975,12 @@ export function useVolumeResources({
 
 	          const sliceTexture = (() => {
 	            if (volume) {
-	              const sliceInfo = prepareSliceTexture(
-	                volume,
-	                clampedSliceDataIndex,
-                null,
-                segmentationPaletteTexture ? (segmentationPaletteTexture.image.data as Uint8Array) : null,
-              );
+		              const sliceInfo = prepareSliceTexture(
+		                volume,
+		                clampedSliceDataIndex,
+		                null,
+		                segmentationPaletteTexture ? (segmentationPaletteTexture.image.data as Uint8Array) : null,
+		              );
 	              const texture = createSliceDataTexture(
 	                sliceInfo.data,
 	                volume.width,
@@ -3985,8 +4002,13 @@ export function useVolumeResources({
                 },
                 clampedSliceDataIndex,
                 null,
-                segmentationPaletteTexture ? (segmentationPaletteTexture.image.data as Uint8Array) : null,
-              );
+              brickAtlas.kind === 'segmentation'
+                ? null
+                : segmentationPaletteTexture
+                  ? (segmentationPaletteTexture.image.data as Uint8Array)
+                  : null,
+              createSegmentationSeed(layer.key),
+            );
 	              const texture = createSliceDataTexture(
 	                sliceInfo.data,
 	                sliceInfo.width,
@@ -4264,6 +4286,7 @@ export function useVolumeResources({
         }
         applyAdaptiveLodUniforms(materialUniforms, effectiveSamplingMode, projectionMode);
         applyBeerLambertUniforms(materialUniforms, layer);
+        applySegmentationColorSeedUniform(materialUniforms, layer.key);
         applyBackgroundMaskUniforms(materialUniforms, resources, layer.backgroundMask ?? null);
 
         if (resources.mode === '3d') {
@@ -4483,12 +4506,12 @@ export function useVolumeResources({
 
 	          if (volume) {
 	            const existingBuffer = resources.sliceBuffer ?? null;
-	            const sliceInfo = prepareSliceTexture(
-	              volume,
-	              clampedSliceDataIndex,
-	              existingBuffer,
-	              segmentationPaletteTexture ? (segmentationPaletteTexture.image.data as Uint8Array) : null,
-	            );
+		            const sliceInfo = prepareSliceTexture(
+		              volume,
+		              clampedSliceDataIndex,
+		              existingBuffer,
+		              segmentationPaletteTexture ? (segmentationPaletteTexture.image.data as Uint8Array) : null,
+		            );
 	            resources.sliceBuffer = sliceInfo.data;
 	            const nextTexture = updateOrCreateSliceDataTexture({
 	              existing: dataTexture,
@@ -4514,10 +4537,15 @@ export function useVolumeResources({
 	                sourceChannels: brickAtlas.sourceChannels,
 	                dataType: brickAtlas.dataType,
 	              },
-	              clampedSliceDataIndex,
-	              existingBuffer,
-	              segmentationPaletteTexture ? (segmentationPaletteTexture.image.data as Uint8Array) : null,
-	            );
+		              clampedSliceDataIndex,
+		              existingBuffer,
+		              brickAtlas.kind === 'segmentation'
+		                ? null
+		                : segmentationPaletteTexture
+		                  ? (segmentationPaletteTexture.image.data as Uint8Array)
+		                  : null,
+		              createSegmentationSeed(layer.key),
+		            );
 	            resources.sliceBuffer = sliceInfo.data;
 	            const nextTexture = updateOrCreateSliceDataTexture({
 	              existing: dataTexture,

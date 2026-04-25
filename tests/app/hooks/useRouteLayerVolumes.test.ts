@@ -1330,10 +1330,10 @@ await (async () => {
   );
 
   await flushAsyncWork();
-  assert.deepStrictEqual(getVolumeCalls[0], { layerKey: 'layer-a', timeIndex: 1 });
-  assert.strictEqual(getBrickAtlasCalls.length, 0);
-  assert.ok(hook.result.currentLayerVolumes['layer-a']);
-  assert.strictEqual(hook.result.currentLayerBrickAtlases['layer-a'] ?? null, null);
+  assert.strictEqual(getVolumeCalls.length, 0);
+  assert.deepStrictEqual(getBrickAtlasCalls[0], { layerKey: 'layer-a', timeIndex: 1 });
+  assert.strictEqual(hook.result.currentLayerVolumes['layer-a'] ?? null, null);
+  assert.ok(hook.result.currentLayerBrickAtlases['layer-a']);
   hook.unmount();
 })();
 

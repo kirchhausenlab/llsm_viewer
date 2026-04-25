@@ -521,7 +521,9 @@ type VolumeUniforms = {
   u_hoverStrength: { value: number };
   u_hoverPulse: { value: number };
   u_hoverLabel: { value: number };
+  u_hoverLabelBytes: { value: Vector4 };
   u_hoverSegmentationMode: { value: number };
+  u_segmentationColorSeedBytes: { value: Vector4 };
   u_modelViewProjectionMatrix: { value: Matrix4 };
   u_modelViewMatrixVolume: { value: Matrix4 };
   u_cameraNearFar: { value: Vector2 };
@@ -592,7 +594,9 @@ const uniforms = {
   u_hoverStrength: { value: 1 },
   u_hoverPulse: { value: 0 },
   u_hoverLabel: { value: 0 },
+  u_hoverLabelBytes: { value: new Vector4(0, 0, 0, 0) },
   u_hoverSegmentationMode: { value: 0 },
+  u_segmentationColorSeedBytes: { value: new Vector4(0, 0, 0, 0) },
   u_modelViewProjectionMatrix: { value: new Matrix4() },
   u_modelViewMatrixVolume: { value: new Matrix4() },
   u_cameraNearFar: { value: new Vector2(0.0001, 1000) },
@@ -686,7 +690,9 @@ const volumeRenderFragmentShader = /* glsl */ `
     uniform float u_hoverStrength;
     uniform float u_hoverPulse;
     uniform float u_hoverLabel;
+    uniform vec4 u_hoverLabelBytes;
     uniform float u_hoverSegmentationMode;
+    uniform vec4 u_segmentationColorSeedBytes;
     uniform mat4 u_modelViewProjectionMatrix;
     uniform mat4 u_modelViewMatrixVolume;
     uniform vec2 u_cameraNearFar;
@@ -1448,22 +1454,62 @@ const volumeRenderFragmentShader = /* glsl */ `
       return sample_color_lod(texcoords, 0.0);
     }
 
+    vec4 decode_segmentation_label_bytes(vec4 packedLabelSample) {
+      return floor(clamp(packedLabelSample, vec4(0.0), vec4(1.0)) * 255.0 + vec4(0.5));
+    }
+
+    float decode_segmentation_label_bytes_value(vec4 labelBytes) {
+      return labelBytes.r + labelBytes.g * 256.0 + labelBytes.b * 65536.0 + labelBytes.a * 16777216.0;
+    }
+
     float decode_segmentation_label(vec4 packedLabelSample) {
-      float lowByte = floor(clamp(packedLabelSample.r, 0.0, 1.0) * 255.0 + 0.5);
-      float highByte = floor(clamp(packedLabelSample.g, 0.0, 1.0) * 255.0 + 0.5);
-      return lowByte + highByte * 256.0;
+      return decode_segmentation_label_bytes_value(decode_segmentation_label_bytes(packedLabelSample));
+    }
+
+    vec3 segmentation_hsv_to_rgb(float hue, float saturation, float value) {
+      vec3 p = abs(fract(vec3(hue) + vec3(0.0, 2.0 / 3.0, 1.0 / 3.0)) * 6.0 - vec3(3.0));
+      return value * mix(vec3(1.0), clamp(p - vec3(1.0), vec3(0.0), vec3(1.0)), saturation);
+    }
+
+    float segmentation_label_hash(vec4 labelBytes) {
+      vec4 seedBytes = decode_segmentation_label_bytes(u_segmentationColorSeedBytes);
+      float scalar =
+        labelBytes.r * 1.0 +
+        labelBytes.g * 257.0 +
+        labelBytes.b * 65537.0 +
+        labelBytes.a * 16777619.0 +
+        seedBytes.r * 3.0 +
+        seedBytes.g * 769.0 +
+        seedBytes.b * 196613.0 +
+        seedBytes.a * 1000003.0;
+      return fract(sin(scalar) * 43758.5453123);
+    }
+
+    bool segmentation_label_bytes_equal(vec4 leftBytes, vec4 rightBytes) {
+      return all(lessThan(abs(leftBytes - rightBytes), vec4(0.5)));
+    }
+
+    vec4 segmentation_color_from_label_bytes(vec4 labelBytes) {
+      if (decode_segmentation_label_bytes_value(labelBytes) < 0.5) {
+        return vec4(0.0);
+      }
+      float hue = segmentation_label_hash(labelBytes);
+      return vec4(segmentation_hsv_to_rgb(hue, 0.78, 1.0), 1.0);
     }
 
     vec4 segmentation_color_from_label(float labelValue) {
-      if (labelValue < 0.5) {
-        return vec4(0.0);
-      }
-      float paletteX = mod(labelValue, SEGMENTATION_PALETTE_DIMENSIONS.x);
-      float paletteY = floor(labelValue / SEGMENTATION_PALETTE_DIMENSIONS.x);
-      vec2 uv = (vec2(paletteX, paletteY) + vec2(0.5)) / SEGMENTATION_PALETTE_DIMENSIONS;
-      return texture2D(u_segmentationPalette, uv);
+      float remaining = max(floor(labelValue + 0.5), 0.0);
+      float b0 = mod(remaining, 256.0);
+      remaining = floor(remaining / 256.0);
+      float b1 = mod(remaining, 256.0);
+      remaining = floor(remaining / 256.0);
+      float b2 = mod(remaining, 256.0);
+      remaining = floor(remaining / 256.0);
+      float b3 = mod(remaining, 256.0);
+      return segmentation_color_from_label_bytes(vec4(b0, b1, b2, b3));
     }
-    float sample_segmentation_brick_atlas_voxel_known_base(
+
+    vec4 sample_segmentation_brick_atlas_voxel_bytes_known_base(
       vec3 voxelCoords,
       vec3 brickCoords,
       vec3 atlasBaseTexel,
@@ -1482,7 +1528,43 @@ const volumeRenderFragmentShader = /* glsl */ `
           vec3(maxAtlasTexel)
         )
       );
-      return decode_segmentation_label(texelFetch(u_segmentationBrickAtlasData, atlasTexel, 0));
+      return decode_segmentation_label_bytes(texelFetch(u_segmentationBrickAtlasData, atlasTexel, 0));
+    }
+    float sample_segmentation_brick_atlas_voxel_known_base(
+      vec3 voxelCoords,
+      vec3 brickCoords,
+      vec3 atlasBaseTexel,
+      vec3 safeChunk,
+      vec3 atlasVolumeSize
+    ) {
+      return decode_segmentation_label_bytes_value(
+        sample_segmentation_brick_atlas_voxel_bytes_known_base(
+          voxelCoords,
+          brickCoords,
+          atlasBaseTexel,
+          safeChunk,
+          atlasVolumeSize
+        )
+      );
+    }
+
+    vec4 sample_segmentation_brick_atlas_voxel_bytes_or_missing_base(
+      vec3 voxelCoords,
+      vec3 brickCoords,
+      vec4 atlasBaseInfo,
+      vec3 safeChunk,
+      vec3 atlasVolumeSize
+    ) {
+      if (atlasBaseInfo.a < 0.5) {
+        return vec4(0.0);
+      }
+      return sample_segmentation_brick_atlas_voxel_bytes_known_base(
+        voxelCoords,
+        brickCoords,
+        atlasBaseInfo.rgb,
+        safeChunk,
+        atlasVolumeSize
+      );
     }
 
     float sample_segmentation_brick_atlas_voxel_or_missing_base(
@@ -1495,28 +1577,34 @@ const volumeRenderFragmentShader = /* glsl */ `
       if (atlasBaseInfo.a < 0.5) {
         return 0.0;
       }
-      return sample_segmentation_brick_atlas_voxel_known_base(
-        voxelCoords,
-        brickCoords,
-        atlasBaseInfo.rgb,
-        safeChunk,
-        atlasVolumeSize
+      return decode_segmentation_label_bytes_value(
+        sample_segmentation_brick_atlas_voxel_bytes_or_missing_base(
+          voxelCoords,
+          brickCoords,
+          atlasBaseInfo,
+          safeChunk,
+          atlasVolumeSize
+        )
       );
     }
 
-    float sample_segmentation_brick_atlas_voxel(vec3 voxelCoords) {
+    vec4 sample_segmentation_brick_atlas_voxel_bytes(vec3 voxelCoords) {
       vec3 safeGrid = max(u_brickGridSize, vec3(1.0));
       vec3 safeChunk = max(u_brickChunkSize, vec3(1.0));
       vec3 atlasVolumeSize = max(u_brickVolumeSize, vec3(1.0));
       vec3 brickCoords = brick_coords_for_voxel(voxelCoords, safeGrid, safeChunk, atlasVolumeSize);
       vec4 atlasBaseInfo = atlas_base_for_brick(brickCoords, safeGrid);
-      return sample_segmentation_brick_atlas_voxel_or_missing_base(
+      return sample_segmentation_brick_atlas_voxel_bytes_or_missing_base(
         voxelCoords,
         brickCoords,
         atlasBaseInfo,
         safeChunk,
         atlasVolumeSize
       );
+    }
+
+    float sample_segmentation_brick_atlas_voxel(vec3 voxelCoords) {
+      return decode_segmentation_label_bytes_value(sample_segmentation_brick_atlas_voxel_bytes(voxelCoords));
     }
 
     vec3 segmentation_sample_volume_size() {
@@ -1527,38 +1615,30 @@ const volumeRenderFragmentShader = /* glsl */ `
       #endif
     }
 
-    float sample_segmentation_full_volume_label(vec3 texcoords) {
-      vec3 safeTexcoords = clamp(texcoords, vec3(0.0), vec3(1.0));
-      vec3 safeVolumeSize = max(u_segmentationVolumeSize, vec3(1.0));
-      ivec3 labelTexel = ivec3(
-        clamp(
-          floor(safeTexcoords * safeVolumeSize),
-          vec3(0.0),
-          max(safeVolumeSize - vec3(1.0), vec3(0.0))
-        )
-      );
-      return decode_segmentation_label(texelFetch(u_segmentationLabels, labelTexel, 0));
+    vec4 sample_segmentation_label_bytes_at_voxel(vec3 voxelCoords) {
+      #if defined(VOLUME_SOURCE_ATLAS)
+        return sample_segmentation_brick_atlas_voxel_bytes(voxelCoords);
+      #else
+        return vec4(0.0);
+      #endif
     }
 
     float sample_segmentation_label_at_voxel(vec3 voxelCoords) {
+      return decode_segmentation_label_bytes_value(sample_segmentation_label_bytes_at_voxel(voxelCoords));
+    }
+
+    vec4 sample_segmentation_label_bytes(vec3 texcoords) {
+      vec3 safeTexcoords = clamp(texcoords, vec3(0.0), vec3(1.0));
       #if defined(VOLUME_SOURCE_ATLAS)
-        return sample_segmentation_brick_atlas_voxel(voxelCoords);
+        vec3 nearestVoxel = floor(safeTexcoords * max(u_brickVolumeSize, vec3(1.0)));
+        return sample_segmentation_brick_atlas_voxel_bytes(nearestVoxel);
       #else
-        vec3 safeVolumeSize = max(u_segmentationVolumeSize, vec3(1.0));
-        vec3 clampedVoxel = clamp(floor(voxelCoords + vec3(0.5)), vec3(0.0), safeVolumeSize - vec3(1.0));
-        vec3 texcoords = (clampedVoxel + vec3(0.5)) / safeVolumeSize;
-        return sample_segmentation_full_volume_label(texcoords);
+        return vec4(0.0);
       #endif
     }
 
     float sample_segmentation_label(vec3 texcoords) {
-      vec3 safeTexcoords = clamp(texcoords, vec3(0.0), vec3(1.0));
-      #if defined(VOLUME_SOURCE_ATLAS)
-        vec3 nearestVoxel = floor(safeTexcoords * max(u_brickVolumeSize, vec3(1.0)));
-        return sample_segmentation_brick_atlas_voxel(nearestVoxel);
-      #else
-        return sample_segmentation_full_volume_label(safeTexcoords);
-      #endif
+      return decode_segmentation_label_bytes_value(sample_segmentation_label_bytes(texcoords));
     }
 
     bool segmentation_texcoords_in_bounds(vec3 texcoords) {
@@ -1569,12 +1649,38 @@ const volumeRenderFragmentShader = /* glsl */ `
       return labelValue > 0.5 ? 1.0 : 0.0;
     }
 
+    bool segmentation_subcell_occupied(vec3 texcoords) {
+      #if defined(VOLUME_SOURCE_ATLAS)
+        if (all(lessThanEqual(u_brickSubcellGrid, vec3(1.5)))) {
+          return true;
+        }
+        vec3 sampleVolumeSize = max(u_brickVolumeSize, vec3(1.0));
+        vec3 voxelCoords = floor(clamp(texcoords, vec3(0.0), vec3(1.0)) * sampleVolumeSize);
+        vec3 safeGrid = max(u_brickGridSize, vec3(1.0));
+        vec3 safeChunk = max(u_brickChunkSize, vec3(1.0));
+        vec3 brickCoords = brick_coords_for_voxel(voxelCoords, safeGrid, safeChunk, sampleVolumeSize);
+        vec4 atlasBaseInfo = atlas_base_for_brick(brickCoords, safeGrid);
+        if (atlasBaseInfo.a < 0.5) {
+          return false;
+        }
+        vec3 localVoxel = clamp_voxel_coords(voxelCoords, sampleVolumeSize) - brickCoords * safeChunk;
+        vec3 subcellCoords = brick_subcell_coords_for_local_voxel(localVoxel, safeChunk, u_brickSubcellGrid);
+        vec4 stats = brick_subcell_stats_for_coords(brickCoords, subcellCoords, u_brickSubcellGrid);
+        return stats.r > 0.5;
+      #else
+        return true;
+      #endif
+    }
+
     float sample_segmentation_occupancy(vec3 texcoords) {
       if (!segmentation_texcoords_in_bounds(texcoords)) {
         return 0.0;
       }
       vec3 safeTexcoords = texcoords;
       if (is_background_masked(safeTexcoords)) {
+        return 0.0;
+      }
+      if (!segmentation_subcell_occupied(safeTexcoords)) {
         return 0.0;
       }
       if (u_nearestSampling > 0.5) {
@@ -1664,7 +1770,7 @@ const volumeRenderFragmentShader = /* glsl */ `
       return high;
     }
 
-    float resolve_segmentation_surface_label(vec3 hitLoc, vec3 step) {
+    vec4 resolve_segmentation_surface_label_bytes(vec3 hitLoc, vec3 step) {
       vec3 stepDir = length(step) > EPSILON ? normalize(step) : vec3(0.0, 0.0, 1.0);
       vec3 sampleVolumeSize = segmentation_sample_volume_size();
       float insideNudge = max(
@@ -1672,15 +1778,19 @@ const volumeRenderFragmentShader = /* glsl */ `
         0.75 / max(max(sampleVolumeSize.x, sampleVolumeSize.y), sampleVolumeSize.z)
       );
       vec3 insideLoc = clamp(hitLoc + stepDir * insideNudge, vec3(0.0), vec3(1.0));
-      float label = sample_segmentation_label(insideLoc);
-      if (label <= 0.5) {
+      vec4 labelBytes = sample_segmentation_label_bytes(insideLoc);
+      if (decode_segmentation_label_bytes_value(labelBytes) <= 0.5) {
         vec3 deeperLoc = clamp(hitLoc + stepDir * insideNudge * 2.0, vec3(0.0), vec3(1.0));
-        label = sample_segmentation_label(deeperLoc);
+        labelBytes = sample_segmentation_label_bytes(deeperLoc);
       }
-      if (label <= 0.5) {
-        label = sample_segmentation_label(hitLoc);
+      if (decode_segmentation_label_bytes_value(labelBytes) <= 0.5) {
+        labelBytes = sample_segmentation_label_bytes(hitLoc);
       }
-      return label;
+      return labelBytes;
+    }
+
+    float resolve_segmentation_surface_label(vec3 hitLoc, vec3 step) {
+      return decode_segmentation_label_bytes_value(resolve_segmentation_surface_label_bytes(hitLoc, step));
     }
 
     vec4 sample_color_voxel(vec3 voxelCoord) {
@@ -2462,8 +2572,8 @@ const volumeRenderFragmentShader = /* glsl */ `
         float hoverStrength = max(u_hoverStrength, 0.0);
         bool segmentationHover = u_hoverSegmentationMode > 0.5;
         if (segmentationHover) {
-          float sampleLabel = sample_segmentation_label(max_loc);
-          if (abs(sampleLabel - u_hoverLabel) <= 0.5) {
+          vec4 sampleLabelBytes = sample_segmentation_label_bytes(max_loc);
+          if (segmentation_label_bytes_equal(sampleLabelBytes, decode_segmentation_label_bytes(u_hoverLabelBytes))) {
             color.rgb = mix(color.rgb, vec3(1.0), clamp(pulse * 0.6 * hoverStrength, 0.0, 1.0));
           }
         } else if (u_hoverRadius > 0.0) {
@@ -2482,6 +2592,7 @@ const volumeRenderFragmentShader = /* glsl */ `
       vec3 loc = start_loc;
       vec3 hitLoc = start_loc;
       float hitLabel = 0.0;
+      vec4 hitLabelBytes = vec4(0.0);
       bool hasHit = false;
       vec3 lastOutsideLoc = start_loc;
       bool hasOutsideSample = false;
@@ -2524,7 +2635,8 @@ const volumeRenderFragmentShader = /* glsl */ `
         float occupancy = sample_segmentation_occupancy(loc);
         if (occupancy > 0.5) {
           hitLoc = hasOutsideSample ? segmentation_refine_surface_hit(lastOutsideLoc, loc) : loc;
-          hitLabel = resolve_segmentation_surface_label(hitLoc, step);
+          hitLabelBytes = resolve_segmentation_surface_label_bytes(hitLoc, step);
+          hitLabel = decode_segmentation_label_bytes_value(hitLabelBytes);
           hasHit = hitLabel > 0.5;
           break;
         }
@@ -2540,7 +2652,7 @@ const volumeRenderFragmentShader = /* glsl */ `
         return;
       }
 
-      vec4 color = segmentation_color_from_label(hitLabel);
+      vec4 color = segmentation_color_from_label_bytes(hitLabelBytes);
       vec3 V = normalize(view_ray);
       if (length(V) <= EPSILON) {
         V = vec3(0.0, 0.0, 1.0);
@@ -2558,7 +2670,7 @@ const volumeRenderFragmentShader = /* glsl */ `
         float hoverStrength = max(u_hoverStrength, 0.0);
         bool segmentationHover = u_hoverSegmentationMode > 0.5;
         if (segmentationHover) {
-          if (abs(hitLabel - u_hoverLabel) <= 0.5) {
+          if (segmentation_label_bytes_equal(hitLabelBytes, decode_segmentation_label_bytes(u_hoverLabelBytes))) {
             color.rgb = mix(color.rgb, vec3(1.0), clamp(pulse * 0.6 * hoverStrength, 0.0, 1.0));
           }
         } else if (u_hoverRadius > 0.0) {

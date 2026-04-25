@@ -160,6 +160,16 @@ export function useVolumeViewerInteractions({
       if (uniforms.u_hoverLabel) {
         uniforms.u_hoverLabel.value = hasHoverLabel ? (segmentationLabel as number) : 0;
       }
+      if (uniforms.u_hoverLabelBytes) {
+        const label = hasHoverLabel ? Math.max(0, Math.floor(segmentationLabel as number)) : 0;
+        const bytes = uniforms.u_hoverLabelBytes.value as THREE.Vector4;
+        bytes.set(
+          (label & 0xff) / 255,
+          ((label >>> 8) & 0xff) / 255,
+          ((label >>> 16) & 0xff) / 255,
+          (Math.floor(label / 0x1000000) & 0xff) / 255,
+        );
+      }
       if (
         isActive &&
         normalizedPosition &&
