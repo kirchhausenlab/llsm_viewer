@@ -56,6 +56,107 @@ import type {
 
 export type { PlaybackWarmupFrameState } from '../volume-loading/types';
 
+function getLoadedLayerScaleLevel({
+  layerKey,
+  layerVolumes,
+  layerPageTables,
+  layerBrickAtlases
+}: {
+  layerKey: string;
+  layerVolumes: Record<string, NormalizedVolume | null>;
+  layerPageTables: Record<string, VolumeBrickPageTable | null>;
+  layerBrickAtlases: Record<string, VolumeBrickAtlas | null>;
+}): number | null {
+  const scaleLevel =
+    layerBrickAtlases[layerKey]?.scaleLevel ??
+    layerVolumes[layerKey]?.scaleLevel ??
+    layerPageTables[layerKey]?.scaleLevel ??
+    null;
+  return typeof scaleLevel === 'number' && Number.isFinite(scaleLevel)
+    ? Math.max(0, Math.floor(scaleLevel))
+    : null;
+}
+
+function hasRenderableLayerResource({
+  layerKey,
+  layerVolumes,
+  layerBrickAtlases
+}: {
+  layerKey: string;
+  layerVolumes: Record<string, NormalizedVolume | null>;
+  layerBrickAtlases: Record<string, VolumeBrickAtlas | null>;
+}): boolean {
+  return (layerBrickAtlases[layerKey] ?? null) !== null || (layerVolumes[layerKey] ?? null) !== null;
+}
+
+function loadedLayerSatisfiesDecision({
+  layerKey,
+  decision,
+  layerVolumes,
+  layerPageTables,
+  layerBrickAtlases
+}: {
+  layerKey: string;
+  decision: ResidencyDecision | null | undefined;
+  layerVolumes: Record<string, NormalizedVolume | null>;
+  layerPageTables: Record<string, VolumeBrickPageTable | null>;
+  layerBrickAtlases: Record<string, VolumeBrickAtlas | null>;
+}): boolean {
+  if (!hasRenderableLayerResource({ layerKey, layerVolumes, layerBrickAtlases })) {
+    return false;
+  }
+  const loadedScaleLevel = getLoadedLayerScaleLevel({
+    layerKey,
+    layerVolumes,
+    layerPageTables,
+    layerBrickAtlases
+  });
+  const requestedScaleLevel = decision?.scaleLevel;
+  if (loadedScaleLevel === null || typeof requestedScaleLevel !== 'number' || !Number.isFinite(requestedScaleLevel)) {
+    return true;
+  }
+  return loadedScaleLevel <= Math.max(0, Math.floor(requestedScaleLevel));
+}
+
+function resolvePausedVisibilityScaleOverride({
+  layerKeys,
+  currentLoadedTimeIndex,
+  clampedIndex,
+  isPlaying,
+  isPlaybackStartPending,
+  layerVolumes,
+  layerPageTables,
+  layerBrickAtlases
+}: {
+  layerKeys: readonly string[];
+  currentLoadedTimeIndex: number | null;
+  clampedIndex: number;
+  isPlaying: boolean;
+  isPlaybackStartPending: boolean;
+  layerVolumes: Record<string, NormalizedVolume | null>;
+  layerPageTables: Record<string, VolumeBrickPageTable | null>;
+  layerBrickAtlases: Record<string, VolumeBrickAtlas | null>;
+}): number | null {
+  if (isPlaying || isPlaybackStartPending || currentLoadedTimeIndex !== clampedIndex) {
+    return null;
+  }
+  const loadedScaleLevels = layerKeys
+    .filter((layerKey) => hasRenderableLayerResource({ layerKey, layerVolumes, layerBrickAtlases }))
+    .map((layerKey) =>
+      getLoadedLayerScaleLevel({
+        layerKey,
+        layerVolumes,
+        layerPageTables,
+        layerBrickAtlases
+      })
+    )
+    .filter((scaleLevel): scaleLevel is number => scaleLevel !== null);
+  if (loadedScaleLevels.length === 0 || loadedScaleLevels.length >= layerKeys.length) {
+    return null;
+  }
+  return Math.min(...loadedScaleLevels);
+}
+
 export function useRouteLayerVolumes({
   isViewerLaunched,
   isLaunchingViewer,
@@ -368,6 +469,7 @@ export function useRouteLayerVolumes({
         strategy?: LaunchResourceLoadStrategy;
         performanceMode?: boolean;
         includeHistogram?: boolean;
+        desiredScaleLevelOverride?: number | null;
       }
     ): Promise<{
       decision: ResidencyDecision;
@@ -381,7 +483,11 @@ export function useRouteLayerVolumes({
       const includeHistogram = options?.includeHistogram !== false;
       throwIfAborted(signal);
       const loadStartedAtMs = nowMs();
-      const baseDesiredScaleLevel = resolveDesiredScaleLevel(layerKey, { performanceMode });
+      const overrideScaleLevel = options?.desiredScaleLevelOverride;
+      const baseDesiredScaleLevel =
+        typeof overrideScaleLevel === 'number' && Number.isFinite(overrideScaleLevel)
+          ? Math.max(0, Math.floor(overrideScaleLevel))
+          : resolveDesiredScaleLevel(layerKey, { performanceMode });
       const desiredScaleLevel =
         strategy === 'http-initial'
           ? (() => {
@@ -692,6 +798,8 @@ export function useRouteLayerVolumes({
     },
     [
       isPerformanceMode,
+      isPlaying,
+      isPlaybackStartPending,
       layerScaleLevelsByKey,
       layerScalesByLevelByKey,
       resolveDesiredScaleLevel,
@@ -990,23 +1098,25 @@ export function useRouteLayerVolumes({
     const clampedIndex = Math.max(0, Math.min(volumeTimepointCount - 1, selectedIndex));
     const desiredScaleSignature = playbackResidencyDecisionSignature;
     const loadIntentKey = `${clampedIndex}|${desiredScaleSignature}`;
-    const hasRenderableCurrentResources = playbackLayerKeys.every((layerKey) => {
-      const currentAtlas = currentLayerBrickAtlases[layerKey] ?? null;
-      if (currentAtlas?.enabled) {
-        return true;
-      }
-      return (currentLayerVolumes[layerKey] ?? null) !== null;
+    const currentResourcesSatisfyDesired = playbackLayerKeys.every((layerKey) => {
+      return loadedLayerSatisfiesDecision({
+        layerKey,
+        decision: playbackResidencyDecisionByLayerKey[layerKey] ?? null,
+        layerVolumes: currentLayerVolumes,
+        layerPageTables: currentLayerPageTables,
+        layerBrickAtlases: currentLayerBrickAtlases
+      });
     });
     if (
       !isPlaying &&
       !isPlaybackStartPending &&
-      hasRenderableCurrentResources &&
+      currentResourcesSatisfyDesired &&
       currentLoadedTimeIndexRef.current === clampedIndex
     ) {
       lastLoadIntentRef.current = loadIntentKey;
       return;
     }
-    if (isPlaybackStartPending && hasRenderableCurrentResources) {
+    if (isPlaybackStartPending && currentResourcesSatisfyDesired) {
       lastLoadIntentRef.current = loadIntentKey;
       return;
     }
@@ -1042,6 +1152,16 @@ export function useRouteLayerVolumes({
     const requestAbortController = new AbortController();
     volumeLoadAbortControllerRef.current = requestAbortController;
     volumeLoadAbortControllersRef.current.add(requestAbortController);
+    const pausedVisibilityScaleOverride = resolvePausedVisibilityScaleOverride({
+      layerKeys: playbackLayerKeys,
+      currentLoadedTimeIndex: currentLoadedTimeIndexRef.current,
+      clampedIndex,
+      isPlaying,
+      isPlaybackStartPending,
+      layerVolumes: currentLayerVolumes,
+      layerPageTables: currentLayerPageTables,
+      layerBrickAtlases: currentLayerBrickAtlases
+    });
 
     void (async () => {
       let loadCompleted = false;
@@ -1051,7 +1171,10 @@ export function useRouteLayerVolumes({
             const { decision, volume, pageTable, brickAtlas } = await loadLayerTimepointResources(
               layerKey,
               clampedIndex,
-              { signal: requestAbortController.signal }
+              {
+                signal: requestAbortController.signal,
+                desiredScaleLevelOverride: pausedVisibilityScaleOverride
+              }
             );
             return [layerKey, decision, volume, pageTable, brickAtlas] as const;
           })
@@ -1146,17 +1269,19 @@ export function useRouteLayerVolumes({
     volumeTimepointCount,
     playbackLayerKeySignature,
     playbackWarmupFrames,
-      selectedIndex,
-      playbackResidencyDecisionSignature,
-      currentLayerBrickAtlases,
-      currentLayerVolumes,
-      isPlaybackStartPending,
-      loadLayerTimepointResources,
-      loadBackgroundMasksForScaleLevels,
-      cancelAllCurrentLoadRequests,
-      cancelAllWarmupRequests,
-      replacePlaybackWarmupFrames,
-    ]);
+    selectedIndex,
+    playbackResidencyDecisionSignature,
+    currentLayerBrickAtlases,
+    currentLayerPageTables,
+    currentLayerVolumes,
+    isPlaying,
+    isPlaybackStartPending,
+    loadLayerTimepointResources,
+    loadBackgroundMasksForScaleLevels,
+    cancelAllCurrentLoadRequests,
+    cancelAllWarmupRequests,
+    replacePlaybackWarmupFrames,
+  ]);
 
   useEffect(() => {
     if (

@@ -162,6 +162,15 @@ function createPrng(seed: number): () => number {
   );
   assert.match(
     nearestShader,
+    /float segmentation_color_hash_mix\(float hashValue, float byteValue\)/,
+  );
+  assert.match(
+    nearestShader,
+    /return hashValue \/ 65521\.0;/,
+  );
+  assert.doesNotMatch(nearestShader, /sin\(scalar\)/);
+  assert.match(
+    nearestShader,
     /if \(gradientMagnitude <= EPSILON\) \{\s*return vec3\(0\.0\);\s*\}/s,
   );
 })();

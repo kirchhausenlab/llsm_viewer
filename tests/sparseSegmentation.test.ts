@@ -123,6 +123,18 @@ function createUint32VolumePayload({
   };
 }
 
+test('sparse segmentation label colors use a bounded uint32 hash with varied hues', () => {
+  const seed = 0xf80c2bad;
+  assert.deepEqual(hashSparseSegmentationLabelColor(0, seed), [0, 0, 0, 0]);
+
+  const colors = [1, 2, 3, 4, 5, 65536, 0xffffffff].map((label) =>
+    hashSparseSegmentationLabelColor(label, seed)
+  );
+  assert.equal(new Set(colors.map((color) => color.slice(0, 3).join(','))).size, colors.length);
+  assert.ok(colors.some(([r]) => r < 100));
+  assert.ok(colors.some(([r, g, b]) => b > r && b > g));
+});
+
 test('sparse segmentation payload codecs round trip and choose deterministic adaptive codecs', () => {
   const cases: Array<{
     name: string;

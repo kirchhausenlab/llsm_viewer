@@ -39,20 +39,24 @@ function hsvToRgb(h: number, s: number, v: number): [number, number, number] {
 }
 
 export function hashSparseSegmentationLabelColor(label: number, seed: number): [number, number, number, number] {
-  if (label === 0) {
+  const labelId = Math.trunc(label) >>> 0;
+  if (labelId === 0) {
     return [0, 0, 0, 0];
   }
-  const scalar =
-    (label & 0xff) * 1 +
-    ((label >>> 8) & 0xff) * 257 +
-    ((label >>> 16) & 0xff) * 65537 +
-    Math.floor(label / 0x1000000) * 16777619 +
-    (seed & 0xff) * 3 +
-    ((seed >>> 8) & 0xff) * 769 +
-    ((seed >>> 16) & 0xff) * 196613 +
-    Math.floor(seed / 0x1000000) * 1000003;
-  const hash = Math.sin(scalar) * 43758.5453123;
-  const hue = (hash - Math.floor(hash)) * 360;
+  const seedId = Math.trunc(seed) >>> 0;
+  let hash = 17;
+  const mixByte = (value: number): void => {
+    hash = (hash * 131 + (value & 0xff)) % 65521;
+  };
+  mixByte(labelId);
+  mixByte(labelId >>> 8);
+  mixByte(labelId >>> 16);
+  mixByte(labelId >>> 24);
+  mixByte(seedId);
+  mixByte(seedId >>> 8);
+  mixByte(seedId >>> 16);
+  mixByte(seedId >>> 24);
+  const hue = (hash / 65521) * 360;
   const [r, g, b] = hsvToRgb(hue, 0.78, 1);
   return [r, g, b, 255];
 }

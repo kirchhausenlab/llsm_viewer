@@ -1613,10 +1613,18 @@ await (async () => {
   const brickAtlasCallCountBeforeCameraUpdate = getBrickAtlasCalls.length;
   hook.rerender();
   await flushAsyncWork();
-  assert.strictEqual(
-    getBrickAtlasCalls.length,
-    brickAtlasCallCountBeforeCameraUpdate,
-    'paused current-frame refinement should stay stable for the already-loaded frame'
+  assert.ok(
+    getBrickAtlasCalls.length >= brickAtlasCallCountBeforeCameraUpdate + 1,
+    'paused current-frame refinement should promote a coarser loaded frame when the desired scale becomes finer'
+  );
+  assert.ok(
+    getBrickAtlasCalls.some((call, index) =>
+      index >= brickAtlasCallCountBeforeCameraUpdate &&
+      call.layerKey === 'layer-a' &&
+      call.timeIndex === 1 &&
+      call.scaleLevel === 0
+    ),
+    'expected the paused current frame to reload at L0 after the camera requested the finest scale'
   );
 
   hook.unmount();
@@ -1695,6 +1703,161 @@ await (async () => {
   assert.strictEqual(getVolumeCalls, 1);
   assert.ok(hook.result.currentLayerVolumes['layer-a']);
   assert.strictEqual(hook.result.currentLayerBrickAtlases['layer-a'] ?? null, null);
+  hook.unmount();
+})();
+
+await (async () => {
+  let viewerCameraSample: {
+    distanceToTarget: number;
+    projectedPixelsPerVoxel: number;
+    isMoving: boolean;
+    capturedAtMs: number;
+  } | null = null;
+  let channelVisibility: Record<string, boolean> = {
+    'channel-a': true,
+    'channel-seg': false
+  };
+  const getBrickAtlasCalls: Array<{ layerKey: string; timeIndex: number; scaleLevel: number | undefined }> = [];
+
+  const provider = {
+    getBrickAtlas: async (layerKey: string, timeIndex: number, options?: { scaleLevel?: number }) => {
+      getBrickAtlasCalls.push({ layerKey, timeIndex, scaleLevel: options?.scaleLevel });
+      return createBrickAtlas(timeIndex, options?.scaleLevel ?? 0);
+    }
+  } as unknown as VolumeProvider;
+
+  const preprocessedExperiment = {
+    manifest: {
+      dataset: {
+        channels: [
+          {
+            id: 'channel-a',
+            layers: [
+              {
+                key: 'layer-a',
+                zarr: {
+                  scales: [
+                    { level: 0, downsampleFactor: [1, 1, 1] },
+                    { level: 1, downsampleFactor: [2, 2, 2] },
+                    { level: 2, downsampleFactor: [4, 4, 4] }
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            id: 'channel-seg',
+            layers: [
+              {
+                kind: 'segmentation',
+                key: 'layer-seg',
+                isSegmentation: true,
+                sparse: {
+                  scales: [
+                    {
+                      level: 0,
+                      width: 2,
+                      height: 2,
+                      depth: 2,
+                      downsampleFactor: [1, 1, 1],
+                      brickSize: [1, 1, 1],
+                      occupiedBrickCount: 1
+                    },
+                    {
+                      level: 1,
+                      width: 1,
+                      height: 1,
+                      depth: 1,
+                      downsampleFactor: [2, 2, 2],
+                      brickSize: [1, 1, 1],
+                      occupiedBrickCount: 1
+                    },
+                    {
+                      level: 2,
+                      width: 1,
+                      height: 1,
+                      depth: 1,
+                      downsampleFactor: [4, 4, 4],
+                      brickSize: [1, 1, 1],
+                      occupiedBrickCount: 1
+                    }
+                  ]
+                }
+              }
+            ]
+          }
+        ]
+      }
+    }
+  } as StagedPreprocessedExperiment;
+
+  const hook = renderHook(() =>
+    useRouteLayerVolumes({
+      isViewerLaunched: true,
+      isLaunchingViewer: false,
+      isPlaying: false,
+      preprocessedExperiment,
+      volumeProvider: provider,
+      loadedChannelIds: ['channel-a', 'channel-seg'],
+      channelLayersMap: new Map<string, LoadedDatasetLayer[]>([
+        ['channel-a', [createLoadedLayer('layer-a', 'channel-a')]],
+        ['channel-seg', [createLoadedLayer('layer-seg', 'channel-seg', true)]],
+      ]),
+      channelVisibility,
+      layerChannelMap: new Map<string, string>([
+        ['layer-a', 'channel-a'],
+        ['layer-seg', 'channel-seg'],
+      ]),
+      preferBrickResidency: true,
+      viewerCameraSample,
+      volumeTimepointCount: 1,
+      selectedIndex: 0,
+      clearDatasetError: () => {},
+      beginLaunchSession: () => {},
+      setLaunchExpectedVolumeCount: () => {},
+      setLaunchProgress: () => {},
+      completeLaunchSession: () => {},
+      failLaunchSession: () => {},
+      finishLaunchSessionAttempt: () => {},
+      setSelectedIndex: () => {},
+      setIsPlaying: () => {},
+      showLaunchError: () => {}
+    })
+  );
+
+  await flushAsyncWork();
+  assert.deepStrictEqual(getBrickAtlasCalls, [{ layerKey: 'layer-a', timeIndex: 0, scaleLevel: 0 }]);
+  assert.strictEqual(hook.result.currentLayerBrickAtlases['layer-a']?.scaleLevel, 0);
+
+  viewerCameraSample = {
+    distanceToTarget: 10,
+    projectedPixelsPerVoxel: 0.2,
+    isMoving: false,
+    capturedAtMs: 2
+  };
+  channelVisibility = {
+    'channel-a': true,
+    'channel-seg': true
+  };
+  const callCountBeforeUnhide = getBrickAtlasCalls.length;
+  hook.rerender();
+  await flushAsyncWork();
+
+  const callsAfterUnhide = getBrickAtlasCalls.slice(callCountBeforeUnhide);
+  assert.ok(
+    callsAfterUnhide.some((call) => call.layerKey === 'layer-a' && call.timeIndex === 0 && call.scaleLevel === 0),
+    'existing visible layer should stay on its current L0 scale when segmentation is unhidden'
+  );
+  assert.ok(
+    callsAfterUnhide.some((call) => call.layerKey === 'layer-seg' && call.timeIndex === 0 && call.scaleLevel === 0),
+    'newly visible segmentation layer should join the current L0 scale instead of forcing an L1/L2 load'
+  );
+  assert.ok(
+    callsAfterUnhide.every((call) => call.scaleLevel === 0),
+    'visibility changes in a paused single-timepoint view should not coarsen the current frame'
+  );
+  assert.strictEqual(hook.result.currentLayerBrickAtlases['layer-a']?.scaleLevel, 0);
+  assert.strictEqual(hook.result.currentLayerBrickAtlases['layer-seg']?.scaleLevel, 0);
   hook.unmount();
 })();
 

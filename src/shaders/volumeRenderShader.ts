@@ -1471,18 +1471,22 @@ const volumeRenderFragmentShader = /* glsl */ `
       return value * mix(vec3(1.0), clamp(p - vec3(1.0), vec3(0.0), vec3(1.0)), saturation);
     }
 
+    float segmentation_color_hash_mix(float hashValue, float byteValue) {
+      return mod(hashValue * 131.0 + floor(byteValue + 0.5), 65521.0);
+    }
+
     float segmentation_label_hash(vec4 labelBytes) {
       vec4 seedBytes = decode_segmentation_label_bytes(u_segmentationColorSeedBytes);
-      float scalar =
-        labelBytes.r * 1.0 +
-        labelBytes.g * 257.0 +
-        labelBytes.b * 65537.0 +
-        labelBytes.a * 16777619.0 +
-        seedBytes.r * 3.0 +
-        seedBytes.g * 769.0 +
-        seedBytes.b * 196613.0 +
-        seedBytes.a * 1000003.0;
-      return fract(sin(scalar) * 43758.5453123);
+      float hashValue = 17.0;
+      hashValue = segmentation_color_hash_mix(hashValue, labelBytes.r);
+      hashValue = segmentation_color_hash_mix(hashValue, labelBytes.g);
+      hashValue = segmentation_color_hash_mix(hashValue, labelBytes.b);
+      hashValue = segmentation_color_hash_mix(hashValue, labelBytes.a);
+      hashValue = segmentation_color_hash_mix(hashValue, seedBytes.r);
+      hashValue = segmentation_color_hash_mix(hashValue, seedBytes.g);
+      hashValue = segmentation_color_hash_mix(hashValue, seedBytes.b);
+      hashValue = segmentation_color_hash_mix(hashValue, seedBytes.a);
+      return hashValue / 65521.0;
     }
 
     bool segmentation_label_bytes_equal(vec4 leftBytes, vec4 rightBytes) {
