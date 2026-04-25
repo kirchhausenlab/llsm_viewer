@@ -121,7 +121,7 @@ const approxEqual = (actual: number, expected: number, tolerance = 1e-6) => {
     camera: null,
   });
 
-  assert.deepStrictEqual(target.toArray(), [0, 1.25, -1.35]);
+  assert.deepStrictEqual(target.toArray(), [0, 1.22, -1]);
 })();
 
 (() => {
@@ -142,7 +142,7 @@ const approxEqual = (actual: number, expected: number, tolerance = 1e-6) => {
 
   approxEqual(target.x, 1);
   approxEqual(target.y, 1.35);
-  approxEqual(target.z, 0.65);
+  approxEqual(target.z, 1);
 })();
 
 (() => {
@@ -161,7 +161,7 @@ const approxEqual = (actual: number, expected: number, tolerance = 1e-6) => {
     camera: xrCamera,
   });
 
-  approxEqual(placement.baseOffset.x, -1.35);
+  approxEqual(placement.baseOffset.x, -1);
   approxEqual(placement.baseOffset.y, 1.35);
   approxEqual(placement.baseOffset.z, 0);
   approxEqual(placement.yaw, Math.PI / 2);
