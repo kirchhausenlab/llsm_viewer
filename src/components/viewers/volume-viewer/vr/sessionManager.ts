@@ -360,6 +360,8 @@ export class VrSessionManager {
       onDisconnected: (event: XRInputSourceEvent) => void;
       onSelectStart: (event: XRInputSourceEvent) => void;
       onSelectEnd: (event: XRInputSourceEvent) => void;
+      onSqueezeStart: (event: XRInputSourceEvent) => void;
+      onSqueezeEnd: (event: XRInputSourceEvent) => void;
     }> = [];
 
     controllers.splice(0, controllers.length);
@@ -397,8 +399,9 @@ export class VrSessionManager {
       const wristMenuHud = createVrWristMenuHud();
       if (wristMenuHud) {
         wristMenuHud.group.visible = false;
-        wristMenuHud.group.position.set(0.1, -0.08, 0.16);
-        controller.add(wristMenuHud.group);
+        wristMenuHud.group.position.set(0, 0.055, 0.18);
+        wristMenuHud.group.rotation.set(-Math.PI / 2, 0, 0);
+        grip.add(wristMenuHud.group);
       }
 
       const model = controllerModelFactory.createControllerModel(grip);
@@ -423,6 +426,8 @@ export class VrSessionManager {
         onDisconnected: () => undefined,
         onSelectStart: () => undefined,
         onSelectEnd: () => undefined,
+        onSqueezeStart: () => undefined,
+        onSqueezeEnd: () => undefined,
         isConnected: false,
         targetRayMode: null,
         handedness: null,
@@ -453,6 +458,8 @@ export class VrSessionManager {
       const handleDisconnected = (event: XRInputSourceEvent) => entry.onDisconnected(event);
       const handleSelectStart = (event: XRInputSourceEvent) => entry.onSelectStart(event);
       const handleSelectEnd = (event: XRInputSourceEvent) => entry.onSelectEnd(event);
+      const handleSqueezeStart = (event: XRInputSourceEvent) => entry.onSqueezeStart?.(event);
+      const handleSqueezeEnd = (event: XRInputSourceEvent) => entry.onSqueezeEnd?.(event);
 
       (controller as unknown as {
         addEventListener: (type: string, handler: (event: any) => void) => void;
@@ -466,6 +473,12 @@ export class VrSessionManager {
       (controller as unknown as {
         addEventListener: (type: string, handler: (event: XRInputSourceEvent) => void) => void;
       }).addEventListener('selectend', handleSelectEnd);
+      (controller as unknown as {
+        addEventListener: (type: string, handler: (event: XRInputSourceEvent) => void) => void;
+      }).addEventListener('squeezestart', handleSqueezeStart);
+      (controller as unknown as {
+        addEventListener: (type: string, handler: (event: XRInputSourceEvent) => void) => void;
+      }).addEventListener('squeezeend', handleSqueezeEnd);
 
       scene.add(controller);
       scene.add(grip);
@@ -476,6 +489,8 @@ export class VrSessionManager {
         onDisconnected: handleDisconnected,
         onSelectStart: handleSelectStart,
         onSelectEnd: handleSelectEnd,
+        onSqueezeStart: handleSqueezeStart,
+        onSqueezeEnd: handleSqueezeEnd,
       });
     }
 
@@ -483,7 +498,15 @@ export class VrSessionManager {
 
     return () => {
       for (const created of createdEntries) {
-        const { entry, onConnected, onDisconnected, onSelectStart, onSelectEnd } = created;
+        const {
+          entry,
+          onConnected,
+          onDisconnected,
+          onSelectStart,
+          onSelectEnd,
+          onSqueezeStart,
+          onSqueezeEnd,
+        } = created;
         (entry.controller as unknown as {
           removeEventListener: (type: string, handler: (event: any) => void) => void;
         }).removeEventListener('connected', onConnected);
@@ -496,10 +519,16 @@ export class VrSessionManager {
         (entry.controller as unknown as {
           removeEventListener: (type: string, handler: (event: XRInputSourceEvent) => void) => void;
         }).removeEventListener('selectend', onSelectEnd);
+        (entry.controller as unknown as {
+          removeEventListener: (type: string, handler: (event: XRInputSourceEvent) => void) => void;
+        }).removeEventListener('squeezestart', onSqueezeStart);
+        (entry.controller as unknown as {
+          removeEventListener: (type: string, handler: (event: XRInputSourceEvent) => void) => void;
+        }).removeEventListener('squeezeend', onSqueezeEnd);
         entry.controller.remove(entry.ray);
         entry.controller.remove(entry.touchIndicator);
         if (entry.wristMenuHud) {
-          entry.controller.remove(entry.wristMenuHud.group);
+          entry.grip.remove(entry.wristMenuHud.group);
           entry.wristMenuHud.group.traverse((object) => {
             if ((object as THREE.Mesh).isMesh) {
               const mesh = object as THREE.Mesh;

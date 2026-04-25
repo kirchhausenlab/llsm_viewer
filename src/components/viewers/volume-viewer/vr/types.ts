@@ -398,6 +398,8 @@ export type ControllerEntry = {
   onDisconnected: (event?: XRInputSourceEvent) => void;
   onSelectStart: (event?: XRInputSourceEvent) => void;
   onSelectEnd: (event?: XRInputSourceEvent) => void;
+  onSqueezeStart?: (event?: XRInputSourceEvent) => void;
+  onSqueezeEnd?: (event?: XRInputSourceEvent) => void;
   isConnected: boolean;
   targetRayMode: string | null;
   handedness?: ControllerHandedness;

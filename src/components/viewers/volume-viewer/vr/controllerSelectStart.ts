@@ -14,7 +14,6 @@ import {
   computeYawRotation,
   createVolumeScaleState,
 } from './controllerVolumeGestures';
-import { renderVrWristMenuHud } from './hudRenderersWristMenu';
 
 type ControllerSelectStartDependencies = Pick<
   ControllerInputDependencies,
@@ -47,14 +46,9 @@ type ControllerSelectStartDependencies = Pick<
   | 'volumePitchRef'
   | 'vrHudYawVectorRef'
   | 'vrHudPitchVectorRef'
-  | 'vrPropsRef'
 > & {
   log: (...args: Parameters<typeof console.debug>) => void;
 };
-
-function isWristMenuController(entry: ControllerEntry, index: number): boolean {
-  return entry.handedness === 'left' || (entry.handedness == null && index === 0);
-}
 
 export function handleControllerSelectStart(
   entry: ControllerEntry,
@@ -91,33 +85,13 @@ export function handleControllerSelectStart(
     volumePitchRef,
     vrHudYawVectorRef,
     vrHudPitchVectorRef,
-    vrPropsRef,
     log,
   } = deps;
 
   entry.isSelecting = true;
-  entry.activeUiTarget = null;
+  entry.activeUiTarget = entry.hoverUiTarget;
   entry.hudRotationState = null;
   entry.volumeRotationState = null;
-  if (isWristMenuController(entry, index)) {
-    entry.wristMenuActive = true;
-    entry.hudGrabOffsets.playback = null;
-    entry.hudGrabOffsets.channels = null;
-    entry.hudGrabOffsets.tracks = null;
-    entry.translateGrabOffset = null;
-    entry.scaleGrabOffset = null;
-    entry.volumeScaleState = null;
-    entry.hoverUiTarget = null;
-    if (entry.wristMenuHud) {
-      entry.wristMenuHud.hoverRegion = null;
-      renderVrWristMenuHud(entry.wristMenuHud, vrPropsRef.current?.menuActions ?? []);
-      entry.wristMenuHud.group.visible = true;
-    }
-    log('[VR] wrist menu shown', index);
-    return;
-  }
-
-  entry.activeUiTarget = entry.hoverUiTarget;
   const activeType = entry.activeUiTarget?.type ?? null;
   const hudCategory = getHudCategoryFromTarget(activeType as VrUiTargetType | null);
   const rendererInstance = rendererRef.current;

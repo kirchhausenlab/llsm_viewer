@@ -7,6 +7,7 @@ import {
 } from './controllerConnectionLifecycle';
 import { handleControllerSelectStart } from './controllerSelectStart';
 import { handleControllerSelectEnd } from './controllerSelectEnd';
+import { handleControllerSqueezeEnd, handleControllerSqueezeStart } from './controllerSqueeze';
 
 export type ControllerEntryConfigurator = (entry: ControllerEntry, index: number) => void;
 
@@ -104,7 +105,19 @@ export function createControllerEntryConfigurator(
         volumePitchRef,
         vrHudYawVectorRef,
         vrHudPitchVectorRef,
+        log,
+      });
+    };
+
+    entry.onSqueezeStart = () => {
+      handleControllerSqueezeStart(entry, index, {
         vrPropsRef,
+        log,
+      });
+    };
+
+    entry.onSqueezeEnd = () => {
+      handleControllerSqueezeEnd(entry, index, {
         log,
       });
     };

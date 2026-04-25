@@ -54,17 +54,6 @@ export function handleControllerSelectEnd(
   entry.isSelecting = false;
   const activeTarget = entry.activeUiTarget;
   entry.activeUiTarget = null;
-  if (entry.wristMenuActive) {
-    entry.wristMenuActive = false;
-    if (entry.wristMenuHud) {
-      entry.wristMenuHud.group.visible = false;
-      entry.wristMenuHud.hoverRegion = null;
-    }
-    entry.hoverUiTarget = null;
-    entry.hasHoverUiPoint = false;
-    log('[VR] wrist menu hidden', index);
-    return;
-  }
   const playbackState = playbackStateRef.current;
   const vrCallbacks = vrPropsRef.current;
   if (activeTarget?.type === 'wrist-menu-action' && activeTarget.data) {

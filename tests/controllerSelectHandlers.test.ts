@@ -4,6 +4,10 @@ import * as THREE from 'three';
 import { handleControllerConnected, handleControllerDisconnected } from '../src/components/viewers/volume-viewer/vr/controllerConnectionLifecycle.ts';
 import { handleControllerSelectStart } from '../src/components/viewers/volume-viewer/vr/controllerSelectStart.ts';
 import { handleControllerSelectEnd } from '../src/components/viewers/volume-viewer/vr/controllerSelectEnd.ts';
+import {
+  handleControllerSqueezeEnd,
+  handleControllerSqueezeStart,
+} from '../src/components/viewers/volume-viewer/vr/controllerSqueeze.ts';
 import type {
   ControllerEntry,
   PlaybackState,
@@ -122,6 +126,14 @@ function createSelectStartDeps(overrides: Record<string, unknown> = {}) {
   } as const;
 }
 
+function createSqueezeDeps(overrides: Record<string, unknown> = {}) {
+  return {
+    vrPropsRef: ref(null),
+    log: () => {},
+    ...overrides,
+  } as const;
+}
+
 function createSelectEndDeps(overrides: Record<string, unknown> = {}) {
   return {
     playbackStateRef: ref(createPlaybackState()),
@@ -215,10 +227,10 @@ function createSelectEndDeps(overrides: Record<string, unknown> = {}) {
     wristMenuHud,
   });
 
-  handleControllerSelectStart(
+  handleControllerSqueezeStart(
     entry,
     1,
-    createSelectStartDeps({
+    createSqueezeDeps({
       vrPropsRef: ref({
         menuActions: [
           {
@@ -232,12 +244,12 @@ function createSelectEndDeps(overrides: Record<string, unknown> = {}) {
     }),
   );
 
-  assert.equal(entry.isSelecting, true);
+  assert.equal(entry.isSelecting, false);
   assert.equal(entry.wristMenuActive, true);
   assert.equal(entry.activeUiTarget, null);
   assert.equal(wristMenuHud.group.visible, true);
 
-  handleControllerSelectEnd(entry, 1, createSelectEndDeps());
+  handleControllerSqueezeEnd(entry, 1, createSqueezeDeps());
 
   assert.equal(entry.wristMenuActive, false);
   assert.equal(wristMenuHud.group.visible, false);
