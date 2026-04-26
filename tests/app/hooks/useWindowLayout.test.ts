@@ -2,12 +2,13 @@ import assert from 'node:assert/strict';
 
 import { useWindowLayout } from '../../../src/ui/app/hooks/useWindowLayout.ts';
 import {
+  computeAnnotateWindowRecenterPosition,
   computeCameraWindowRecenterPosition,
   computeCameraSettingsWindowRecenterPosition,
   computeDrawRoiWindowRecenterPosition,
+  computeExportChannelWindowRecenterPosition,
   computeLayersWindowDefaultPosition,
   computeMeasurementsWindowRecenterPosition,
-  computePaintbrushWindowRecenterPosition,
   computePlotSettingsWindowDefaultPosition,
   computePropsWindowRecenterPosition,
   computeRecordWindowDefaultPosition,
@@ -43,7 +44,8 @@ console.log('Starting useWindowLayout tests');
   assert.deepStrictEqual(hook.result.cameraSettingsWindowInitialPosition, computeCameraSettingsWindowRecenterPosition());
   assert.deepStrictEqual(hook.result.propsWindowInitialPosition, computePropsWindowRecenterPosition());
   assert.deepStrictEqual(hook.result.trackWindowInitialPosition, computeTrackWindowDefaultPosition());
-  assert.deepStrictEqual(hook.result.paintbrushWindowInitialPosition, computePaintbrushWindowRecenterPosition());
+  assert.deepStrictEqual(hook.result.annotateWindowInitialPosition, computeAnnotateWindowRecenterPosition());
+  assert.deepStrictEqual(hook.result.exportChannelWindowInitialPosition, computeExportChannelWindowRecenterPosition());
   assert.deepStrictEqual(hook.result.drawRoiWindowInitialPosition, computeDrawRoiWindowRecenterPosition());
   assert.deepStrictEqual(hook.result.roiManagerWindowInitialPosition, computeRoiManagerWindowRecenterPosition());
   assert.deepStrictEqual(hook.result.recordWindowInitialPosition, computeRecordWindowDefaultPosition());

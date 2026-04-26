@@ -6,6 +6,7 @@ import * as zarr from 'zarrita';
 
 import { createInMemoryPreprocessedStorage } from '../src/shared/storage/preprocessedStorage.ts';
 import { openPreprocessedDatasetFromZarrStorage } from '../src/shared/utils/preprocessedDataset/open.ts';
+import { isSparseSegmentationLayerManifest } from '../src/shared/utils/preprocessedDataset/types.ts';
 import { createZarrStoreFromPreprocessedStorage } from '../src/shared/utils/zarrStore.ts';
 
 const FIXTURE_DIR = path.resolve(process.cwd(), 'tests/fixtures/preprocessed-schema');
@@ -74,16 +75,15 @@ test('openPreprocessedDatasetFromZarrStorage rejects invalid sharded descriptor 
   );
 });
 
-test('openPreprocessedDatasetFromZarrStorage accepts segmentation fixtures with uint16 label data at every scale', async () => {
-  const opened = await openDatasetFromFixture('valid-segmentation-multiscale-labels.json');
+test('openPreprocessedDatasetFromZarrStorage accepts sparse segmentation fixture', async () => {
+  const opened = await openDatasetFromFixture('valid-sparse-segmentation.json');
   const layer = opened.manifest.dataset.channels[0]?.layers[0];
+  assert.ok(layer && isSparseSegmentationLayerManifest(layer));
   assert.equal(layer?.isSegmentation, true);
-  assert.equal(layer?.zarr.scales.length, 2);
-  for (const scale of layer?.zarr.scales ?? []) {
-    assert.equal(scale.channels, 1);
-    assert.equal(scale.zarr.data.dataType, 'uint16');
-    assert.equal(scale.zarr.histogram, undefined);
-  }
+  assert.equal(layer.dataType, 'uint32');
+  assert.equal(layer.sparse.scales.length, 1);
+  assert.equal(layer.sparse.scales[0]?.directory.format, 'sparse-brick-directory-v1');
+  assert.equal(layer.sparse.scales[0]?.payload.format, 'sparse-brick-payload-shards-v1');
 });
 
 test('openPreprocessedDatasetFromZarrStorage rejects multi-layer channel fixtures', async () => {
@@ -93,17 +93,34 @@ test('openPreprocessedDatasetFromZarrStorage rejects multi-layer channel fixture
   );
 });
 
-test('openPreprocessedDatasetFromZarrStorage rejects segmentation fixtures with a non-uint16 scale payload', async () => {
+test('openPreprocessedDatasetFromZarrStorage rejects legacy dense segmentation fixtures', async () => {
+  await assert.rejects(
+    () => openDatasetFromFixture('valid-segmentation-multiscale-labels.json'),
+    /must be reprocessed with sparse segmentation support/
+  );
+});
+
+test('openPreprocessedDatasetFromZarrStorage rejects legacy dense segmentation fixtures before scale payload validation', async () => {
   await assert.rejects(
     () => openDatasetFromFixture('invalid-segmentation-missing-label-scale1.json'),
-    /manifest\.dataset\.channels\[0\]\.layers\[0\]\.zarr\.scales\[1\]\.zarr\.data\.dataType/
+    /must be reprocessed with sparse segmentation support/
   );
 });
 
 test('openPreprocessedDatasetFromZarrStorage rejects fixtures with non-contiguous scale levels', async () => {
+  const manifest = readFixture('valid-non-sharded.json') as {
+    dataset: {
+      channels: Array<{
+        layers: Array<{
+          zarr: { scales: Array<{ level: number }> };
+        }>;
+      }>;
+    };
+  };
+  manifest.dataset.channels[0]!.layers[0]!.zarr.scales[0]!.level = 1;
   await assert.rejects(
-    () => openDatasetFromFixture('invalid-noncontiguous-scale-levels.json'),
-    /levels must be contiguous/
+    () => openDatasetFromManifest(manifest),
+    /first scale must be level 0/
   );
 });
 

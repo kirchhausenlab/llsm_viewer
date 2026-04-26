@@ -12,6 +12,10 @@ export type PreprocessedStorageHandle = {
   backend: PreprocessedStorageBackend;
   id: string;
   storage: PreprocessedStorage;
+  permissions?: {
+    queryWritePermission?: () => Promise<PermissionState | 'granted' | 'denied' | 'prompt'>;
+    requestWritePermission?: () => Promise<PermissionState | 'granted' | 'denied' | 'prompt'>;
+  };
   dispose?: () => Promise<void>;
 };
 
@@ -62,6 +66,8 @@ type FileSystemDirectoryHandleLike = {
   getDirectoryHandle(name: string, options?: { create?: boolean }): Promise<FileSystemDirectoryHandleLike>;
   getFileHandle(name: string, options?: { create?: boolean }): Promise<FileSystemFileHandleLike>;
   removeEntry(name: string, options?: { recursive?: boolean }): Promise<void>;
+  queryPermission?(descriptor?: { mode?: 'read' | 'readwrite' }): Promise<PermissionState>;
+  requestPermission?(descriptor?: { mode?: 'read' | 'readwrite' }): Promise<PermissionState>;
 };
 
 type FileSystemFileHandleLike = {
@@ -471,7 +477,19 @@ export async function createDirectoryHandlePreprocessedStorage(
     }
   };
 
-  return { backend: 'directory', id, storage };
+  return {
+    backend: 'directory',
+    id,
+    storage,
+    permissions: {
+      queryWritePermission: directory.queryPermission
+        ? () => directory.queryPermission!({ mode: 'readwrite' })
+        : undefined,
+      requestWritePermission: directory.requestPermission
+        ? () => directory.requestPermission!({ mode: 'readwrite' })
+        : undefined,
+    }
+  };
 }
 
 export function createInMemoryPreprocessedStorage(options: { datasetId: string }): PreprocessedStorageHandle {

@@ -22,6 +22,8 @@ import {
   FALLBACK_SEGMENTATION_PALETTE_TEXTURE,
 } from '../src/components/viewers/volume-viewer/fallbackTextures.ts';
 import { RENDER_STYLE_SLICE } from '../src/state/layerSettings.ts';
+import { createSegmentationSeed } from '../src/shared/utils/appHelpers.ts';
+import { hashSparseSegmentationLabelColor } from '../src/shared/utils/preprocessedDataset/sparseSegmentation/index.ts';
 import { renderHook } from './hooks/renderHook.ts';
 
 console.log('Starting useVolumeResources tests');
@@ -342,7 +344,7 @@ const createLayer = (
   invert: false,
   samplingMode,
   mode: '3d',
-  isSegmentation: volume?.kind === 'segmentation' || brickAtlas?.dataType === 'uint16',
+  isSegmentation: volume?.kind === 'segmentation' || brickAtlas?.kind === 'segmentation',
   brickPageTable: resolvedPageTable,
   brickAtlas: resolvedBrickAtlas,
   };
@@ -1084,17 +1086,7 @@ await (async () => {
   );
 
   const resource = resourcesRef.current.get('layer-3d');
-  assert.ok(resource);
-  assert.deepEqual(resource.brickSkipDiagnostics, {
-    enabled: false,
-    reason: 'disabled-for-direct-volume-linear',
-    totalBricks: 0,
-    emptyBricks: 0,
-    occupiedBricks: 0,
-    occupiedBricksMissingFromAtlas: 0,
-    invalidRangeBricks: 0,
-    occupancyMetadataMismatchBricks: 0
-  });
+  assert.equal(resource, undefined);
 })();
 
 (() => {
@@ -1620,17 +1612,15 @@ await (async () => {
 })();
 
 (() => {
-  const volume: NormalizedVolume = {
-    kind: 'segmentation',
-    width: 2,
-    height: 2,
-    depth: 2,
-    channels: 1,
-    dataType: 'uint16',
-    labels: new Uint16Array([0, 1, 1, 0, 2, 2, 0, 3]),
-    min: 0 as const,
-    max: 3,
-  };
+  const labels = [0, 1, 1, 0, 2, 2, 0, 3];
+  const atlasData = new Uint8Array(labels.length * 4);
+  labels.forEach((label, index) => {
+    const offset = index * 4;
+    atlasData[offset] = label & 0xff;
+    atlasData[offset + 1] = (label >>> 8) & 0xff;
+    atlasData[offset + 2] = (label >>> 16) & 0xff;
+    atlasData[offset + 3] = Math.floor(label / 0x1000000) & 0xff;
+  });
   const pageTable: VolumeBrickPageTable = {
     layerKey: 'layer-3d',
     timepoint: 0,
@@ -1644,6 +1634,21 @@ await (async () => {
     chunkOccupancy: new Float32Array([1]),
     occupiedBrickCount: 1,
   };
+  const brickAtlas: VolumeBrickAtlas = {
+    layerKey: 'layer-3d',
+    timepoint: 0,
+    scaleLevel: 0,
+    kind: 'segmentation',
+    pageTable,
+    width: 2,
+    height: 2,
+    depth: 2,
+    dataType: 'uint8',
+    textureFormat: 'rgba',
+    sourceChannels: 1,
+    data: atlasData,
+    enabled: true,
+  };
 
   const sceneRef = { current: new THREE.Scene() };
   const cameraRef = { current: new THREE.PerspectiveCamera(75, 1, 0.1, 10) };
@@ -1655,13 +1660,13 @@ await (async () => {
     } as unknown as THREE.OrbitControls,
   };
   const resourcesRef = { current: new Map<string, VolumeResources>() };
-  const baseLayer = createLayer(volume, pageTable, null, 'linear');
+  const baseLayer = createLayer(null, pageTable, brickAtlas, 'linear');
   let layers: ViewerLayer[] = [{ ...baseLayer, windowMin: 0.1, windowMax: 0.8, invert: false }];
 
   const hook = renderHook(() =>
     useVolumeResources({
       layers,
-      primaryVolume: volume,
+      primaryVolume: null,
       isAdditiveBlending: false,
       renderContextRevision: 0,
       sceneRef,
@@ -1696,24 +1701,21 @@ await (async () => {
   assert.strictEqual(initial.labelTexture, null);
   assert.ok(initial.paletteTexture);
   assert.equal(initial.texture?.type, THREE.UnsignedByteType);
-  assert.equal(initial.texture?.format, THREE.RGFormat);
-  assert.equal(initial.texture?.magFilter, THREE.LinearFilter);
-  const initialTextureImage = initial.texture?.image as { data?: Uint8Array } | undefined;
-  assert.deepEqual(Array.from(initialTextureImage?.data ?? []), [0, 0, 1, 0, 1, 0, 0, 0, 2, 0, 2, 0, 0, 0, 3, 0]);
+  assert.equal(initial.texture?.format, THREE.RedFormat);
   const initialUniforms = (initial.mesh.material as THREE.ShaderMaterial).uniforms as Record<
     string,
     { value: unknown }
   >;
-  assert.notStrictEqual(initialUniforms.u_segmentationLabels?.value, FALLBACK_SEGMENTATION_LABEL_TEXTURE);
-  assert.strictEqual(initialUniforms.u_segmentationLabels?.value, initial.texture);
   assert.strictEqual(initialUniforms.u_segmentationPalette?.value, initial.paletteTexture);
-  assert.strictEqual(initialUniforms.u_segmentationBrickAtlasData?.value, FALLBACK_SEGMENTATION_LABEL_TEXTURE);
-  assert.equal(initialUniforms.u_brickAtlasEnabled?.value, 0);
-  assert.equal(initialUniforms.u_brickSkipEnabled?.value, 0);
+  assert.notStrictEqual(initialUniforms.u_segmentationBrickAtlasData?.value, FALLBACK_SEGMENTATION_LABEL_TEXTURE);
+  assert.equal(initialUniforms.u_brickAtlasEnabled?.value, 1);
+  assert.equal(initialUniforms.u_brickSkipEnabled?.value, 1);
   assert.equal(initialUniforms.u_isSegmentation?.value, 1);
   assert.equal(initialUniforms.u_nearestSampling?.value, 0);
   assert.equal(initialUniforms.u_adaptiveLodEnabled?.value, 1);
-  assert.equal(initial.brickAtlasDataTexture ?? null, null);
+  assert.ok(initial.brickAtlasDataTexture);
+  assert.ok(initial.brickSubcellTexture);
+  assert.deepEqual((initialUniforms.u_brickSubcellGrid?.value as THREE.Vector3).toArray(), [2, 2, 2]);
 
   layers = [{ ...baseLayer, windowMin: 0.2, windowMax: 0.7, invert: true }];
   hook.rerender();
@@ -1725,12 +1727,11 @@ await (async () => {
     string,
     { value: unknown }
   >;
-  assert.strictEqual(updatedUniforms.u_segmentationLabels?.value, updated.texture);
   assert.equal(updatedUniforms.u_windowMin?.value, 0.2);
   assert.equal(updatedUniforms.u_windowMax?.value, 0.7);
   assert.equal(updatedUniforms.u_invert?.value, 1);
-  assert.equal(updatedUniforms.u_brickAtlasEnabled?.value, 0);
-  assert.equal(updatedUniforms.u_brickSkipEnabled?.value, 0);
+  assert.equal(updatedUniforms.u_brickAtlasEnabled?.value, 1);
+  assert.equal(updatedUniforms.u_brickSkipEnabled?.value, 1);
   assert.equal(updatedUniforms.u_isSegmentation?.value, 1);
 
   layers = [{ ...baseLayer, samplingMode: 'nearest', windowMin: 0.15, windowMax: 0.85, invert: false }];
@@ -1744,18 +1745,17 @@ await (async () => {
     string,
     { value: unknown }
   >;
-  assert.strictEqual(nearestUniforms.u_segmentationLabels?.value, nearest.texture);
   assert.equal(nearestUniforms.u_windowMin?.value, 0.15);
   assert.equal(nearestUniforms.u_windowMax?.value, 0.85);
   assert.equal(nearestUniforms.u_invert?.value, 0);
   assert.equal(nearestUniforms.u_nearestSampling?.value, 0);
   assert.equal(nearestUniforms.u_adaptiveLodEnabled?.value, 1);
-  assert.equal(nearestUniforms.u_brickAtlasEnabled?.value, 0);
-  assert.equal(nearestUniforms.u_brickSkipEnabled?.value, 0);
-  assert.equal(nearest.brickAtlasDataTexture ?? null, null);
+  assert.equal(nearestUniforms.u_brickAtlasEnabled?.value, 1);
+  assert.equal(nearestUniforms.u_brickSkipEnabled?.value, 1);
+  assert.ok(nearest.brickAtlasDataTexture);
   assert.equal(nearest.samplingMode, 'linear');
 
-  layers = [{ ...baseLayer, volume: null }];
+  layers = [{ ...baseLayer, volume: null, brickAtlas: null, brickPageTable: null }];
   hook.rerender();
 
   const fallback = resourcesRef.current.get('layer-3d');
@@ -1845,14 +1845,14 @@ await (async () => {
 
 (() => {
   const volume: NormalizedVolume = {
-    kind: 'segmentation',
+    kind: 'intensity',
     width: 2,
     height: 2,
     depth: 2,
     channels: 1,
-    dataType: 'uint16',
-    labels: new Uint16Array([0, 1, 1, 0, 2, 2, 0, 3]),
-    min: 0 as const,
+    dataType: 'uint8',
+    normalized: new Uint8Array([0, 1, 1, 0, 2, 2, 0, 3]),
+    min: 0,
     max: 3,
   };
   const pageTable: VolumeBrickPageTable = {
@@ -2065,16 +2065,42 @@ await (async () => {
     min: 0,
     max: 112,
   };
-  const segmentationVolume: NormalizedVolume = {
+  const segmentationPageTable: VolumeBrickPageTable = {
+    layerKey: 'layer-seg',
+    timepoint: 0,
+    scaleLevel: 0,
+    gridShape: [1, 1, 1],
+    chunkShape: [2, 2, 2],
+    volumeShape: [2, 2, 2],
+    brickAtlasIndices: new Int32Array([0]),
+    chunkMin: new Uint8Array([0]),
+    chunkMax: new Uint8Array([255]),
+    chunkOccupancy: new Float32Array([1]),
+    occupiedBrickCount: 1,
+  };
+  const segmentationAtlas: VolumeBrickAtlas = {
+    layerKey: 'layer-seg',
+    timepoint: 0,
+    scaleLevel: 0,
     kind: 'segmentation',
+    pageTable: segmentationPageTable,
     width: 2,
     height: 2,
     depth: 2,
-    channels: 1,
-    dataType: 'uint16',
-    labels: new Uint16Array([0, 1, 1, 0, 2, 2, 0, 3]),
-    min: 0 as const,
-    max: 3,
+    dataType: 'uint8',
+    textureFormat: 'rgba',
+    sourceChannels: 1,
+    data: new Uint8Array([
+      0, 0, 0, 0,
+      1, 0, 0, 0,
+      1, 0, 0, 0,
+      0, 0, 0, 0,
+      2, 0, 0, 0,
+      2, 0, 0, 0,
+      0, 0, 0, 0,
+      3, 0, 0, 0,
+    ]),
+    enabled: true,
   };
 
   const sceneRef = { current: new THREE.Scene() };
@@ -2095,11 +2121,10 @@ await (async () => {
     brickPageTable: null,
   };
   const segmentationLayer: ViewerLayer = {
-    ...createLayer(segmentationVolume, null, null, 'linear'),
+    ...createLayer(null, segmentationPageTable, segmentationAtlas, 'linear'),
     key: 'layer-seg',
     label: 'Segmentation',
     channelName: 'seg',
-    brickPageTable: null,
   };
   const layers = [intensityLayer, segmentationLayer];
 
@@ -3258,19 +3283,41 @@ await (async () => {
 })();
 
 (() => {
-  const volume: NormalizedVolume = {
+  const pageTable: VolumeBrickPageTable = {
+    layerKey: 'layer-slice-seg',
+    timepoint: 0,
+    scaleLevel: 0,
+    gridShape: [1, 1, 1],
+    chunkShape: [1, 2, 2],
+    volumeShape: [1, 2, 2],
+    brickAtlasIndices: new Int32Array([0]),
+    chunkMin: new Uint8Array([0]),
+    chunkMax: new Uint8Array([255]),
+    chunkOccupancy: new Float32Array([1]),
+    occupiedBrickCount: 1,
+  };
+  const brickAtlas: VolumeBrickAtlas = {
+    layerKey: 'layer-slice-seg',
+    timepoint: 0,
+    scaleLevel: 0,
     kind: 'segmentation',
+    pageTable,
     width: 2,
     height: 2,
     depth: 1,
-    channels: 1,
-    dataType: 'uint16',
-    labels: new Uint16Array([0, 1, 2, 0]),
-    min: 0 as const,
-    max: 2,
+    dataType: 'uint8',
+    textureFormat: 'rgba',
+    sourceChannels: 1,
+    data: new Uint8Array([
+      0, 0, 0, 0,
+      1, 0, 0, 0,
+      2, 0, 0, 0,
+      0, 0, 0, 0,
+    ]),
+    enabled: true,
   };
   const layer: ViewerLayer = {
-    ...createLayer(volume, null, null, 'linear'),
+    ...createLayer(null, pageTable, brickAtlas, 'linear'),
     key: 'layer-slice-seg',
     renderStyle: RENDER_STYLE_SLICE,
   };
@@ -3289,7 +3336,7 @@ await (async () => {
   renderHook(() =>
     useVolumeResources({
       layers: [layer],
-      primaryVolume: volume,
+      primaryVolume: null,
       isAdditiveBlending: false,
       zClipFrontFraction: 0,
       renderContextRevision: 0,
@@ -3325,28 +3372,15 @@ await (async () => {
   assert.equal(resource.mode, 'slice');
   const uniforms = (resource.mesh.material as THREE.ShaderMaterial).uniforms as Record<string, { value: unknown }>;
   assert.equal(uniforms.u_isSegmentation?.value, 1);
-  const paletteData = resource.paletteTexture?.image.data as Uint8Array | undefined;
-  assert.ok(paletteData);
   const data = Array.from((resource.texture as THREE.DataTexture).image.data as Uint8Array);
+  const colorSeed = createSegmentationSeed('layer-slice-seg');
   assert.deepEqual(
     data,
     [
-      paletteData?.[0] ?? 0,
-      paletteData?.[1] ?? 0,
-      paletteData?.[2] ?? 0,
-      paletteData?.[3] ?? 0,
-      paletteData?.[4] ?? 0,
-      paletteData?.[5] ?? 0,
-      paletteData?.[6] ?? 0,
-      paletteData?.[7] ?? 0,
-      paletteData?.[8] ?? 0,
-      paletteData?.[9] ?? 0,
-      paletteData?.[10] ?? 0,
-      paletteData?.[11] ?? 0,
-      paletteData?.[0] ?? 0,
-      paletteData?.[1] ?? 0,
-      paletteData?.[2] ?? 0,
-      paletteData?.[3] ?? 0,
+      ...hashSparseSegmentationLabelColor(0, colorSeed),
+      ...hashSparseSegmentationLabelColor(1, colorSeed),
+      ...hashSparseSegmentationLabelColor(2, colorSeed),
+      ...hashSparseSegmentationLabelColor(0, colorSeed),
     ],
   );
 })();

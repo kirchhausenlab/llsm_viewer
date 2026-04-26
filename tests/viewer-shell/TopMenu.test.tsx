@@ -147,7 +147,8 @@ function createProps(overrides: Partial<React.ComponentProps<typeof TopMenu>> = 
     onOpenCameraSettingsWindow: () => {},
     onOpenBackgroundsWindow: () => {},
     onOpenPropsWindow: () => {},
-    onOpenPaintbrush: () => {},
+    onOpenAnnotate: () => {},
+    onOpenExportChannel: () => {},
     onOpenDrawRoiWindow: () => {},
     onOpenRoiManagerWindow: () => {},
     onOpenSetMeasurementsWindow: () => {},
@@ -238,9 +239,9 @@ test('top menu renders the requested dropdown order and items', () => {
     assert.deepEqual(triggerLabels, ['File', 'View', 'Edit', 'Tracks', 'Help']);
 
     const expectedMenus = new Map<string, string[]>([
-      ['File', ['Save changes', 'Reset changes', 'Recenter windows', 'Diagnostics', 'Exit']],
+      ['File', ['Save changes', 'Reset changes', 'Export channel', 'Recenter windows', 'Diagnostics', 'Exit']],
       ['View', ['Channels', 'View selection', 'Screen capture', 'Backgrounds', 'Render settings', 'Camera settings', 'Hover settings']],
-      ['Edit', ['Props', 'Paintbrush', 'Draw ROI', 'ROI Manager', 'Set measurements']],
+      ['Edit', ['Props', 'Annotate', 'Draw ROI', 'ROI Manager', 'Set measurements']],
       ['Tracks', ['Tracks window', 'Amplitude plot', 'Plot settings', 'Tracks settings']],
       ['Help', ['About', 'Controls']]
     ]);
@@ -348,7 +349,8 @@ test('wired dropdown items invoke the expected handlers', () => {
     let cameraSettingsCalls = 0;
     let backgroundsCalls = 0;
     let propsCalls = 0;
-    let paintbrushCalls = 0;
+    let annotateCalls = 0;
+    let exportChannelCalls = 0;
     let drawRoiCalls = 0;
     let roiManagerCalls = 0;
     let setMeasurementsCalls = 0;
@@ -387,8 +389,11 @@ test('wired dropdown items invoke the expected handlers', () => {
       onOpenPropsWindow: () => {
         propsCalls += 1;
       },
-      onOpenPaintbrush: () => {
-        paintbrushCalls += 1;
+      onOpenAnnotate: () => {
+        annotateCalls += 1;
+      },
+      onOpenExportChannel: () => {
+        exportChannelCalls += 1;
       },
       onOpenDrawRoiWindow: () => {
         drawRoiCalls += 1;
@@ -491,6 +496,13 @@ test('wired dropdown items invoke the expected handlers', () => {
       findDropdownTrigger(renderer, 'File').props.onClick();
     });
     act(() => {
+      findMenuItem(renderer, 'Export channel').props.onClick();
+    });
+
+    act(() => {
+      findDropdownTrigger(renderer, 'File').props.onClick();
+    });
+    act(() => {
       findMenuItem(renderer, 'Enter VR').props.onClick();
     });
 
@@ -505,7 +517,7 @@ test('wired dropdown items invoke the expected handlers', () => {
       findDropdownTrigger(renderer, 'Edit').props.onClick();
     });
     act(() => {
-      findMenuItem(renderer, 'Paintbrush').props.onClick();
+      findMenuItem(renderer, 'Annotate').props.onClick();
     });
 
     act(() => {
@@ -585,7 +597,8 @@ test('wired dropdown items invoke the expected handlers', () => {
     assert.equal(cameraSettingsCalls, 1);
     assert.equal(backgroundsCalls, 1);
     assert.equal(propsCalls, 1);
-    assert.equal(paintbrushCalls, 1);
+    assert.equal(annotateCalls, 1);
+    assert.equal(exportChannelCalls, 1);
     assert.equal(drawRoiCalls, 1);
     assert.equal(roiManagerCalls, 1);
     assert.equal(setMeasurementsCalls, 1);

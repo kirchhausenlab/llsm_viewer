@@ -82,8 +82,8 @@ test('navigation help window renders tabbed controls guidance and switches conte
   const segmentationHeadings = renderer.root.findAllByType('h4').map((node) => extractText(node));
   assert.deepEqual(segmentationHeadings, ['Viewing segmentation', 'Editing labels']);
   const segmentationItems = renderer.root.findAllByType('li').map((node) => extractText(node));
-  assert.ok(segmentationItems.includes('Open Edit > Paintbrush to create or refine labels.'));
-  assert.ok(segmentationItems.includes('Use Undo, Redo, Clear, and Save in the Paintbrush window to manage your edits.'));
+  assert.ok(segmentationItems.includes('Open Edit > Annotate to create or refine labels.'));
+  assert.ok(segmentationItems.includes('Use Undo, Redo, Clear, and Save in the Annotate window to manage your edits.'));
 
   renderer.unmount();
 });

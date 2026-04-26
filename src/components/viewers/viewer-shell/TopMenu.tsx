@@ -58,7 +58,10 @@ export default function TopMenu(props: TopMenuProps) {
     onOpenCameraSettingsWindow,
     onOpenBackgroundsWindow,
     onOpenPropsWindow,
-    onOpenPaintbrush,
+    onOpenAnnotate,
+    annotateDisabled = false,
+    annotateDisabledTitle,
+    onOpenExportChannel,
     onOpenDrawRoiWindow,
     onOpenRoiManagerWindow,
     onOpenSetMeasurementsWindow,
@@ -164,6 +167,7 @@ export default function TopMenu(props: TopMenuProps) {
       file: [
         { label: 'Save changes', disabled: true },
         { label: 'Reset changes', disabled: true },
+        { label: 'Export channel', onSelect: onOpenExportChannel },
         { label: 'Recenter windows', onSelect: onResetLayout },
         { label: 'Diagnostics', onSelect: onOpenDiagnosticsWindow },
         ...(is3dModeAvailable
@@ -189,7 +193,12 @@ export default function TopMenu(props: TopMenuProps) {
       ],
       edit: [
         { label: 'Props', onSelect: onOpenPropsWindow },
-        { label: 'Paintbrush', onSelect: onOpenPaintbrush },
+        {
+          label: 'Annotate',
+          onSelect: onOpenAnnotate,
+          disabled: annotateDisabled,
+          title: annotateDisabledTitle
+        },
         { label: 'Draw ROI', onSelect: onOpenDrawRoiWindow },
         { label: 'ROI Manager', onSelect: onOpenRoiManagerWindow },
         { label: 'Set measurements', onSelect: onOpenSetMeasurementsWindow }
@@ -213,7 +222,10 @@ export default function TopMenu(props: TopMenuProps) {
       onOpenChannelsWindow,
       onOpenDiagnosticsWindow,
       onOpenDrawRoiWindow,
-      onOpenPaintbrush,
+      onOpenAnnotate,
+      annotateDisabled,
+      annotateDisabledTitle,
+      onOpenExportChannel,
       onOpenPlotSettingsWindow,
       onOpenPropsWindow,
       onOpenSetMeasurementsWindow,

@@ -9,7 +9,11 @@ import {
 } from '../src/shared/utils/preprocessedDataset/preprocess.ts';
 import { openPreprocessedDatasetFromZarrStorage } from '../src/shared/utils/preprocessedDataset/open.ts';
 import { createZarrChunkKeyFromCoords } from '../src/shared/utils/preprocessedDataset/chunkKey.ts';
-import type { ChannelExportMetadata, TrackSetExportMetadata } from '../src/shared/utils/preprocessedDataset/types.ts';
+import {
+  isSparseSegmentationLayerManifest,
+  type ChannelExportMetadata,
+  type TrackSetExportMetadata
+} from '../src/shared/utils/preprocessedDataset/types.ts';
 import { compileTrackEntries } from '../src/shared/utils/compiledTracks.ts';
 import type { VolumePayload } from '../src/types/volume.ts';
 import {
@@ -253,10 +257,11 @@ test('preprocessDatasetToStorage writes loadable manifest and chunk data for mix
   assert.ok(segmentationLayer);
   assert.equal(intensityLayer?.zarr.scales[0]?.zarr.labels, undefined);
   assert.equal(segmentationLayer?.channels, 1);
-  assert.equal(segmentationLayer?.dataType, 'uint16');
+  assert.ok(segmentationLayer && isSparseSegmentationLayerManifest(segmentationLayer));
+  assert.equal(segmentationLayer.dataType, 'uint32');
   assert.equal(segmentationLayer?.normalization, null);
-  assert.equal(segmentationLayer?.zarr.scales[0]?.zarr.labels, undefined);
-  assert.equal(segmentationLayer?.zarr.scales[0]?.zarr.histogram, undefined);
+  assert.equal(segmentationLayer.sparse.scales[0]?.directory.format, 'sparse-brick-directory-v1');
+  assert.equal(segmentationLayer.sparse.scales[0]?.payload.format, 'sparse-brick-payload-shards-v1');
 
   const intensityScale = intensityLayer?.zarr.scales[0];
   assert.ok(intensityScale);
@@ -274,15 +279,18 @@ test('preprocessDatasetToStorage writes loadable manifest and chunk data for mix
   const histogramTotal = histogram.reduce((sum, value) => sum + value, 0);
   assert.equal(histogramTotal, 4);
 
-  const segmentationScale = segmentationLayer?.zarr.scales[0];
-  assert.equal(segmentationScale?.zarr.data.dataType, 'uint16');
-  const firstSegmentationChunkCoords = new Array<number>(segmentationScale?.zarr.data.shape.length ?? 0).fill(0);
-  const labelChunk = await storageHandle.storage.readFile(
-    `${segmentationScale?.zarr.data.path}/${createZarrChunkKeyFromCoords(firstSegmentationChunkCoords)}`
-  );
-  assert.ok(labelChunk.byteLength >= 2);
-  const firstLabel = new DataView(labelChunk.buffer, labelChunk.byteOffset, labelChunk.byteLength).getUint16(0, true);
-  assert.equal(firstLabel, 0);
+  const segmentationScale = segmentationLayer.sparse.scales[0];
+  assert.ok(segmentationScale);
+  const directoryBytes = await storageHandle.storage.readFile(segmentationScale.directory.path);
+  assert.equal(directoryBytes.byteLength, segmentationScale.directory.byteLength);
+  const labelBytes = await storageHandle.storage.readFile(segmentationLayer.sparse.labels.path);
+  assert.equal(labelBytes.byteLength, segmentationLayer.sparse.labels.byteLength);
+  if (segmentationScale.payload.shardCount > 0) {
+    const shardBytes = await storageHandle.storage.readFile(
+      `${segmentationScale.payload.shardPathPrefix}0${segmentationScale.payload.shardFileExtension}`
+    );
+    assert.ok(shardBytes.byteLength > 0);
+  }
 });
 
 test('preprocessDatasetToStorage splits regular multichannel sources into independent single-channel outputs', async () => {
@@ -407,10 +415,12 @@ test('preprocessDatasetToStorage emits valid skip metadata for sparse segmentati
     storageStrategy: { sharding: { enabled: false } }
   });
 
-  const segmentationScale = result.manifest.dataset.channels[0]?.layers[0]?.zarr.scales[0];
+  const segmentationLayer = result.manifest.dataset.channels[0]?.layers[0];
+  assert.ok(segmentationLayer && isSparseSegmentationLayerManifest(segmentationLayer));
+  const segmentationScale = segmentationLayer.sparse.scales[0];
   assert.ok(segmentationScale);
-  assert.equal(segmentationScale?.zarr.data.dataType, 'uint16');
-  assert.deepEqual(segmentationScale?.zarr.data.chunkShape, [1, 1, 1, 64, 1]);
+  assert.equal(segmentationScale.directory.recordCount, 1);
+  assert.equal(segmentationScale.payload.shardCount, 1);
 
   const opened = await openPreprocessedDatasetFromZarrStorage(storageHandle.storage);
   const provider = createVolumeProvider({
@@ -422,17 +432,16 @@ test('preprocessDatasetToStorage emits valid skip metadata for sparse segmentati
     maxConcurrentPrefetchLoads: DEFAULT_MAX_CONCURRENT_PREFETCH_LOADS
   });
 
-  const volume = await provider.getVolume('seg-sparse', 0);
-  assert.equal(volume.kind, 'segmentation');
-  assert.equal(volume.labels[70], 9);
+  const label = await provider.querySparseSegmentationLabel?.('seg-sparse', 0, 0, { z: 0, y: 0, x: 70 });
+  assert.equal(label, 9);
 
   const pageTable = await provider.getBrickPageTable?.('seg-sparse', 0);
   assert.ok(pageTable);
-  assert.deepEqual(pageTable?.gridShape, [1, 1, 3]);
-  assert.deepEqual(Array.from(pageTable?.chunkOccupancy ?? []), [0, 1, 0]);
-  assert.deepEqual(Array.from(pageTable?.brickAtlasIndices ?? []), [-1, 0, -1]);
-  assert.deepEqual(Array.from(pageTable?.chunkMin ?? []), [0, 255, 0]);
-  assert.deepEqual(Array.from(pageTable?.chunkMax ?? []), [0, 255, 0]);
+  assert.deepEqual(pageTable?.gridShape, [1, 1, 5]);
+  assert.deepEqual(Array.from(pageTable?.chunkOccupancy ?? []), [0, 0, 1, 0, 0]);
+  assert.deepEqual(Array.from(pageTable?.brickAtlasIndices ?? []), [-1, -1, 0, -1, -1]);
+  assert.deepEqual(Array.from(pageTable?.chunkMin ?? []), [0, 0, 255, 0, 0]);
+  assert.deepEqual(Array.from(pageTable?.chunkMax ?? []), [0, 0, 255, 0, 0]);
   assert.equal(pageTable?.occupiedBrickCount, 1);
   for (let index = 0; index < (pageTable?.chunkMin.length ?? 0); index += 1) {
     const min = pageTable?.chunkMin[index] ?? 0;
@@ -704,12 +713,12 @@ test('preprocessDatasetToStorage applies array-specific sharding policies', asyn
   assert.equal(intensityScale?.zarr.skipHierarchy.levels[0]?.occupancy.sharding?.arrayKind, 'skipHierarchy');
   assert.equal(intensityScale?.zarr.skipHierarchy.levels[0]?.occupancy.sharding?.shardShape[0], 2);
 
-  const segmentationScale = result.manifest.dataset.channels[1]?.layers[0]?.zarr.scales[0];
-  assert.equal(segmentationScale?.zarr.data.dataType, 'uint16');
-  assert.equal(segmentationScale?.zarr.data.sharding?.arrayKind, 'volumeData');
-  assert.equal(segmentationScale?.zarr.data.sharding?.allowTemporalAxis, false);
-  assert.equal(segmentationScale?.zarr.data.sharding?.shardShape[0], 1);
-  assert.equal(segmentationScale?.zarr.histogram, undefined);
+  const segmentationLayer = result.manifest.dataset.channels[1]?.layers[0];
+  assert.ok(segmentationLayer && isSparseSegmentationLayerManifest(segmentationLayer));
+  const segmentationScale = segmentationLayer.sparse.scales[0];
+  assert.equal(segmentationScale?.directory.format, 'sparse-brick-directory-v1');
+  assert.equal(segmentationScale?.payload.format, 'sparse-brick-payload-shards-v1');
+  assert.equal(segmentationLayer.sparse.labels.format, 'sparse-label-metadata-v1');
 });
 
 test('preprocessDatasetToStorage writes playback atlas sidecars that volumeProvider consumes', async () => {

@@ -9,6 +9,29 @@ type RgbTiffStackInput = {
   rgb: Uint8Array;
 };
 
+type GrayscaleTiffStackInput =
+  | {
+      width: number;
+      height: number;
+      depth: number;
+      bitsPerSample: 8;
+      data: Uint8Array;
+    }
+  | {
+      width: number;
+      height: number;
+      depth: number;
+      bitsPerSample: 16;
+      data: Uint16Array;
+    }
+  | {
+      width: number;
+      height: number;
+      depth: number;
+      bitsPerSample: 32;
+      data: Uint32Array;
+    };
+
 const TIFF_MAGIC = 42;
 
 const TYPE_SHORT = 3;
@@ -46,16 +69,26 @@ const writeIfdEntry = (view: DataView, offset: number, entry: TiffEntry) => {
   view.setUint32(offset + 8, entry.value >>> 0, true);
 };
 
-export function encodeRgbTiffStack({ width, height, depth, rgb }: RgbTiffStackInput): ArrayBuffer {
+function assertStackDimensions(width: number, height: number, depth: number, caller: string): void {
   if (!Number.isFinite(width) || width <= 0 || !Number.isInteger(width)) {
-    throw new Error('encodeRgbTiffStack: width must be a positive integer.');
+    throw new Error(`${caller}: width must be a positive integer.`);
   }
   if (!Number.isFinite(height) || height <= 0 || !Number.isInteger(height)) {
-    throw new Error('encodeRgbTiffStack: height must be a positive integer.');
+    throw new Error(`${caller}: height must be a positive integer.`);
   }
   if (!Number.isFinite(depth) || depth <= 0 || !Number.isInteger(depth)) {
-    throw new Error('encodeRgbTiffStack: depth must be a positive integer.');
+    throw new Error(`${caller}: depth must be a positive integer.`);
   }
+}
+
+function assertClassicTiffSize(totalSize: number): void {
+  if (totalSize > 0xffffffff) {
+    throw new Error('This channel is too large for classic TIFF export. BigTIFF is not supported yet.');
+  }
+}
+
+export function encodeRgbTiffStack({ width, height, depth, rgb }: RgbTiffStackInput): ArrayBuffer {
+  assertStackDimensions(width, height, depth, 'encodeRgbTiffStack');
 
   const expectedLength = width * height * depth * 3;
   if (rgb.length !== expectedLength) {
@@ -73,6 +106,7 @@ export function encodeRgbTiffStack({ width, height, depth, rgb }: RgbTiffStackIn
   const bitsPerSampleOffset = ifdStart + ifdsSize;
   const sampleFormatOffset = bitsPerSampleOffset + 6;
   const totalSize = sampleFormatOffset + 6;
+  assertClassicTiffSize(totalSize);
 
   const buffer = new ArrayBuffer(totalSize);
   const view = new DataView(buffer);
@@ -123,6 +157,82 @@ export function encodeRgbTiffStack({ width, height, depth, rgb }: RgbTiffStackIn
 
     const nextIfdOffset = z === depth - 1 ? 0 : ifdStart + (z + 1) * ifdSize;
     view.setUint32(ifdOffset + 2 + ifdEntryCount * 12, nextIfdOffset, true);
+  }
+
+  return buffer;
+}
+
+export function encodeGrayscaleTiffStack(input: GrayscaleTiffStackInput): ArrayBuffer {
+  const { width, height, depth, bitsPerSample, data } = input;
+  assertStackDimensions(width, height, depth, 'encodeGrayscaleTiffStack');
+
+  const bytesPerSample = bitsPerSample / 8;
+  const voxelCount = width * height * depth;
+  if (data.length !== voxelCount) {
+    throw new Error(`encodeGrayscaleTiffStack: data length must be ${voxelCount} samples.`);
+  }
+
+  const bytesPerSlice = width * height * bytesPerSample;
+  const headerSize = 8;
+  const dataStart = headerSize;
+  const dataSize = bytesPerSlice * depth;
+  const ifdEntryCount = 10;
+  const ifdSize = 2 + ifdEntryCount * 12 + 4;
+  const ifdStart = dataStart + dataSize;
+  const totalSize = ifdStart + ifdSize * depth;
+  assertClassicTiffSize(totalSize);
+
+  const buffer = new ArrayBuffer(totalSize);
+  const view = new DataView(buffer);
+  const bytes = new Uint8Array(buffer);
+
+  writeAscii(view, 0, 'II');
+  view.setUint16(2, TIFF_MAGIC, true);
+  view.setUint32(4, ifdStart, true);
+
+  if (bitsPerSample === 8) {
+    bytes.set(data as Uint8Array, dataStart);
+  } else if (bitsPerSample === 16) {
+    const values = data as Uint16Array;
+    let cursor = dataStart;
+    for (let index = 0; index < values.length; index += 1) {
+      view.setUint16(cursor, values[index] ?? 0, true);
+      cursor += 2;
+    }
+  } else {
+    const values = data as Uint32Array;
+    let cursor = dataStart;
+    for (let index = 0; index < values.length; index += 1) {
+      view.setUint32(cursor, values[index] ?? 0, true);
+      cursor += 4;
+    }
+  }
+
+  for (let z = 0; z < depth; z += 1) {
+    const ifdOffset = ifdStart + z * ifdSize;
+    view.setUint16(ifdOffset, ifdEntryCount, true);
+    let entryOffset = ifdOffset + 2;
+    const stripOffset = dataStart + z * bytesPerSlice;
+
+    const entries: TiffEntry[] = [
+      { tag: TAG_IMAGE_WIDTH, type: TYPE_LONG, count: 1, value: width },
+      { tag: TAG_IMAGE_LENGTH, type: TYPE_LONG, count: 1, value: height },
+      { tag: TAG_BITS_PER_SAMPLE, type: TYPE_SHORT, count: 1, value: bitsPerSample },
+      { tag: TAG_COMPRESSION, type: TYPE_SHORT, count: 1, value: 1 },
+      { tag: TAG_PHOTOMETRIC_INTERPRETATION, type: TYPE_SHORT, count: 1, value: 1 },
+      { tag: TAG_STRIP_OFFSETS, type: TYPE_LONG, count: 1, value: stripOffset },
+      { tag: TAG_SAMPLES_PER_PIXEL, type: TYPE_SHORT, count: 1, value: 1 },
+      { tag: TAG_ROWS_PER_STRIP, type: TYPE_LONG, count: 1, value: height },
+      { tag: TAG_STRIP_BYTE_COUNTS, type: TYPE_LONG, count: 1, value: bytesPerSlice },
+      { tag: TAG_SAMPLE_FORMAT, type: TYPE_SHORT, count: 1, value: 1 },
+    ];
+
+    for (const entry of entries) {
+      writeIfdEntry(view, entryOffset, entry);
+      entryOffset += 12;
+    }
+
+    view.setUint32(ifdOffset + 2 + ifdEntryCount * 12, z === depth - 1 ? 0 : ifdStart + (z + 1) * ifdSize, true);
   }
 
   return buffer;

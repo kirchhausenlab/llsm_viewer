@@ -354,7 +354,11 @@ async function createSyntheticDataset(spec: DatasetSpec): Promise<SyntheticDatas
   const zarrStore = createZarrStoreFromPreprocessedStorage(storageHandle.storage);
   const root = zarr.root(zarrStore);
   const manifest = buildManifest(spec);
-  const scale = manifest.dataset.channels[0]!.layers[0]!.zarr.scales[0]!;
+  const layer = manifest.dataset.channels[0]!.layers[0]!;
+  if (!layer.zarr) {
+    throw new Error('Synthetic runtime stress dataset expected an intensity zarr layer.');
+  }
+  const scale = layer.zarr.scales[0]!;
   const histogramDescriptor = scale.zarr.histogram;
   assert.ok(histogramDescriptor);
 
@@ -676,9 +680,10 @@ test('stability: rapid scrub-playback scale transitions keep diagnostics coheren
   });
 
   const totalTimepoints = STRESS_DATASET_SPEC.timepoints;
-  const availableScaleLevels = (
-    manifest.dataset.channels[0]?.layers[0]?.zarr.scales.map((scale) => scale.level) ?? [0]
-  ).filter((level, index, source) => Number.isFinite(level) && source.indexOf(level) === index);
+  const stressLayer = manifest.dataset.channels[0]?.layers[0] ?? null;
+  const availableScaleLevels = (stressLayer?.zarr?.scales.map((scale) => scale.level) ?? [0]).filter(
+    (level, index, source) => Number.isFinite(level) && source.indexOf(level) === index
+  );
   const orderedScaleLevels = availableScaleLevels.length > 0 ? availableScaleLevels : [0];
   for (let step = 0; step < 20; step += 1) {
     const timepoint = step % totalTimepoints;

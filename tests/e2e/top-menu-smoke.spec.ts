@@ -9,7 +9,7 @@ const expectedMenus = [
   {
     buttonLabel: 'File',
     menuLabel: 'file menu',
-    items: ['Save changes', 'Reset changes', 'Recenter windows', 'Diagnostics', 'Enter VR', 'Exit']
+    items: ['Save changes', 'Reset changes', 'Export channel', 'Recenter windows', 'Diagnostics', 'Enter VR', 'Exit']
   },
   {
     buttonLabel: 'View',
@@ -19,7 +19,7 @@ const expectedMenus = [
   {
     buttonLabel: 'Edit',
     menuLabel: 'edit menu',
-    items: ['Props', 'Paintbrush', 'Draw ROI', 'ROI Manager', 'Set measurements']
+    items: ['Props', 'Annotate', 'Draw ROI', 'ROI Manager', 'Set measurements']
   },
   {
     buttonLabel: 'Tracks',

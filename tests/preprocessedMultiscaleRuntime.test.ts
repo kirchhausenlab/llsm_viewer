@@ -31,14 +31,15 @@ function buildManifest(): PreprocessedManifest {
               key: 'layer-a',
               label: 'Layer A',
               channelId: 'channel-a',
-              isSegmentation: true,
+              isSegmentation: false,
               volumeCount: 1,
               width: 2,
               height: 1,
               depth: 1,
               channels: 1,
-              dataType: 'uint16',
-              normalization: null,
+              dataType: 'uint8',
+              storedDataType: 'uint8',
+              normalization: { min: 0, max: 255 },
               zarr: {
                 scales: [
                   {
@@ -53,7 +54,7 @@ function buildManifest(): PreprocessedManifest {
                         path: 'channels/channel-a/layer-a/scales/0/data',
                         shape: [1, 1, 1, 2, 1],
                         chunkShape: [1, 1, 1, 2, 1],
-                        dataType: 'uint16'
+                        dataType: 'uint8'
                       },
                       skipHierarchy: {
                         levels: [
@@ -95,7 +96,7 @@ function buildManifest(): PreprocessedManifest {
                         path: 'channels/channel-a/layer-a/scales/1/data',
                         shape: [1, 1, 1, 1, 1],
                         chunkShape: [1, 1, 1, 1, 1],
-                        dataType: 'uint16'
+                        dataType: 'uint8'
                       },
                       skipHierarchy: {
                         levels: [
@@ -143,8 +144,8 @@ async function writeScalePayloads(manifest: PreprocessedManifest, storage: Retur
   const scale0 = layer.zarr.scales[0]!;
   const scale1 = layer.zarr.scales[1]!;
 
-  const scale0Data = new Uint16Array([0, 7]);
-  const scale1Data = new Uint16Array([7]);
+  const scale0Data = new Uint8Array([0, 7]);
+  const scale1Data = new Uint8Array([7]);
 
   await storage.writeFile(
     `${scale0.zarr.data.path}/${createZarrChunkKeyFromCoords([0, 0, 0, 0, 0])}`,
@@ -185,7 +186,7 @@ async function writeScalePayloads(manifest: PreprocessedManifest, storage: Retur
   };
 }
 
-test('volume provider resolves requested multiscale segmentation labels', async () => {
+test('volume provider resolves requested multiscale intensity values', async () => {
   const manifest = buildManifest();
   const storageHandle = createInMemoryPreprocessedStorage({ datasetId: 'preprocessed-multiscale-resolve' });
   const written = await writeScalePayloads(manifest, storageHandle.storage);
@@ -201,16 +202,14 @@ test('volume provider resolves requested multiscale segmentation labels', async 
   const scale0Volume = await provider.getVolume('layer-a', 0, { scaleLevel: 0 });
   assert.equal(scale0Volume.scaleLevel, 0);
   assert.equal(scale0Volume.width, 2);
-  assert.equal(scale0Volume.kind, 'segmentation');
-  assert.deepEqual(Array.from(scale0Volume.labels), Array.from(written.scale0Data));
-  assert.equal(scale0Volume.histogram, undefined);
+  assert.equal(scale0Volume.kind, 'intensity');
+  assert.deepEqual(Array.from(scale0Volume.normalized), Array.from(written.scale0Data));
 
   const scale1Volume = await provider.getVolume('layer-a', 0, { scaleLevel: 1 });
   assert.equal(scale1Volume.scaleLevel, 1);
   assert.equal(scale1Volume.width, 1);
-  assert.equal(scale1Volume.kind, 'segmentation');
-  assert.deepEqual(Array.from(scale1Volume.labels), Array.from(written.scale1Data));
-  assert.equal(scale1Volume.histogram, undefined);
+  assert.equal(scale1Volume.kind, 'intensity');
+  assert.deepEqual(Array.from(scale1Volume.normalized), Array.from(written.scale1Data));
 
   await assert.rejects(
     () => provider.getVolume('layer-a', 0, { scaleLevel: 9 }),

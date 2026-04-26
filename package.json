@@ -29,6 +29,7 @@
     "test:perf:preprocess-smoke": "node --import tsx --test --test-concurrency=1 \"tests/perf/preprocessSmoke.test.ts\"",
     "test:perf:real-datasets": "node --import tsx --test --test-concurrency=1 \"tests/perf/realDatasetRegression.test.ts\"",
     "benchmark:nextgen-volume": "node --import tsx scripts/benchmark-nextgen-volume.ts",
+    "benchmark:sparse-segmentation": "node --import tsx scripts/benchmark-sparse-segmentation.ts",
     "benchmark:real-datasets": "node --import tsx scripts/benchmark-real-datasets.ts",
     "benchmark:preprocess:fixture": "node --import tsx scripts/benchmark-preprocess-fixture.ts",
     "verify:fast": "npm run check:architecture && npm run typecheck && npm run typecheck:tests && npm run test:coverage && npm run test:coverage:hotspots && npm run build",

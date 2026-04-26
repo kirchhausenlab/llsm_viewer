@@ -1,15 +1,12 @@
 import { fromBlob } from 'geotiff';
 import * as zarr from 'zarrita';
 
-import type { NormalizationParameters, NormalizedVolume } from '../../../core/volumeProcessing';
+import type { IntensityVolume, NormalizationParameters } from '../../../core/volumeProcessing';
 import {
-  canonicalizeSegmentationVolume,
-  isSegmentationVolume,
   normalizeVolume,
-  toSegmentationLabelId
 } from '../../../core/volumeProcessing';
 import type { PreprocessedStorage } from '../../storage/preprocessedStorage';
-import { sortVolumeFiles } from '../appHelpers';
+import { createSegmentationSeed, sortVolumeFiles } from '../appHelpers';
 import { resolveImagejPageChannelLayout, type ImagejHyperstackLayout } from '../tiffHyperstack';
 import { computeAnisotropyScale } from '../anisotropyCorrection';
 import type { VolumePayload, VolumeTypedArray } from '../../../types/volume';
@@ -20,6 +17,7 @@ import type {
   PreprocessedBackgroundMaskManifest,
   PreprocessedBackgroundMaskScaleManifestEntry,
   PreprocessedChannelSummary,
+  PreprocessedIntensityLayerManifestEntry,
   PreprocessedLayerManifestEntry,
   PreprocessedLayerScaleManifestEntry,
   PreprocessedManifest,
@@ -31,13 +29,18 @@ import type {
   PreprocessedScaleSubcellZarrDescriptor,
   PreprocessedShardedBlobDescriptor,
   PreprocessedTrackSetSummary,
+  SparseSegmentationScaleManifestEntry,
   StoredIntensityDataType,
   TrackSetExportMetadata,
   ZarrArrayShardingPlan,
   ZarrArrayDescriptor,
   ZarrArrayShardingPlanArrayKind
 } from './types';
-import { PREPROCESSED_DATASET_FORMAT } from './types';
+import {
+  PREPROCESSED_DATASET_FORMAT,
+  SPARSE_SEGMENTATION_PREPROCESSED_DATASET_FORMAT,
+  isSparseSegmentationLayerManifest
+} from './types';
 import { createZarrStoreFromPreprocessedStorage } from '../zarrStore';
 import { buildChannelSummariesFromManifest, buildTrackSummariesFromManifest } from './manifest';
 import { createTracksDescriptor, encodeCompiledTrackSetFiles } from './tracks';
@@ -95,6 +98,26 @@ import {
   writeBackgroundMaskChunksForScale,
   writeDataChunksForScale
 } from './preprocess/chunkEncoding';
+import {
+  buildSparseSegmentationPayloadShard,
+  buildSparseSegmentationOccupancyHierarchy,
+  computeSparseSegmentationCrc32,
+  computeBrickGridShape,
+  coordKey,
+  downsampleSparseSegmentationVoxels,
+  encodeSparseSegmentationBrickDirectory,
+  encodeSparseSegmentationBrickPayload,
+  encodeSparseSegmentationLabelMetadata,
+  encodeSparseSegmentationOccupancyLevel,
+  localCoordForOffset,
+  localOffsetForVoxel,
+  updateSparseSegmentationLabelStats,
+  type SparseSegmentationBrickDirectoryRecord,
+  type SparseSegmentationBrickSize,
+  type SparseSegmentationGlobalVoxel,
+  type SparseSegmentationLabelStatsAccumulator,
+  type SparseSegmentationLocalVoxel
+} from './sparseSegmentation';
 
 export type PreprocessLayerSource = {
   channelId: string;
@@ -882,6 +905,111 @@ function buildLayerScaleDescriptors({
   }
 
   return scales;
+}
+
+function createSparseSegmentationLayerBasePath(layer: Pick<PreprocessLayerSource, 'key'>): string {
+  return `layers/${layer.key}`;
+}
+
+function createSparseSegmentationLabelMetadataPath(layer: Pick<PreprocessLayerSource, 'key'>): string {
+  return `${createSparseSegmentationLayerBasePath(layer)}/labels.bin`;
+}
+
+function createSparseSegmentationScaleBasePath(
+  layer: Pick<PreprocessLayerSource, 'key'>,
+  level: number
+): string {
+  return `${createSparseSegmentationLayerBasePath(layer)}/scale-${level}`;
+}
+
+function buildEmptySparseOccupancyDescriptors({
+  basePath,
+  brickGridShape
+}: {
+  basePath: string;
+  brickGridShape: [number, number, number];
+}): SparseSegmentationScaleManifestEntry['occupancyHierarchy'] {
+  const levels: SparseSegmentationScaleManifestEntry['occupancyHierarchy']['levels'] = [];
+  let gridShape = brickGridShape;
+  let level = 0;
+  while (true) {
+    levels.push({
+      level,
+      path: `${basePath}/occupancy-level-${level}.bin`,
+      byteLength: 64 + gridShape[0] * gridShape[1] * gridShape[2],
+      gridShape,
+      dataType: 'uint8',
+      occupiedNodeCount: 0,
+      checksum: null
+    });
+    if (gridShape[0] === 1 && gridShape[1] === 1 && gridShape[2] === 1) {
+      break;
+    }
+    gridShape = [
+      Math.max(1, Math.ceil(gridShape[0] / 2)),
+      Math.max(1, Math.ceil(gridShape[1] / 2)),
+      Math.max(1, Math.ceil(gridShape[2] / 2))
+    ];
+    level += 1;
+  }
+  return {
+    format: 'sparse-occupancy-hierarchy-v1',
+    levels
+  };
+}
+
+function buildSparseSegmentationScaleDescriptors({
+  layer,
+  layerMetadata
+}: {
+  layer: PreprocessLayerSource;
+  layerMetadata: LayerMetadata;
+}): SparseSegmentationScaleManifestEntry[] {
+  const geometryLevels = computeMultiscaleGeometryLevels({
+    width: layerMetadata.width,
+    height: layerMetadata.height,
+    depth: layerMetadata.depth
+  });
+  const brickSize: SparseSegmentationBrickSize = [32, 32, 32];
+  return geometryLevels.map((geometryLevel) => {
+    const basePath = createSparseSegmentationScaleBasePath(layer, geometryLevel.level);
+    const brickGridShape = computeBrickGridShape(
+      {
+        width: geometryLevel.width,
+        height: geometryLevel.height,
+        depth: geometryLevel.depth
+      },
+      brickSize
+    );
+    return {
+      level: geometryLevel.level,
+      downsampleFactor: geometryLevel.downsampleFactor,
+      width: geometryLevel.width,
+      height: geometryLevel.height,
+      depth: geometryLevel.depth,
+      brickSize,
+      brickGridShape,
+      occupiedBrickCount: 0,
+      nonzeroVoxelCount: 0,
+      directory: {
+        format: 'sparse-brick-directory-v1',
+        path: `${basePath}/directory.bin`,
+        byteLength: 64,
+        recordCount: 0,
+        recordByteLength: 80,
+        checksum: null
+      },
+      payload: {
+        format: 'sparse-brick-payload-shards-v1',
+        shardCount: 0,
+        shardPathPrefix: `${basePath}/payloads/shard-`,
+        shardFileExtension: '.ssbp',
+        targetShardBytes: DEFAULT_SHARD_TARGET_BYTES,
+        totalPayloadBytes: 0
+      },
+      occupancyHierarchy: buildEmptySparseOccupancyDescriptors({ basePath, brickGridShape })
+    };
+  });
 }
 
 function computeSliceMinMax(slice: VolumeTypedArray): { min: number; max: number } {
@@ -1919,12 +2047,23 @@ function normalizeSliceToStoredDataType({
   return normalized;
 }
 
-function canonicalizeSegmentationSlice(source: SupportedTypedArray): Uint16Array {
-  const labels = new Uint16Array(source.length);
-  for (let i = 0; i < source.length; i += 1) {
-    labels[i] = toSegmentationLabelId(source[i] as number);
+function canonicalizeSegmentationLabelStrict(
+  value: number,
+  context: string
+): number {
+  if (!Number.isFinite(value)) {
+    throw new Error(`Invalid segmentation label at ${context}: expected finite numeric label.`);
   }
-  return labels;
+  if (value < 0) {
+    throw new Error(`Invalid segmentation label at ${context}: labels must be non-negative.`);
+  }
+  if (Math.floor(value) !== value) {
+    throw new Error(`Invalid segmentation label at ${context}: labels must be integers.`);
+  }
+  if (value > 0xffffffff) {
+    throw new Error(`Invalid segmentation label at ${context}: labels must fit uint32.`);
+  }
+  return value;
 }
 
 function downsampleDataSliceXYByMax({
@@ -2638,8 +2777,8 @@ async function collectLayerMetadata({
       height: firstVolume.height,
       depth: firstVolume.depth,
       channels: layer.isSegmentation ? 1 : firstVolume.channels,
-      dataType: layer.isSegmentation ? 'uint16' : firstVolume.dataType,
-      storedDataType,
+      dataType: layer.isSegmentation ? 'uint32' : firstVolume.dataType,
+      ...(!layer.isSegmentation ? { storedDataType } : {}),
       isBinaryLike: !layer.isSegmentation && detectBinaryLikeVolume(firstVolume)
     });
     if (!referenceShape3d) {
@@ -2699,8 +2838,8 @@ function collectLayerMetadataFromStreamingSources({
       height: source.height,
       depth: source.depth,
       channels: layer.isSegmentation ? 1 : source.channels,
-      dataType: layer.isSegmentation ? 'uint16' : source.dataType,
-      storedDataType
+      dataType: layer.isSegmentation ? 'uint32' : source.dataType,
+      ...(!layer.isSegmentation ? { storedDataType } : {})
     });
 
     if (!referenceShape3d) {
@@ -2824,34 +2963,66 @@ function buildManifestFromLayerMetadata({
         throw new Error(`Missing metadata for layer "${layer.key}".`);
       }
 
-      const scales = buildLayerScaleDescriptors({
-        layer,
-        layerMetadata,
-        expectedTimepoints,
-        shardingStrategy,
-        preferDepthChunkOne
-      });
-
-      const manifestLayer: PreprocessedLayerManifestEntry = {
-        key: layer.key,
-        label: layer.label,
-        channelId: layer.channelId,
-        isSegmentation: layer.isSegmentation,
-        isBinaryLike: layerMetadata.isBinaryLike,
-        volumeCount: expectedTimepoints,
-        width: layerMetadata.width,
-        height: layerMetadata.height,
-        depth: layerMetadata.depth,
-        channels: layerMetadata.channels,
-        dataType: layerMetadata.dataType,
-        storedDataType: layerMetadata.storedDataType ?? (layer.isSegmentation ? 'uint16' : 'uint8'),
-        normalization: layer.isSegmentation
-          ? null
-          : (normalizationByLayerKey.get(layer.key) ?? null),
-        zarr: {
-          scales
-        }
-      };
+      const manifestLayer: PreprocessedLayerManifestEntry = layer.isSegmentation
+        ? {
+            kind: 'segmentation',
+            key: layer.key,
+            label: layer.label,
+            channelId: layer.channelId,
+            isSegmentation: true,
+            volumeCount: expectedTimepoints,
+            width: layerMetadata.width,
+            height: layerMetadata.height,
+            depth: layerMetadata.depth,
+            channels: 1,
+            dataType: 'uint32',
+            labelDataType: 'uint32',
+            emptyLabel: 0,
+            normalization: null,
+            representation: 'sparse-label-bricks-v1',
+            brickSize: [32, 32, 32],
+            colorSeed: createSegmentationSeed(layer.key),
+            sparse: {
+              version: 1,
+              labels: {
+                format: 'sparse-label-metadata-v1',
+                path: createSparseSegmentationLabelMetadataPath(layer),
+                byteLength: 64,
+                recordCount: 0,
+                recordByteLength: 96,
+                checksum: null
+              },
+              scales: buildSparseSegmentationScaleDescriptors({
+                layer,
+                layerMetadata
+              })
+            }
+          }
+        : {
+            kind: 'intensity',
+            key: layer.key,
+            label: layer.label,
+            channelId: layer.channelId,
+            isSegmentation: false,
+            isBinaryLike: layerMetadata.isBinaryLike,
+            volumeCount: expectedTimepoints,
+            width: layerMetadata.width,
+            height: layerMetadata.height,
+            depth: layerMetadata.depth,
+            channels: layerMetadata.channels,
+            dataType: layerMetadata.dataType,
+            storedDataType: layerMetadata.storedDataType ?? 'uint8',
+            normalization: normalizationByLayerKey.get(layer.key) ?? null,
+            zarr: {
+              scales: buildLayerScaleDescriptors({
+                layer,
+                layerMetadata,
+                expectedTimepoints,
+                shardingStrategy,
+                preferDepthChunkOne
+              })
+            }
+          };
 
       manifestLayers.push(manifestLayer);
       layerManifestByKey.set(layer.key, manifestLayer);
@@ -2886,8 +3057,11 @@ function buildManifestFromLayerMetadata({
       }
     : null;
 
+  const hasSegmentationLayers = Array.from(layersByChannel.values()).some((layers) =>
+    layers.some((layer) => layer.isSegmentation)
+  );
   const manifest: PreprocessedManifest = {
-    format: PREPROCESSED_DATASET_FORMAT,
+    format: hasSegmentationLayers ? SPARSE_SEGMENTATION_PREPROCESSED_DATASET_FORMAT : PREPROCESSED_DATASET_FORMAT,
     generatedAt: new Date().toISOString(),
     dataset: {
       movieMode,
@@ -2932,6 +3106,25 @@ async function writeTrackSetFiles({
   }
 }
 
+async function writeRootZarrManifestMetadata({
+  storage,
+  manifest
+}: {
+  storage: PreprocessedStorage;
+  manifest: PreprocessedManifest;
+}): Promise<void> {
+  const bytes = new TextEncoder().encode(
+    JSON.stringify({
+      zarr_format: 3,
+      node_type: 'group',
+      attributes: {
+        llsmViewerPreprocessed: manifest
+      }
+    })
+  );
+  await storage.writeFile('zarr.json', bytes);
+}
+
 function resolveArrayCodecsForDescriptor(descriptor: ZarrArrayDescriptor): any[] {
   // Sharded writes are handled by the custom chunk dispatcher, not by Zarr codec-based set/indexing.
   // Keep array metadata unsharded at the codec layer and store shard payloads under descriptor.path/shards/.
@@ -2948,6 +3141,9 @@ async function createManifestZarrArrays({
 }): Promise<void> {
   for (const channel of manifest.dataset.channels) {
     for (const layer of channel.layers) {
+      if (isSparseSegmentationLayerManifest(layer)) {
+        continue;
+      }
       for (const scale of layer.zarr.scales) {
         const data = scale.zarr.data;
         await zarr.create(root.resolve(data.path), {
@@ -3551,7 +3747,7 @@ async function writeStreamingLayerTimepoint({
 }: {
   chunkWriter: ChunkWriteDispatcher;
   preparedLayer: StreamingPreparedLayerSource;
-  manifestLayer: PreprocessedLayerManifestEntry;
+  manifestLayer: PreprocessedIntensityLayerManifestEntry;
   sourceMetadata: LayerMetadata;
   normalization: NormalizationParameters | null;
   backgroundMask: SharedBackgroundMask | null;
@@ -3625,25 +3821,7 @@ async function writeStreamingLayerTimepoint({
   const timepointSource = preparedLayer.getTimepointSource(timepoint);
 
   if (preparedLayer.layer.isSegmentation) {
-    if (sourceMetadata.channels !== 1) {
-      throw new Error(
-        `Segmentation layer "${preparedLayer.layer.channelLabel}" must decode to exactly one source channel.`
-      );
-    }
-    await forEachSliceInStreamingTimepointSource({
-      layer: preparedLayer.layer,
-      timepoint,
-      source: timepointSource,
-      rawExpectedMetadata: preparedLayer.rawSourceMetadata,
-      outputMetadata: sourceMetadata,
-      selectedSourceChannelIndex: null,
-      imagejPageChannelLayout: preparedLayer.imagejPageChannelLayout,
-      tiffByFileCache,
-      signal,
-      onSlice: async (slice) => {
-        await processScaleSlice(0, canonicalizeSegmentationSlice(slice));
-      }
-    });
+    throw new Error('Internal preprocessing error: sparse segmentation must use the sparse streaming writer.');
   } else {
     const storedDataType = manifestLayer.storedDataType ?? 'uint8';
     const resolvedNormalization = normalization ?? computeNormalizationParametersFromScannedMinMax({
@@ -3763,83 +3941,408 @@ function downsampleDataByMaxPooling(volume: {
   };
 }
 
-function downsampleLabelsByMode(volume: {
-  width: number;
-  height: number;
-  depth: number;
-  channels: 1;
-  data: Uint16Array;
-}): {
-  width: number;
-  height: number;
-  depth: number;
-  channels: 1;
-  data: Uint16Array;
-} {
-  const nextDepth = Math.max(1, Math.ceil(volume.depth / 2));
-  const nextHeight = Math.max(1, Math.ceil(volume.height / 2));
-  const nextWidth = Math.max(1, Math.ceil(volume.width / 2));
-  const downsampled = new Uint16Array(nextDepth * nextHeight * nextWidth);
+type SparseSegmentationScaleBuildState = {
+  scale: SparseSegmentationScaleManifestEntry;
+  records: SparseSegmentationBrickDirectoryRecord[];
+  payloads: Uint8Array[];
+  nonzeroVoxelCount: number;
+};
 
-  for (let z = 0; z < nextDepth; z += 1) {
-    const sourceZStart = z * 2;
-    const sourceZEnd = Math.min(volume.depth, sourceZStart + 2);
-    for (let y = 0; y < nextHeight; y += 1) {
-      const sourceYStart = y * 2;
-      const sourceYEnd = Math.min(volume.height, sourceYStart + 2);
-      for (let x = 0; x < nextWidth; x += 1) {
-        const sourceXStart = x * 2;
-        const sourceXEnd = Math.min(volume.width, sourceXStart + 2);
-        const destinationIndex = (z * nextHeight + y) * nextWidth + x;
+type SparseSegmentationLayerBuildState = {
+  layer: PreprocessLayerSource;
+  manifestLayer: Extract<PreprocessedLayerManifestEntry, { kind: 'segmentation' }>;
+  scaleStates: SparseSegmentationScaleBuildState[];
+  labelStats: Map<number, SparseSegmentationLabelStatsAccumulator>;
+};
 
-        const candidateLabels = new Uint16Array(8);
-        const candidateCounts = new Uint8Array(8);
-        let candidateSize = 0;
-        let bestLabel = 0;
-        let bestCount = -1;
-        for (let sourceZ = sourceZStart; sourceZ < sourceZEnd; sourceZ += 1) {
-          for (let sourceY = sourceYStart; sourceY < sourceYEnd; sourceY += 1) {
-            for (let sourceX = sourceXStart; sourceX < sourceXEnd; sourceX += 1) {
-              const sourceIndex = (sourceZ * volume.height + sourceY) * volume.width + sourceX;
-              const label = volume.data[sourceIndex] ?? 0;
-              let slot = -1;
-              for (let candidateIndex = 0; candidateIndex < candidateSize; candidateIndex += 1) {
-                if ((candidateLabels[candidateIndex] ?? 0) === label) {
-                  slot = candidateIndex;
-                  break;
-                }
-              }
-              if (slot < 0) {
-                slot = candidateSize;
-                candidateLabels[slot] = label;
-                candidateCounts[slot] = 0;
-                candidateSize += 1;
-              }
-              const nextCount = (candidateCounts[slot] ?? 0) + 1;
-              candidateCounts[slot] = nextCount;
-              if (
-                nextCount > bestCount ||
-                (nextCount === bestCount && bestLabel === 0 && label !== 0) ||
-                (nextCount === bestCount && label > bestLabel)
-              ) {
-                bestCount = nextCount;
-                bestLabel = label;
-              }
-            }
-          }
+function createSparseSegmentationLayerBuildState({
+  layer,
+  manifestLayer
+}: {
+  layer: PreprocessLayerSource;
+  manifestLayer: Extract<PreprocessedLayerManifestEntry, { kind: 'segmentation' }>;
+}): SparseSegmentationLayerBuildState {
+  return {
+    layer,
+    manifestLayer,
+    scaleStates: manifestLayer.sparse.scales.map((scale) => ({
+      scale,
+      records: [],
+      payloads: [],
+      nonzeroVoxelCount: 0
+    })),
+    labelStats: new Map()
+  };
+}
+
+function collectSparseSegmentationVoxelsFromVolume({
+  layer,
+  raw,
+  timepoint,
+  labelStats
+}: {
+  layer: PreprocessLayerSource;
+  raw: VolumePayload;
+  timepoint: number;
+  labelStats: Map<number, SparseSegmentationLabelStatsAccumulator>;
+}): SparseSegmentationGlobalVoxel[] {
+  if (raw.channels !== 1) {
+    throw new Error(
+      `Segmentation layer "${layer.channelLabel}" must decode to exactly one source channel, got ${raw.channels}.`
+    );
+  }
+  const source = createVolumeTypedArray(raw.dataType, raw.data);
+  const expectedVoxelCount = raw.width * raw.height * raw.depth;
+  if (source.length !== expectedVoxelCount) {
+    throw new Error(
+      `Segmentation layer "${layer.channelLabel}" source length mismatch: expected ${expectedVoxelCount}, got ${source.length}.`
+    );
+  }
+  const voxels: SparseSegmentationGlobalVoxel[] = [];
+  for (let z = 0; z < raw.depth; z += 1) {
+    for (let y = 0; y < raw.height; y += 1) {
+      for (let x = 0; x < raw.width; x += 1) {
+        const index = (z * raw.height + y) * raw.width + x;
+        const label = canonicalizeSegmentationLabelStrict(
+          source[index] as number,
+          `layer "${layer.key}" timepoint ${timepoint} voxel ${z},${y},${x}`
+        );
+        if (label === 0) {
+          continue;
         }
-        downsampled[destinationIndex] = bestLabel;
+        voxels.push({ z, y, x, label });
+        updateSparseSegmentationLabelStats(labelStats, label, timepoint, z, y, x);
       }
     }
   }
+  return voxels;
+}
 
-  return {
-    width: nextWidth,
-    height: nextHeight,
-    depth: nextDepth,
-    channels: 1,
-    data: downsampled
+function appendSparseSegmentationScale({
+  state,
+  timepoint,
+  voxels
+}: {
+  state: SparseSegmentationScaleBuildState;
+  timepoint: number;
+  voxels: readonly SparseSegmentationGlobalVoxel[];
+}): void {
+  if (voxels.length === 0) {
+    return;
+  }
+  const { scale } = state;
+  const bricks = new Map<string, { coord: { z: number; y: number; x: number }; voxels: SparseSegmentationLocalVoxel[] }>();
+  for (const voxel of voxels) {
+    const brickCoord = {
+      z: Math.floor(voxel.z / scale.brickSize[0]),
+      y: Math.floor(voxel.y / scale.brickSize[1]),
+      x: Math.floor(voxel.x / scale.brickSize[2])
+    };
+    const key = coordKey(brickCoord);
+    let entry = bricks.get(key);
+    if (!entry) {
+      entry = { coord: brickCoord, voxels: [] };
+      bricks.set(key, entry);
+    }
+    entry.voxels.push({
+      offset: localOffsetForVoxel(voxel, scale.brickSize),
+      label: voxel.label
+    });
+  }
+  const sortedBricks = Array.from(bricks.values()).sort(
+    (left, right) => left.coord.z - right.coord.z || left.coord.y - right.coord.y || left.coord.x - right.coord.x
+  );
+  for (const brick of sortedBricks) {
+    const sortedVoxels = [...brick.voxels].sort((left, right) => left.offset - right.offset);
+    const firstVoxel = sortedVoxels[0];
+    if (!firstVoxel) {
+      continue;
+    }
+    let minZ = Number.POSITIVE_INFINITY;
+    let minY = Number.POSITIVE_INFINITY;
+    let minX = Number.POSITIVE_INFINITY;
+    let maxZ = 0;
+    let maxY = 0;
+    let maxX = 0;
+    let labelMin = Number.POSITIVE_INFINITY;
+    let labelMax = 0;
+    for (const voxel of sortedVoxels) {
+      const local = localCoordForOffset(voxel.offset, scale.brickSize);
+      minZ = Math.min(minZ, local.z);
+      minY = Math.min(minY, local.y);
+      minX = Math.min(minX, local.x);
+      maxZ = Math.max(maxZ, local.z);
+      maxY = Math.max(maxY, local.y);
+      maxX = Math.max(maxX, local.x);
+      labelMin = Math.min(labelMin, voxel.label);
+      labelMax = Math.max(labelMax, voxel.label);
+    }
+    const encoded = encodeSparseSegmentationBrickPayload({
+      voxels: sortedVoxels,
+      brickSize: scale.brickSize
+    });
+    const payloadIndex = state.payloads.length;
+    state.payloads.push(encoded.bytes);
+    state.records.push({
+      timepoint,
+      scaleLevel: scale.level,
+      brickCoord: brick.coord,
+      localBounds: {
+        min: { z: minZ, y: minY, x: minX },
+        max: { z: maxZ, y: maxY, x: maxX }
+      },
+      nonzeroVoxelCount: sortedVoxels.length,
+      labelMin,
+      labelMax,
+      codec: encoded.codec,
+      shardId: 0,
+      payloadByteLength: encoded.bytes.byteLength,
+      payloadByteOffset: payloadIndex,
+      decodedVoxelCount: sortedVoxels.length,
+      payloadCrc32: computeSparseSegmentationCrc32(encoded.bytes)
+    });
+    state.nonzeroVoxelCount += sortedVoxels.length;
+  }
+}
+
+function appendSparseSegmentationTimepoint({
+  buildState,
+  timepoint,
+  baseVoxels
+}: {
+  buildState: SparseSegmentationLayerBuildState;
+  timepoint: number;
+  baseVoxels: SparseSegmentationGlobalVoxel[];
+}): void {
+  let current = {
+    width: buildState.manifestLayer.width,
+    height: buildState.manifestLayer.height,
+    depth: buildState.manifestLayer.depth,
+    voxels: baseVoxels
   };
+  for (let scaleIndex = 0; scaleIndex < buildState.scaleStates.length; scaleIndex += 1) {
+    const scaleState = buildState.scaleStates[scaleIndex]!;
+    appendSparseSegmentationScale({
+      state: scaleState,
+      timepoint,
+      voxels: current.voxels
+    });
+    if (scaleIndex < buildState.scaleStates.length - 1) {
+      current = downsampleSparseSegmentationVoxels(current);
+    }
+  }
+}
+
+async function finalizeSparseSegmentationLayerBuildState({
+  storage,
+  buildState,
+  signal
+}: {
+  storage: PreprocessedStorage;
+  buildState: SparseSegmentationLayerBuildState;
+  signal?: AbortSignal;
+}): Promise<void> {
+  const { manifestLayer } = buildState;
+  const labelMetadataBytes = encodeSparseSegmentationLabelMetadata({
+    stats: buildState.labelStats,
+    timepointCount: manifestLayer.volumeCount
+  });
+  await storage.writeFile(manifestLayer.sparse.labels.path, labelMetadataBytes);
+  manifestLayer.sparse.labels.byteLength = labelMetadataBytes.byteLength;
+  manifestLayer.sparse.labels.recordCount = buildState.labelStats.size;
+
+  for (const scaleState of buildState.scaleStates) {
+    throwIfAborted(signal);
+    const scale = scaleState.scale;
+    let totalPayloadBytes = scaleState.payloads.reduce((sum, payload) => sum + payload.byteLength, 0);
+    if (scaleState.payloads.length > 0) {
+      const shard = buildSparseSegmentationPayloadShard({
+        shardId: 0,
+        payloads: scaleState.payloads
+      });
+      for (let recordIndex = 0; recordIndex < scaleState.records.length; recordIndex += 1) {
+        const record = scaleState.records[recordIndex]!;
+        record.payloadByteOffset = shard.payloadOffsets[recordIndex] ?? 64;
+      }
+      await storage.writeFile(`${scale.payload.shardPathPrefix}0${scale.payload.shardFileExtension}`, shard.bytes);
+      scale.payload.shardCount = 1;
+    } else {
+      scale.payload.shardCount = 0;
+    }
+    scale.payload.totalPayloadBytes = totalPayloadBytes;
+
+    const directoryBytes = encodeSparseSegmentationBrickDirectory({
+      records: scaleState.records,
+      scaleLevel: scale.level,
+      timepointCount: manifestLayer.volumeCount,
+      brickGridShape: scale.brickGridShape,
+      brickSize: scale.brickSize
+    });
+    await storage.writeFile(scale.directory.path, directoryBytes);
+    scale.directory.byteLength = directoryBytes.byteLength;
+    scale.directory.recordCount = scaleState.records.length;
+    scale.occupiedBrickCount = scaleState.records.length;
+    scale.nonzeroVoxelCount = scaleState.nonzeroVoxelCount;
+
+    const occupancyHierarchy = buildSparseSegmentationOccupancyHierarchy({
+      brickGridShape: scale.brickGridShape,
+      records: scaleState.records
+    });
+    scale.occupancyHierarchy.levels = occupancyHierarchy.levels.map((level) => {
+      const bytes = encodeSparseSegmentationOccupancyLevel(level);
+      const descriptor = scale.occupancyHierarchy.levels[level.level];
+      const path = descriptor?.path ?? `${createSparseSegmentationScaleBasePath(buildState.layer, scale.level)}/occupancy-level-${level.level}.bin`;
+      return {
+        level: level.level,
+        path,
+        byteLength: bytes.byteLength,
+        gridShape: level.gridShape,
+        dataType: 'uint8' as const,
+        occupiedNodeCount: level.occupiedNodeCount,
+        checksum: null
+      };
+    });
+    for (const level of occupancyHierarchy.levels) {
+      const descriptor = scale.occupancyHierarchy.levels[level.level];
+      if (!descriptor) {
+        throw new Error(`Missing sparse occupancy descriptor for level ${level.level}.`);
+      }
+      await storage.writeFile(descriptor.path, encodeSparseSegmentationOccupancyLevel(level));
+    }
+  }
+}
+
+async function writeSparseSegmentationLayerFor3d({
+  storage,
+  preparedLayer,
+  manifestLayer,
+  sourceMetadata,
+  signal,
+  onProgress,
+  totalVolumeCount,
+  progressState
+}: {
+  storage: PreprocessedStorage;
+  preparedLayer: PreparedLayerSource;
+  manifestLayer: Extract<PreprocessedLayerManifestEntry, { kind: 'segmentation' }>;
+  sourceMetadata: LayerMetadata;
+  signal?: AbortSignal;
+  onProgress?: (progress: PreprocessDatasetProgress) => void;
+  totalVolumeCount: number;
+  progressState: { processedVolumes: number };
+}): Promise<void> {
+  if (sourceMetadata.channels !== 1) {
+    throw new Error(
+      `Segmentation layer "${preparedLayer.layer.channelLabel}" must decode to exactly one source channel.`
+    );
+  }
+  const buildState = createSparseSegmentationLayerBuildState({
+    layer: preparedLayer.layer,
+    manifestLayer
+  });
+  for (let timepoint = 0; timepoint < preparedLayer.timepointCount; timepoint += 1) {
+    throwIfAborted(signal);
+    const raw = await preparedLayer.getTimepointVolume(timepoint, signal);
+    assertVolumeMatchesExpectedShape(raw, sourceMetadata, `Layer "${preparedLayer.layer.channelLabel}" timepoint ${timepoint + 1}`);
+    const voxels = collectSparseSegmentationVoxelsFromVolume({
+      layer: preparedLayer.layer,
+      raw,
+      timepoint,
+      labelStats: buildState.labelStats
+    });
+    appendSparseSegmentationTimepoint({
+      buildState,
+      timepoint,
+      baseVoxels: voxels
+    });
+    progressState.processedVolumes += 1;
+    onProgress?.({
+      stage: 'write-volumes',
+      processedVolumes: progressState.processedVolumes,
+      totalVolumes: totalVolumeCount,
+      layerKey: preparedLayer.layer.key,
+      timepoint
+    });
+  }
+  await finalizeSparseSegmentationLayerBuildState({ storage, buildState, signal });
+}
+
+async function writeSparseSegmentationLayerFor3dStreaming({
+  storage,
+  preparedLayer,
+  manifestLayer,
+  sourceMetadata,
+  tiffByFileCache,
+  signal,
+  onProgress,
+  totalVolumeCount,
+  progressState
+}: {
+  storage: PreprocessedStorage;
+  preparedLayer: StreamingPreparedLayerSource;
+  manifestLayer: Extract<PreprocessedLayerManifestEntry, { kind: 'segmentation' }>;
+  sourceMetadata: LayerMetadata;
+  tiffByFileCache: TiffByFileCache;
+  signal?: AbortSignal;
+  onProgress?: (progress: PreprocessDatasetProgress) => void;
+  totalVolumeCount: number;
+  progressState: { processedVolumes: number };
+}): Promise<void> {
+  if (sourceMetadata.channels !== 1) {
+    throw new Error(
+      `Segmentation layer "${preparedLayer.layer.channelLabel}" must decode to exactly one source channel.`
+    );
+  }
+  const buildState = createSparseSegmentationLayerBuildState({
+    layer: preparedLayer.layer,
+    manifestLayer
+  });
+  for (let timepoint = 0; timepoint < preparedLayer.timepointCount; timepoint += 1) {
+    throwIfAborted(signal);
+    const voxels: SparseSegmentationGlobalVoxel[] = [];
+    const source = preparedLayer.getTimepointSource(timepoint);
+    await forEachSliceInStreamingTimepointSource({
+      layer: preparedLayer.layer,
+      timepoint,
+      source,
+      rawExpectedMetadata: preparedLayer.rawSourceMetadata,
+      outputMetadata: sourceMetadata,
+      selectedSourceChannelIndex: null,
+      imagejPageChannelLayout: preparedLayer.imagejPageChannelLayout,
+      tiffByFileCache,
+      signal,
+      onSlice: async (slice, z) => {
+        for (let y = 0; y < sourceMetadata.height; y += 1) {
+          for (let x = 0; x < sourceMetadata.width; x += 1) {
+            const index = y * sourceMetadata.width + x;
+            const label = canonicalizeSegmentationLabelStrict(
+              slice[index] as number,
+              `layer "${preparedLayer.layer.key}" timepoint ${timepoint} voxel ${z},${y},${x}`
+            );
+            if (label === 0) {
+              continue;
+            }
+            voxels.push({ z, y, x, label });
+            updateSparseSegmentationLabelStats(buildState.labelStats, label, timepoint, z, y, x);
+          }
+        }
+      }
+    });
+    appendSparseSegmentationTimepoint({
+      buildState,
+      timepoint,
+      baseVoxels: voxels
+    });
+    progressState.processedVolumes += 1;
+    onProgress?.({
+      stage: 'write-volumes',
+      processedVolumes: progressState.processedVolumes,
+      totalVolumes: totalVolumeCount,
+      layerKey: preparedLayer.layer.key,
+      timepoint
+    });
+  }
+  await finalizeSparseSegmentationLayerBuildState({ storage, buildState, signal });
 }
 
 async function writeNormalizedLayerTimepoint({
@@ -3852,9 +4355,9 @@ async function writeNormalizedLayerTimepoint({
   timepoint
 }: {
   chunkWriter: ChunkWriteDispatcher;
-  normalized: NormalizedVolume;
+  normalized: IntensityVolume;
   layer: PreprocessLayerSource;
-  manifestLayer: PreprocessedLayerManifestEntry;
+  manifestLayer: PreprocessedIntensityLayerManifestEntry;
   backgroundMask: SharedBackgroundMask | null;
   signal?: AbortSignal;
   timepoint: number;
@@ -3865,23 +4368,14 @@ async function writeNormalizedLayerTimepoint({
     throw new Error(`Layer "${layer.key}" is missing level 0 Zarr scale metadata.`);
   }
 
-  let volumeForScale = isSegmentationVolume(normalized)
-    ? {
-        width: normalized.width,
-        height: normalized.height,
-        depth: normalized.depth,
-        channels: normalized.channels,
-        data: normalized.labels,
-        isSegmentation: true as const
-      }
-    : {
-        width: normalized.width,
-        height: normalized.height,
-        depth: normalized.depth,
-        channels: normalized.channels,
-        data: normalized.normalized,
-        isSegmentation: false as const
-      };
+  let volumeForScale = {
+    width: normalized.width,
+    height: normalized.height,
+    depth: normalized.depth,
+    channels: normalized.channels,
+    data: normalized.normalized,
+    isSegmentation: false as const
+  };
   const backgroundMaskByLevel = new Map<number, SharedBackgroundMaskScale>(
     (backgroundMask?.scales ?? []).map((scale) => [scale.level, scale])
   );
@@ -3915,15 +4409,10 @@ async function writeNormalizedLayerTimepoint({
       continue;
     }
 
-    volumeForScale = volumeForScale.isSegmentation
-      ? {
-          ...downsampleLabelsByMode(volumeForScale),
-          isSegmentation: true as const
-        }
-      : {
-          ...downsampleDataByMaxPooling(volumeForScale),
-          isSegmentation: false as const
-        };
+    volumeForScale = {
+      ...downsampleDataByMaxPooling(volumeForScale),
+      isSegmentation: false as const
+    };
     const nextScale = sortedScales[scaleIndex + 1]!;
     if (
       volumeForScale.depth !== nextScale.depth ||
@@ -3948,7 +4437,7 @@ async function writePrecomputedLayerTimepointScales({
 }: {
   chunkWriter: ChunkWriteDispatcher;
   layer: PreprocessLayerSource;
-  manifestLayer: PreprocessedLayerManifestEntry;
+  manifestLayer: PreprocessedIntensityLayerManifestEntry;
   precomputedScales: PreprocessScalePyramidWorkerResultScale[];
   signal?: AbortSignal;
   timepoint: number;
@@ -4010,6 +4499,7 @@ async function writePrecomputedLayerTimepointScales({
 }
 
 async function writeLayerVolumesFor3dStreaming({
+  storage,
   chunkWriter,
   preparedLayer,
   manifestLayer,
@@ -4022,6 +4512,7 @@ async function writeLayerVolumesFor3dStreaming({
   totalVolumeCount,
   progressState
 }: {
+  storage: PreprocessedStorage;
   chunkWriter: ChunkWriteDispatcher;
   preparedLayer: StreamingPreparedLayerSource;
   manifestLayer: PreprocessedLayerManifestEntry;
@@ -4035,23 +4526,40 @@ async function writeLayerVolumesFor3dStreaming({
   progressState: { processedVolumes: number };
 }): Promise<void> {
   const layer = preparedLayer.layer;
-  const storedDataType = manifestLayer.storedDataType ?? 'uint8';
-  const normalization = layer.isSegmentation
-    ? null
-    : normalizationByLayerKey.get(layer.key) ??
-      computeNormalizationParametersFromScannedMinMax({
-        dataType: sourceMetadata.dataType,
-        storedDataType,
-        min: 0,
-        max: 1
-      });
+  if (layer.isSegmentation) {
+    if (!isSparseSegmentationLayerManifest(manifestLayer)) {
+      throw new Error(`Segmentation layer "${layer.key}" is missing sparse segmentation manifest metadata.`);
+    }
+    await writeSparseSegmentationLayerFor3dStreaming({
+      storage,
+      preparedLayer,
+      manifestLayer,
+      sourceMetadata,
+      tiffByFileCache,
+      signal,
+      onProgress,
+      totalVolumeCount,
+      progressState
+    });
+    return;
+  }
+  const intensityManifestLayer = manifestLayer as PreprocessedIntensityLayerManifestEntry;
+  const storedDataType = intensityManifestLayer.storedDataType ?? 'uint8';
+  const normalization =
+    normalizationByLayerKey.get(layer.key) ??
+    computeNormalizationParametersFromScannedMinMax({
+      dataType: sourceMetadata.dataType,
+      storedDataType,
+      min: 0,
+      max: 1
+    });
 
   for (let timepoint = 0; timepoint < preparedLayer.timepointCount; timepoint += 1) {
     throwIfAborted(signal);
     await writeStreamingLayerTimepoint({
       chunkWriter,
       preparedLayer,
-      manifestLayer,
+      manifestLayer: intensityManifestLayer,
       sourceMetadata,
       normalization,
       backgroundMask,
@@ -4072,6 +4580,7 @@ async function writeLayerVolumesFor3dStreaming({
 }
 
 async function writeLayerVolumesFor3d({
+  storage,
   chunkWriter,
   preparedLayer,
   manifestLayer,
@@ -4085,6 +4594,7 @@ async function writeLayerVolumesFor3d({
   totalVolumeCount,
   progressState
 }: {
+  storage: PreprocessedStorage;
   chunkWriter: ChunkWriteDispatcher;
   preparedLayer: PreparedLayerSource;
   manifestLayer: PreprocessedLayerManifestEntry;
@@ -4099,15 +4609,31 @@ async function writeLayerVolumesFor3d({
   progressState: { processedVolumes: number };
 }): Promise<void> {
   const layer = preparedLayer.layer;
-  const storedDataType = manifestLayer.storedDataType ?? 'uint8';
-  const normalization = layer.isSegmentation
-    ? null
-    : normalizationByLayerKey.get(layer.key) ??
-      computeRepresentativeNormalization(
-        await preparedLayer.getTimepointVolume(representativeTimepoint, signal),
-        backgroundMask?.scales[0] ?? null,
-        storedDataType
-      );
+  if (layer.isSegmentation) {
+    if (!isSparseSegmentationLayerManifest(manifestLayer)) {
+      throw new Error(`Segmentation layer "${layer.key}" is missing sparse segmentation manifest metadata.`);
+    }
+    await writeSparseSegmentationLayerFor3d({
+      storage,
+      preparedLayer,
+      manifestLayer,
+      sourceMetadata,
+      signal,
+      onProgress,
+      totalVolumeCount,
+      progressState
+    });
+    return;
+  }
+  const intensityManifestLayer = manifestLayer as PreprocessedIntensityLayerManifestEntry;
+  const storedDataType = intensityManifestLayer.storedDataType ?? 'uint8';
+  const normalization =
+    normalizationByLayerKey.get(layer.key) ??
+    computeRepresentativeNormalization(
+      await preparedLayer.getTimepointVolume(representativeTimepoint, signal),
+      backgroundMask?.scales[0] ?? null,
+      storedDataType
+    );
   let useWorkerizedNormalizationDownsample =
     workerizeNormalizationDownsample && supportsPreprocessScalePyramidWorker();
 
@@ -4121,9 +4647,9 @@ async function writeLayerVolumesFor3d({
       try {
         const precomputedScales = await buildPreprocessScalePyramidInWorker({
           rawVolume: raw,
-          scales: manifestLayer.zarr.scales,
+          scales: intensityManifestLayer.zarr.scales,
           layerKey: layer.key,
-          isSegmentation: layer.isSegmentation,
+          isSegmentation: false,
           storedDataType,
           normalization,
           signal
@@ -4131,7 +4657,7 @@ async function writeLayerVolumesFor3d({
         await writePrecomputedLayerTimepointScales({
           chunkWriter,
           layer,
-          manifestLayer,
+          manifestLayer: intensityManifestLayer,
           precomputedScales,
           signal,
           timepoint
@@ -4150,15 +4676,16 @@ async function writeLayerVolumesFor3d({
     }
 
     if (!wroteWithWorker) {
-      const normalized = layer.isSegmentation
-        ? canonicalizeSegmentationVolume(raw)
-        : normalizeVolume(
-            raw,
-            normalization ?? computeRepresentativeNormalization(raw, backgroundMask?.scales[0] ?? null, storedDataType),
-            storedDataType
-          );
+      const normalized = normalizeVolume(
+        raw,
+        normalization ?? computeRepresentativeNormalization(raw, backgroundMask?.scales[0] ?? null, storedDataType),
+        storedDataType
+      );
+      if (normalized.kind !== 'intensity') {
+        throw new Error(`Internal error: layer "${layer.key}" was routed to dense intensity preprocessing but produced segmentation data.`);
+      }
 
-      if (normalized.kind === 'intensity' && backgroundMask && backgroundMask.maskedVoxelCount > 0) {
+      if (backgroundMask && backgroundMask.maskedVoxelCount > 0) {
         const maskedNormalized = normalized.normalized.slice();
         applyBackgroundMaskInPlace({
           target: maskedNormalized,
@@ -4172,7 +4699,7 @@ async function writeLayerVolumesFor3d({
             normalized: maskedNormalized
           },
           layer,
-          manifestLayer,
+          manifestLayer: intensityManifestLayer,
           backgroundMask,
           signal,
           timepoint
@@ -4182,7 +4709,7 @@ async function writeLayerVolumesFor3d({
           chunkWriter,
           normalized,
           layer,
-          manifestLayer,
+          manifestLayer: intensityManifestLayer,
           backgroundMask,
           signal,
           timepoint
@@ -4402,6 +4929,7 @@ export async function preprocessDatasetToStorage({
           throw new Error(`Missing prepared layer for "${layer.key}".`);
         }
         await writeLayerVolumesFor3d({
+          storage,
           chunkWriter,
           preparedLayer,
           manifestLayer,
@@ -4424,6 +4952,7 @@ export async function preprocessDatasetToStorage({
           throw new Error('Missing TIFF cache for streaming preprocessing.');
         }
         await writeLayerVolumesFor3dStreaming({
+          storage,
           chunkWriter,
           preparedLayer,
           manifestLayer,
@@ -4440,6 +4969,7 @@ export async function preprocessDatasetToStorage({
     }
   }
   await chunkWriter.flush(signal);
+  await writeRootZarrManifestMetadata({ storage, manifest });
 
   const channelSummaries = buildChannelSummariesFromManifest(manifest);
   const trackSummaries = buildTrackSummariesFromManifest(manifest);

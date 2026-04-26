@@ -2,7 +2,7 @@ import type { VolumeBrickAtlas, VolumeBrickPageTable } from '../../../core/volum
 import { isIntensityVolume, type NormalizedVolume } from '../../../core/volumeProcessing';
 import type { PlaybackIndexWindow } from '../../../shared/utils';
 import { computeLoopedNextTimeIndex } from '../../../shared/utils';
-import type { PreprocessedLayerScaleManifestEntry } from '../../../shared/utils/preprocessedDataset/types';
+import type { PreprocessedAnyLayerScaleManifestEntry } from '../../../shared/utils/preprocessedDataset/types';
 import type { LoadedDatasetLayer } from '../../../hooks/dataset';
 import type { PlaybackWarmupFrameState } from './types';
 
@@ -105,8 +105,8 @@ export function normalizeChunkDimension(value: unknown): number | null {
   return typeof value === 'number' && Number.isFinite(value) && value > 0 ? Math.max(1, Math.floor(value)) : null;
 }
 
-export function estimateDataChunkCount(scale: PreprocessedLayerScaleManifestEntry | null | undefined): number | null {
-  const descriptor = scale?.zarr?.data;
+export function estimateDataChunkCount(scale: PreprocessedAnyLayerScaleManifestEntry | null | undefined): number | null {
+  const descriptor = (scale as { zarr?: { data?: { shape?: number[]; chunkShape?: number[] } } } | null | undefined)?.zarr?.data;
   if (!descriptor || !Array.isArray(descriptor.shape) || !Array.isArray(descriptor.chunkShape)) {
     return null;
   }
@@ -252,7 +252,7 @@ export function applyScaleSelectionModeOverrides({
   return levels.find((level) => level > playbackResolvedScaleLevel) ?? levels[levels.length - 1] ?? playbackResolvedScaleLevel;
 }
 
-export function downsampleMagnitude(scale: PreprocessedLayerScaleManifestEntry | null): number {
+export function downsampleMagnitude(scale: PreprocessedAnyLayerScaleManifestEntry | null): number {
   if (!scale) {
     return 1;
   }

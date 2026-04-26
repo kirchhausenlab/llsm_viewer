@@ -76,8 +76,8 @@ type UseVolumeViewerLifecycleParams = {
   setRenderContextRevision: Dispatch<SetStateAction<number>>;
   refreshTrackOverlay: () => void;
   layersRef: PointerLifecycleOptions['layersRef'];
-  paintbrushRef: PointerLifecycleOptions['paintbrushRef'];
-  paintStrokePointerIdRef: PointerLifecycleOptions['paintStrokePointerIdRef'];
+  annotationRef: PointerLifecycleOptions['annotationRef'];
+  annotationStrokePointerIdRef: PointerLifecycleOptions['annotationStrokePointerIdRef'];
   hoverIntensityRef: PointerLifecycleOptions['hoverIntensityRef'];
   followedTrackIdRef: PointerLifecycleOptions['followedTrackIdRef'];
   updateVoxelHover: PointerLifecycleOptions['updateVoxelHover'];
@@ -187,8 +187,8 @@ export function useVolumeViewerLifecycle({
   setRenderContextRevision,
   refreshTrackOverlay,
   layersRef,
-  paintbrushRef,
-  paintStrokePointerIdRef,
+  annotationRef,
+  annotationStrokePointerIdRef,
   hoverIntensityRef,
   followedTrackIdRef,
   updateVoxelHover,
@@ -562,8 +562,8 @@ export function useVolumeViewerLifecycle({
       layersRef,
       resourcesRef,
       volumeRootGroupRef,
-      paintbrushRef,
-      paintStrokePointerIdRef,
+      annotationRef,
+      annotationStrokePointerIdRef,
       hoverIntensityRef,
       followTargetActiveRef,
       followedTrackIdRef,

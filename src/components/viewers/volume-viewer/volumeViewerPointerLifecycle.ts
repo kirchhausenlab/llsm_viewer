@@ -24,8 +24,8 @@ type AttachVolumeViewerPointerLifecycleParams = PointerLookHandlers & {
   layersRef: MutableRefObject<VolumeViewerProps['layers']>;
   resourcesRef: MutableRefObject<Map<string, VolumeResources>>;
   volumeRootGroupRef: MutableRefObject<THREE.Group | null>;
-  paintbrushRef: MutableRefObject<VolumeViewerProps['paintbrush']>;
-  paintStrokePointerIdRef: MutableRefObject<number | null>;
+  annotationRef: MutableRefObject<VolumeViewerProps['annotation']>;
+  annotationStrokePointerIdRef: MutableRefObject<number | null>;
   hoverIntensityRef: MutableRefObject<HoveredVoxelInfo | null>;
   followTargetActiveRef: MutableRefObject<boolean>;
   followedTrackIdRef: MutableRefObject<string | null>;
@@ -63,8 +63,8 @@ export function attachVolumeViewerPointerLifecycle({
   layersRef: _layersRef,
   resourcesRef: _resourcesRef,
   volumeRootGroupRef: _volumeRootGroupRef,
-  paintbrushRef,
-  paintStrokePointerIdRef,
+  annotationRef,
+  annotationStrokePointerIdRef,
   hoverIntensityRef,
   followTargetActiveRef,
   followedTrackIdRef,
@@ -124,21 +124,21 @@ export function attachVolumeViewerPointerLifecycle({
       return;
     }
 
-    const paint = paintbrushRef.current;
-    const shouldPaint = Boolean(paint?.enabled && event.ctrlKey);
-    if (shouldPaint && paint) {
+    const annotation = annotationRef.current;
+    const shouldAnnotate = Boolean(annotation?.enabled && event.ctrlKey);
+    if (shouldAnnotate && annotation) {
       domElement.style.cursor = '';
-      paintStrokePointerIdRef.current = event.pointerId;
+      annotationStrokePointerIdRef.current = event.pointerId;
       try {
         domElement.setPointerCapture(event.pointerId);
       } catch {
         // Ignore: some platforms may reject capture.
       }
-      paint.onStrokeStart();
+      annotation.onStrokeStart();
       updateVoxelHover(event);
       const hovered = hoverIntensityRef.current;
       if (hovered) {
-        paint.onStrokeApply(hovered.coordinates);
+        annotation.onStrokeApply(hovered.coordinates);
       }
       return;
     }
@@ -193,14 +193,14 @@ export function attachVolumeViewerPointerLifecycle({
   };
 
   const handlePointerMove = (event: PointerEvent) => {
-    const paint = paintbrushRef.current;
-    const isPainting = paintStrokePointerIdRef.current !== null;
-    if (paint && isPainting && paintStrokePointerIdRef.current === event.pointerId) {
+    const annotation = annotationRef.current;
+    const isAnnotating = annotationStrokePointerIdRef.current !== null;
+    if (annotation && isAnnotating && annotationStrokePointerIdRef.current === event.pointerId) {
       domElement.style.cursor = '';
       updateVoxelHover(event);
       const hovered = hoverIntensityRef.current;
       if (hovered) {
-        paint.onStrokeApply(hovered.coordinates);
+        annotation.onStrokeApply(hovered.coordinates);
       }
       return;
     }
@@ -240,17 +240,17 @@ export function attachVolumeViewerPointerLifecycle({
   };
 
   const handlePointerUp = (event: PointerEvent) => {
-    const paint = paintbrushRef.current;
-    const activePointerId = paintStrokePointerIdRef.current;
-    if (paint && activePointerId !== null && activePointerId === event.pointerId) {
+    const annotation = annotationRef.current;
+    const activePointerId = annotationStrokePointerIdRef.current;
+    if (annotation && activePointerId !== null && activePointerId === event.pointerId) {
       domElement.style.cursor = '';
       updateVoxelHover(event);
       const hovered = hoverIntensityRef.current;
       if (hovered) {
-        paint.onStrokeApply(hovered.coordinates);
+        annotation.onStrokeApply(hovered.coordinates);
       }
-      paint.onStrokeEnd();
-      paintStrokePointerIdRef.current = null;
+      annotation.onStrokeEnd();
+      annotationStrokePointerIdRef.current = null;
       try {
         domElement.releasePointerCapture(event.pointerId);
       } catch {
@@ -290,11 +290,11 @@ export function attachVolumeViewerPointerLifecycle({
 
   const handlePointerLeave = (event: PointerEvent) => {
     domElement.style.cursor = '';
-    const paint = paintbrushRef.current;
-    const activePointerId = paintStrokePointerIdRef.current;
-    if (paint && activePointerId !== null && activePointerId === event.pointerId) {
-      paint.onStrokeEnd();
-      paintStrokePointerIdRef.current = null;
+    const annotation = annotationRef.current;
+    const activePointerId = annotationStrokePointerIdRef.current;
+    if (annotation && activePointerId !== null && activePointerId === event.pointerId) {
+      annotation.onStrokeEnd();
+      annotationStrokePointerIdRef.current = null;
     }
     if (activeWorldPropDrag && activeWorldPropDrag.pointerId === event.pointerId) {
       activeWorldPropDrag = null;

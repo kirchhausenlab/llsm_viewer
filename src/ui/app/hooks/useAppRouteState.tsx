@@ -34,6 +34,8 @@ import {
   DEFAULT_MAX_CONCURRENT_CHUNK_READS,
   DEFAULT_MAX_CONCURRENT_PREFETCH_LOADS
 } from '../../../core/volumeProvider';
+import { isSparseSegmentationLayerManifest } from '../../../shared/utils/preprocessedDataset/types';
+import { buildChannelSummariesFromManifest, buildTrackSummariesFromManifest } from '../../../shared/utils/preprocessedDataset/manifest';
 import { useViewerPlayback } from '../../../hooks/viewer';
 import useChannelEditing from './useChannelEditing';
 import { useRouteDatasetResetState } from './useRouteDatasetResetState';
@@ -350,7 +352,8 @@ export function useAppRouteState(): AppRouteState {
     layersWindowInitialPosition,
     cameraWindowInitialPosition,
     cameraSettingsWindowInitialPosition,
-    paintbrushWindowInitialPosition,
+    annotateWindowInitialPosition,
+    exportChannelWindowInitialPosition,
     drawRoiWindowInitialPosition,
     propsWindowInitialPosition,
     roiManagerWindowInitialPosition,
@@ -415,6 +418,22 @@ export function useAppRouteState(): AppRouteState {
       maxConcurrentPrefetchLoads: DEFAULT_MAX_CONCURRENT_PREFETCH_LOADS
     });
   }, [preprocessedExperiment]);
+
+  const handlePreprocessedManifestUpdated = useCallback((manifest: NonNullable<typeof preprocessedExperiment>['manifest']) => {
+    setPreprocessedExperiment((current) => {
+      if (!current) {
+        return current;
+      }
+      return {
+        ...current,
+        manifest,
+        channelSummaries: buildChannelSummariesFromManifest(manifest),
+        trackSummaries: buildTrackSummariesFromManifest(manifest),
+        totalVolumeCount: manifest.dataset.totalVolumeCount,
+      };
+    });
+    volumeProvider?.clear();
+  }, [volumeProvider]);
 
   useEffect(() => {
     if (typeof window === 'undefined') {
@@ -734,7 +753,8 @@ export function useAppRouteState(): AppRouteState {
     for (const channel of manifest.dataset.channels) {
       for (const layer of channel.layers) {
         const byLevel = new Map<number, [number, number, number]>();
-        for (const scale of layer.zarr.scales) {
+        const scales = isSparseSegmentationLayerManifest(layer) ? layer.sparse.scales : layer.zarr.scales;
+        for (const scale of scales) {
           byLevel.set(scale.level, scale.downsampleFactor);
         }
         byLayer.set(layer.key, byLevel);
@@ -750,7 +770,8 @@ export function useAppRouteState(): AppRouteState {
     }
     for (const channel of manifest.dataset.channels) {
       for (const layer of channel.layers) {
-        const levels = layer.zarr.scales
+        const scales = isSparseSegmentationLayerManifest(layer) ? layer.sparse.scales : layer.zarr.scales;
+        const levels = scales
           .map((scale) => scale.level)
           .filter((level) => Number.isFinite(level));
         if (levels.length === 0) {
@@ -1502,6 +1523,12 @@ export function useAppRouteState(): AppRouteState {
     viewer: {
       viewerMode,
       loadMeasurementVolume: volumeProvider ? volumeProvider.getVolume : null,
+      datasetAccess: {
+        storageHandle: preprocessedExperiment?.storageHandle ?? null,
+        manifest: preprocessedExperiment?.manifest ?? null,
+        volumeProvider,
+        onManifestUpdated: handlePreprocessedManifestUpdated,
+      },
       viewerPanels: {
         layers: viewerLayers,
         playbackWarmupLayers: viewerPlaybackWarmupLayers,
@@ -1602,7 +1629,8 @@ export function useAppRouteState(): AppRouteState {
         viewerSettingsWindowInitialPosition,
         recordWindowInitialPosition,
         layersWindowInitialPosition,
-        paintbrushWindowInitialPosition,
+        annotateWindowInitialPosition,
+        exportChannelWindowInitialPosition,
         drawRoiWindowInitialPosition,
         propsWindowInitialPosition,
         roiManagerWindowInitialPosition,

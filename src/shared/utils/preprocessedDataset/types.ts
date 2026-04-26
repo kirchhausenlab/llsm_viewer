@@ -8,9 +8,12 @@ import type { CompiledTrackSet, CompiledTrackSetHeader } from '../../../types/tr
 
 export const LEGACY_PREPROCESSED_DATASET_FORMAT = 'llsm-viewer-preprocessed-vnext-hes1' as const;
 export const PREPROCESSED_DATASET_FORMAT = 'llsm-viewer-preprocessed-vnext-hes2' as const;
+export const SPARSE_SEGMENTATION_PREPROCESSED_DATASET_FORMAT =
+  'llsm-viewer-preprocessed-vnext-sparse-seg1' as const;
 export type PreprocessedDatasetFormat =
   | typeof LEGACY_PREPROCESSED_DATASET_FORMAT
-  | typeof PREPROCESSED_DATASET_FORMAT;
+  | typeof PREPROCESSED_DATASET_FORMAT
+  | typeof SPARSE_SEGMENTATION_PREPROCESSED_DATASET_FORMAT;
 export type StoredIntensityDataType = 'uint8' | 'uint16';
 
 export type AnisotropyCorrectionMetadata = {
@@ -134,11 +137,94 @@ export type PreprocessedBackgroundMaskManifest = {
   };
 };
 
-export type PreprocessedLayerManifestEntry = {
+export type SparseSegmentationRepresentation = 'sparse-label-bricks-v1';
+export type SparseSegmentationLabelDataType = 'uint32';
+export type SparseSegmentationBrickCodec =
+  | 'coord-list-v1'
+  | 'x-run-v1'
+  | 'bitmask-labels-v1'
+  | 'dense-local-v1';
+
+export type SparseSegmentationBinaryDescriptor = {
+  path: string;
+  byteLength: number;
+  checksum?: {
+    algorithm: 'crc32';
+    value: number;
+  } | null;
+};
+
+export type SparseSegmentationBrickDirectoryDescriptor = SparseSegmentationBinaryDescriptor & {
+  format: 'sparse-brick-directory-v1';
+  recordCount: number;
+  recordByteLength: 80;
+};
+
+export type SparseSegmentationPayloadShardSetDescriptor = {
+  format: 'sparse-brick-payload-shards-v1';
+  shardCount: number;
+  shardPathPrefix: string;
+  shardFileExtension: '.ssbp';
+  targetShardBytes: number;
+  totalPayloadBytes: number;
+};
+
+export type SparseSegmentationOccupancyHierarchyLevelDescriptor = SparseSegmentationBinaryDescriptor & {
+  level: number;
+  gridShape: [number, number, number];
+  dataType: 'uint8';
+  occupiedNodeCount: number;
+};
+
+export type SparseSegmentationOccupancyHierarchyDescriptor = {
+  format: 'sparse-occupancy-hierarchy-v1';
+  levels: SparseSegmentationOccupancyHierarchyLevelDescriptor[];
+};
+
+export type SparseSegmentationLabelMetadataDescriptor = SparseSegmentationBinaryDescriptor & {
+  format: 'sparse-label-metadata-v1';
+  recordCount: number;
+  recordByteLength: 96;
+};
+
+export type SparseSegmentationScaleManifestEntry = {
+  level: number;
+  downsampleFactor: [number, number, number];
+  width: number;
+  height: number;
+  depth: number;
+  brickSize: [number, number, number];
+  brickGridShape: [number, number, number];
+  occupiedBrickCount: number;
+  nonzeroVoxelCount: number;
+  directory: SparseSegmentationBrickDirectoryDescriptor;
+  payload: SparseSegmentationPayloadShardSetDescriptor;
+  occupancyHierarchy: SparseSegmentationOccupancyHierarchyDescriptor;
+};
+
+export type PreprocessedAnyLayerScaleManifestEntry =
+  | PreprocessedLayerScaleManifestEntry
+  | SparseSegmentationScaleManifestEntry;
+
+export type SparseSegmentationManifest = {
+  version: 1;
+  labels: SparseSegmentationLabelMetadataDescriptor;
+  scales: SparseSegmentationScaleManifestEntry[];
+};
+
+export type EditableSegmentationMetadata = {
+  version: 1;
+  labelNames: string[];
+};
+
+export type PreprocessedLayerKind = 'intensity' | 'segmentation';
+
+export type PreprocessedIntensityLayerManifestEntry = {
+  kind?: 'intensity';
   key: string;
   label: string;
   channelId: string;
-  isSegmentation: boolean;
+  isSegmentation: false;
   isBinaryLike?: boolean;
   volumeCount: number;
   width: number;
@@ -152,6 +238,48 @@ export type PreprocessedLayerManifestEntry = {
     scales: PreprocessedLayerScaleManifestEntry[];
   };
 };
+
+export type PreprocessedSparseSegmentationLayerManifestEntry = {
+  kind: 'segmentation';
+  key: string;
+  label: string;
+  channelId: string;
+  isSegmentation: true;
+  volumeCount: number;
+  width: number;
+  height: number;
+  depth: number;
+  channels: 1;
+  dataType: 'uint32';
+  labelDataType: SparseSegmentationLabelDataType;
+  emptyLabel: 0;
+  normalization: null;
+  representation: SparseSegmentationRepresentation;
+  brickSize: [number, number, number];
+  colorSeed: number;
+  sparse: SparseSegmentationManifest;
+  editableSegmentation?: EditableSegmentationMetadata;
+  storedDataType?: never;
+  isBinaryLike?: never;
+  zarr?: never;
+};
+
+export type PreprocessedLayerManifestEntry =
+  | PreprocessedIntensityLayerManifestEntry
+  | PreprocessedSparseSegmentationLayerManifestEntry;
+
+export function isSparseSegmentationLayerManifest(
+  layer: PreprocessedLayerManifestEntry
+): layer is PreprocessedSparseSegmentationLayerManifestEntry {
+  const candidate = layer as { kind?: PreprocessedLayerKind; isSegmentation?: boolean };
+  return candidate.kind === 'segmentation' || candidate.isSegmentation === true;
+}
+
+export function isIntensityLayerManifest(
+  layer: PreprocessedLayerManifestEntry
+): layer is PreprocessedIntensityLayerManifestEntry {
+  return !isSparseSegmentationLayerManifest(layer);
+}
 
 export type PreprocessedChannelManifest = {
   id: string;

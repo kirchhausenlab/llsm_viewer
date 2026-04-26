@@ -3,7 +3,11 @@ import type {
   PreprocessedLayerManifestEntry,
   PreprocessedManifest,
   PreprocessedShardedBlobDescriptor,
+  SparseSegmentationScaleManifestEntry,
   ZarrArrayDescriptor
+} from '../shared/utils/preprocessedDataset/types';
+import {
+  isSparseSegmentationLayerManifest
 } from '../shared/utils/preprocessedDataset/types';
 import type { PreprocessedStorage } from '../shared/storage/preprocessedStorage';
 import { createZarrChunkKeyFromCoords } from '../shared/utils/preprocessedDataset/chunkKey';
@@ -29,6 +33,25 @@ import type {
   RuntimeShardDecodeInboundMessage,
   RuntimeShardDecodeOutboundMessage
 } from '../workers/runtimeShardDecodeMessages';
+import {
+  buildSparseSegmentationOccupancyHierarchy,
+  decodeSparseSegmentationBrickDirectory,
+  decodeSparseSegmentationBrickPayload,
+  decodeSparseSegmentationLabelMetadata,
+  extractSparseSegmentationSliceFromField,
+  globalCoordForLocalOffset,
+  localOffsetForVoxel,
+  readSparseSegmentationPayloadFromShard,
+  type DecodedSparseSegmentationBrick,
+  type SparseSegmentationBrickCoord,
+  type SparseSegmentationBrickDirectory,
+  type SparseSegmentationBrickDirectoryRecord,
+  type SparseSegmentationField,
+  type SparseSegmentationLabelMetadata,
+  type SparseSegmentationSlice,
+  type SparseSegmentationSliceRequest,
+  type SparseSegmentationVoxelCoord
+} from '../shared/utils/preprocessedDataset/sparseSegmentation';
 
 export type VolumeProviderOptions = {
   manifest: PreprocessedManifest;
@@ -191,6 +214,16 @@ export type VolumeBackgroundMask = {
 };
 
 export type VolumeProvider = {
+  getIntensityVolume(
+    layerKey: string,
+    timepoint: number,
+    options?: {
+      scaleLevel?: number;
+      signal?: AbortSignal | null;
+      recordLookup?: boolean;
+      includeHistogram?: boolean;
+    }
+  ): Promise<NormalizedVolume>;
   getVolume(
     layerKey: string,
     timepoint: number,
@@ -211,6 +244,39 @@ export type VolumeProvider = {
     timepoint: number,
     options?: { scaleLevel?: number; signal?: AbortSignal | null }
   ): Promise<VolumeBrickAtlas>;
+  getSparseSegmentationField?(
+    layerKey: string,
+    timepoint: number,
+    options?: { scaleLevel?: number; loadDirectory?: boolean; loadLabelMetadata?: boolean; signal?: AbortSignal | null }
+  ): Promise<SparseSegmentationField>;
+  getSparseSegmentationBrick?(
+    layerKey: string,
+    timepoint: number,
+    scaleLevel: number,
+    brickCoord: SparseSegmentationBrickCoord,
+    options?: { signal?: AbortSignal | null }
+  ): Promise<DecodedSparseSegmentationBrick>;
+  querySparseSegmentationLabel?(
+    layerKey: string,
+    timepoint: number,
+    scaleLevel: number,
+    voxel: SparseSegmentationVoxelCoord,
+    options?: { signal?: AbortSignal | null }
+  ): Promise<number>;
+  extractSparseSegmentationSlice?(
+    layerKey: string,
+    timepoint: number,
+    scaleLevel: number,
+    request: SparseSegmentationSliceRequest,
+    options?: { signal?: AbortSignal | null }
+  ): Promise<SparseSegmentationSlice>;
+  prefetchSparseSegmentationBricks?(
+    layerKey: string,
+    timepoint: number,
+    scaleLevel: number,
+    bricks: SparseSegmentationBrickCoord[],
+    options?: { signal?: AbortSignal | null }
+  ): Promise<void>;
   getBackgroundMask?(
     options?: { scaleLevel?: number; signal?: AbortSignal | null }
   ): Promise<VolumeBackgroundMask | null>;
@@ -221,6 +287,8 @@ export type VolumeProvider = {
   ): Promise<void>;
   prefetch(layerKeys: string[], timepoint: number, options?: VolumePrefetchOptions): Promise<void>;
   hasVolume(layerKey: string, timepoint: number, options?: { scaleLevel?: number }): boolean;
+  hasIntensityVolume(layerKey: string, timepoint: number, options?: { scaleLevel?: number }): boolean;
+  hasSparseSegmentationField(layerKey: string, timepoint: number, scaleLevel?: number): boolean;
   hasBrickAtlas?(layerKey: string, timepoint: number, options?: { scaleLevel?: number }): boolean;
   clear(): void;
   setMaxCachedVolumes(maxCachedVolumes: number): void;
@@ -1018,8 +1086,14 @@ export function createVolumeProvider({
   const brickPageTableCache = new Map<string, CachedBrickPageTableEntry>();
   const brickAtlasCache = new Map<string, CachedBrickAtlasEntry>();
   const backgroundMaskCache = new Map<string, CachedBackgroundMaskEntry>();
+  const sparseDirectoryCache = new Map<string, SparseSegmentationBrickDirectory>();
+  const sparseFieldCache = new Map<string, SparseSegmentationField>();
+  const sparseDecodedBrickCache = new Map<string, DecodedSparseSegmentationBrick>();
+  const sparseLabelCache = new Map<string, SparseSegmentationLabelMetadata[]>();
+  const sparseShardCache = new Map<string, { bytes: Uint8Array; byteLength: number }>();
   const scaleRequestCounts = new Map<number, number>();
   let chunkCacheBytes = 0;
+  let sparseShardCacheBytes = 0;
   let maxCachedChunkBytes = Number.isFinite(initialMaxCachedChunkBytes)
     ? Math.floor(initialMaxCachedChunkBytes)
     : Number.NaN;
@@ -1158,6 +1232,11 @@ export function createVolumeProvider({
     layer: LayerIndexEntry,
     requestedScaleLevel: number | undefined
   ) => {
+    if (isSparseSegmentationLayerManifest(layer.layer)) {
+      throw new Error(
+        `Layer ${layer.layerKey} is a sparse segmentation layer and does not expose dense intensity scales.`
+      );
+    }
     const sorted = [...layer.layer.zarr.scales].sort((left, right) => left.level - right.level);
     if (sorted.length === 0) {
       throw new Error(`Layer ${layer.layerKey} does not define any scales.`);
@@ -1171,6 +1250,32 @@ export function createVolumeProvider({
     if (!exact) {
       throw new Error(
         `Requested scale level ${wanted} is unavailable for layer ${layer.layerKey}. Available levels: ${sorted
+          .map((entry) => entry.level)
+          .join(', ')}`
+      );
+    }
+    return exact;
+  };
+
+  const resolveSparseScaleEntry = (
+    layer: LayerIndexEntry,
+    requestedScaleLevel: number | undefined
+  ): SparseSegmentationScaleManifestEntry => {
+    if (!isSparseSegmentationLayerManifest(layer.layer)) {
+      throw new Error(`Layer ${layer.layerKey} is not a sparse segmentation layer.`);
+    }
+    const sorted = [...layer.layer.sparse.scales].sort((left, right) => left.level - right.level);
+    if (sorted.length === 0) {
+      throw new Error(`Layer ${layer.layerKey} does not define any sparse segmentation scales.`);
+    }
+    if (requestedScaleLevel === undefined) {
+      return sorted.find((entry) => entry.level === 0) ?? sorted[0]!;
+    }
+    const wanted = normalizeScaleLevel(requestedScaleLevel);
+    const exact = sorted.find((entry) => entry.level === wanted);
+    if (!exact) {
+      throw new Error(
+        `Requested sparse segmentation scale level ${wanted} is unavailable for layer ${layer.layerKey}. Available levels: ${sorted
           .map((entry) => entry.level)
           .join(', ')}`
       );
@@ -1273,6 +1378,16 @@ export function createVolumeProvider({
   const touchBrickAtlas = (key: string, entry: CachedBrickAtlasEntry) => {
     brickAtlasCache.delete(key);
     brickAtlasCache.set(key, entry);
+  };
+
+  const touchSparseDecodedBrick = (key: string, brick: DecodedSparseSegmentationBrick) => {
+    sparseDecodedBrickCache.delete(key);
+    sparseDecodedBrickCache.set(key, brick);
+  };
+
+  const touchSparseShard = (key: string, entry: { bytes: Uint8Array; byteLength: number }) => {
+    sparseShardCache.delete(key);
+    sparseShardCache.set(key, entry);
   };
 
   const removeChunkEntry = (key: string, entry: CachedChunkEntry) => {
@@ -1415,6 +1530,46 @@ export function createVolumeProvider({
       } else {
         brickAtlasCache.delete(oldestKey);
       }
+    }
+  };
+
+  const evictSparseDecodedBrickCacheIfNeeded = () => {
+    if (maxCachedVolumes <= 0) {
+      sparseDecodedBrickCache.clear();
+      return;
+    }
+    const maxDecodedBricks = Math.max(1, maxCachedVolumes * 256);
+    while (sparseDecodedBrickCache.size > maxDecodedBricks) {
+      const oldestKey = sparseDecodedBrickCache.keys().next().value as string | undefined;
+      if (!oldestKey) {
+        return;
+      }
+      sparseDecodedBrickCache.delete(oldestKey);
+    }
+  };
+
+  const removeSparseShardEntry = (key: string, entry: { bytes: Uint8Array; byteLength: number }) => {
+    sparseShardCacheBytes = Math.max(0, sparseShardCacheBytes - entry.byteLength);
+    sparseShardCache.delete(key);
+  };
+
+  const evictSparseShardCacheIfNeeded = () => {
+    if (maxCachedChunkBytes <= 0) {
+      sparseShardCache.clear();
+      sparseShardCacheBytes = 0;
+      return;
+    }
+    while (sparseShardCacheBytes > maxCachedChunkBytes) {
+      const oldestKey = sparseShardCache.keys().next().value as string | undefined;
+      if (!oldestKey) {
+        return;
+      }
+      const entry = sparseShardCache.get(oldestKey);
+      if (!entry) {
+        sparseShardCache.delete(oldestKey);
+        continue;
+      }
+      removeSparseShardEntry(oldestKey, entry);
     }
   };
 
@@ -2097,6 +2252,241 @@ export function createVolumeProvider({
     return result;
   };
 
+  const getSparseDirectoryCacheKey = (layerKey: string, scaleLevel: number): string => `${layerKey}:${scaleLevel}`;
+
+  const getSparseBrickCacheKey = (
+    layerKey: string,
+    timepoint: number,
+    scaleLevel: number,
+    coord: SparseSegmentationBrickCoord
+  ): string => `${layerKey}:${timepoint}:${scaleLevel}:${coord.z}:${coord.y}:${coord.x}`;
+
+  const loadSparseDirectory = async (
+    layer: LayerIndexEntry,
+    scale: SparseSegmentationScaleManifestEntry,
+    signal: AbortSignal | null
+  ): Promise<SparseSegmentationBrickDirectory> => {
+    const key = getSparseDirectoryCacheKey(layer.layerKey, scale.level);
+    const cached = sparseDirectoryCache.get(key);
+    if (cached) {
+      return cached;
+    }
+    throwIfAborted(signal);
+    const bytes = await awaitWithAbort(storage.readFile(scale.directory.path), signal);
+    throwIfAborted(signal);
+    stats.bytesRead += bytes.byteLength;
+    stats.dataBytesRead += bytes.byteLength;
+    const directory = decodeSparseSegmentationBrickDirectory(bytes, scale.directory.path);
+    sparseDirectoryCache.set(key, directory);
+    return directory;
+  };
+
+  const loadSparseLabels = async (
+    layer: LayerIndexEntry,
+    signal: AbortSignal | null
+  ): Promise<SparseSegmentationLabelMetadata[]> => {
+    if (!isSparseSegmentationLayerManifest(layer.layer)) {
+      throw new Error(`Layer ${layer.layerKey} is not a sparse segmentation layer.`);
+    }
+    const cached = sparseLabelCache.get(layer.layerKey);
+    if (cached) {
+      return cached;
+    }
+    const bytes = await awaitWithAbort(storage.readFile(layer.layer.sparse.labels.path), signal);
+    throwIfAborted(signal);
+    stats.bytesRead += bytes.byteLength;
+    stats.labelBytesRead += bytes.byteLength;
+    const labels = decodeSparseSegmentationLabelMetadata(bytes, layer.layer.sparse.labels.path);
+    sparseLabelCache.set(layer.layerKey, labels);
+    return labels;
+  };
+
+  const loadSparseShard = async (
+    scale: SparseSegmentationScaleManifestEntry,
+    shardId: number,
+    signal: AbortSignal | null
+  ): Promise<Uint8Array> => {
+    const path = `${scale.payload.shardPathPrefix}${shardId}${scale.payload.shardFileExtension}`;
+    const cached = sparseShardCache.get(path);
+    if (cached) {
+      touchSparseShard(path, cached);
+      return cached.bytes;
+    }
+    const bytes = await awaitWithAbort(storage.readFile(path), signal);
+    throwIfAborted(signal);
+    stats.bytesRead += bytes.byteLength;
+    stats.dataBytesRead += bytes.byteLength;
+    const entry = { bytes, byteLength: bytes.byteLength };
+    if (maxCachedChunkBytes > 0 && bytes.byteLength <= maxCachedChunkBytes) {
+      touchSparseShard(path, entry);
+      sparseShardCacheBytes += bytes.byteLength;
+      evictSparseShardCacheIfNeeded();
+    }
+    return bytes;
+  };
+
+  const loadSparseBrickByRecord = async (
+    layer: LayerIndexEntry,
+    scale: SparseSegmentationScaleManifestEntry,
+    record: SparseSegmentationBrickDirectoryRecord,
+    signal: AbortSignal | null
+  ): Promise<DecodedSparseSegmentationBrick> => {
+    const key = getSparseBrickCacheKey(layer.layerKey, record.timepoint, scale.level, record.brickCoord);
+    const cached = sparseDecodedBrickCache.get(key);
+    if (cached) {
+      touchSparseDecodedBrick(key, cached);
+      return cached;
+    }
+    const shard = await loadSparseShard(scale, record.shardId, signal);
+    const payload = readSparseSegmentationPayloadFromShard({
+      shardBytes: shard,
+      record,
+      path: `${scale.payload.shardPathPrefix}${record.shardId}${scale.payload.shardFileExtension}`
+    });
+    const brick = decodeSparseSegmentationBrickPayload({
+      layerKey: layer.layerKey,
+      bytes: payload,
+      record,
+      brickSize: scale.brickSize
+    });
+    touchSparseDecodedBrick(key, brick);
+    evictSparseDecodedBrickCacheIfNeeded();
+    return brick;
+  };
+
+  const buildSparseSegmentationPageTable = async (
+    layer: LayerIndexEntry,
+    timepoint: number,
+    scale: SparseSegmentationScaleManifestEntry,
+    signal: AbortSignal | null
+  ): Promise<VolumeBrickPageTable> => {
+    const directory = await loadSparseDirectory(layer, scale, signal);
+    const records = directory.recordsForTimepoint(timepoint);
+    const [gridZ, gridY, gridX] = scale.brickGridShape;
+    const brickCount = gridZ * gridY * gridX;
+    const brickAtlasIndices = new Int32Array(brickCount);
+    brickAtlasIndices.fill(-1);
+    const chunkMin = new Uint8Array(brickCount);
+    const chunkMax = new Uint8Array(brickCount);
+    const chunkOccupancy = new Float32Array(brickCount);
+    const chunksPerPlane = gridY * gridX;
+    for (let slot = 0; slot < records.length; slot += 1) {
+      const record = records[slot]!;
+      const index = record.brickCoord.z * chunksPerPlane + record.brickCoord.y * gridX + record.brickCoord.x;
+      brickAtlasIndices[index] = slot;
+      chunkMin[index] = 255;
+      chunkMax[index] = 255;
+      chunkOccupancy[index] = 1;
+    }
+    const sparseHierarchy = buildSparseSegmentationOccupancyHierarchy({
+      brickGridShape: scale.brickGridShape,
+      records,
+      timepoint
+    });
+    return {
+      layerKey: layer.layerKey,
+      timepoint,
+      scaleLevel: scale.level,
+      gridShape: scale.brickGridShape,
+      chunkShape: scale.brickSize,
+      volumeShape: [scale.depth, scale.height, scale.width],
+      skipHierarchy: {
+        levels: sparseHierarchy.levels.map((level) => {
+          const occupancy = new Uint8Array(level.data.length);
+          const min = new Uint8Array(level.data.length);
+          const max = new Uint8Array(level.data.length);
+          for (let index = 0; index < level.data.length; index += 1) {
+            if ((level.data[index] ?? 0) !== 0) {
+              occupancy[index] = 255;
+              min[index] = 255;
+              max[index] = 255;
+            }
+          }
+          return {
+            level: level.level,
+            gridShape: level.gridShape,
+            occupancy,
+            min,
+            max
+          };
+        })
+      },
+      brickAtlasIndices,
+      chunkMin,
+      chunkMax,
+      chunkOccupancy,
+      occupiedBrickCount: records.length,
+      subcell: null
+    };
+  };
+
+  const loadSparseSegmentationBrickAtlas = async (
+    layer: LayerIndexEntry,
+    timepoint: number,
+    pageTable: VolumeBrickPageTable,
+    signal: AbortSignal | null
+  ): Promise<VolumeBrickAtlas> => {
+    const scale = resolveSparseScaleEntry(layer, pageTable.scaleLevel);
+    const directory = await loadSparseDirectory(layer, scale, signal);
+    const records = directory.recordsForTimepoint(timepoint);
+    if (records.length === 0) {
+      return {
+        layerKey: layer.layerKey,
+        timepoint,
+        scaleLevel: scale.level,
+        kind: 'segmentation',
+        pageTable,
+        width: 1,
+        height: 1,
+        depth: 1,
+        dataType: 'uint8',
+        textureFormat: 'rgba',
+        sourceChannels: 1,
+        data: new Uint8Array(4),
+        enabled: false
+      };
+    }
+    const [brickDepth, brickHeight, brickWidth] = scale.brickSize;
+    const atlasWidth = brickWidth;
+    const atlasHeight = brickHeight;
+    const atlasDepth = brickDepth * records.length;
+    const data = new Uint8Array(atlasWidth * atlasHeight * atlasDepth * 4);
+    for (let slot = 0; slot < records.length; slot += 1) {
+      const record = records[slot]!;
+      const brick = await loadSparseBrickByRecord(layer, scale, record, signal);
+      brick.forEachNonzero((offset, label) => {
+        const global = globalCoordForLocalOffset(record.brickCoord, offset, scale.brickSize);
+        if (global.z >= scale.depth || global.y >= scale.height || global.x >= scale.width) {
+          return;
+        }
+        const localZ = global.z - record.brickCoord.z * brickDepth;
+        const localY = global.y - record.brickCoord.y * brickHeight;
+        const localX = global.x - record.brickCoord.x * brickWidth;
+        const atlasZ = slot * brickDepth + localZ;
+        const target = ((atlasZ * atlasHeight + localY) * atlasWidth + localX) * 4;
+        data[target] = label & 0xff;
+        data[target + 1] = (label >>> 8) & 0xff;
+        data[target + 2] = (label >>> 16) & 0xff;
+        data[target + 3] = Math.floor(label / 0x1000000) & 0xff;
+      });
+    }
+    return {
+      layerKey: layer.layerKey,
+      timepoint,
+      scaleLevel: scale.level,
+      kind: 'segmentation',
+      pageTable,
+      width: atlasWidth,
+      height: atlasHeight,
+      depth: atlasDepth,
+      dataType: 'uint8',
+      textureFormat: 'rgba',
+      sourceChannels: 1,
+      data,
+      enabled: true
+    };
+  };
+
   const getVolume = async (
     layerKey: string,
     timepoint: number,
@@ -2121,6 +2511,11 @@ export function createVolumeProvider({
     if (!layer) {
       throw new Error(`Unknown layer key: ${layerKey}`);
     }
+    if (isSparseSegmentationLayerManifest(layer.layer)) {
+      throw new Error(
+        `Layer "${layerKey}" is a sparse segmentation layer. Use getSparseSegmentationField or getBrickAtlas instead of getVolume.`
+      );
+    }
 
     const scale = resolveScaleEntry(layer, options?.scaleLevel);
     recordScaleRequest(scale.level);
@@ -2142,7 +2537,7 @@ export function createVolumeProvider({
           })
             .then((volume) => {
               existing.volume = volume;
-              existing.histogramIncluded = volume.kind === 'segmentation' || Boolean(volume.histogram);
+              existing.histogramIncluded = Boolean(volume.histogram);
               existing.inFlight = null;
               existing.inFlightAbortController = null;
               existing.inFlightWaiters = 0;
@@ -2200,7 +2595,7 @@ export function createVolumeProvider({
     })
       .then((volume) => {
         entry.volume = volume;
-        entry.histogramIncluded = volume.kind === 'segmentation' || Boolean(volume.histogram);
+        entry.histogramIncluded = Boolean(volume.histogram);
         entry.inFlight = null;
         entry.inFlightAbortController = null;
         entry.inFlightWaiters = 0;
@@ -2225,6 +2620,8 @@ export function createVolumeProvider({
     return awaitAbortableInFlight(entry, promise, signal);
   };
 
+  const getIntensityVolume: VolumeProvider['getIntensityVolume'] = getVolume;
+
   const getBrickPageTable = async (
     layerKey: string,
     timepoint: number,
@@ -2238,6 +2635,54 @@ export function createVolumeProvider({
     const layer = layerIndex.get(layerKey);
     if (!layer) {
       throw new Error(`Unknown layer key: ${layerKey}`);
+    }
+    if (isSparseSegmentationLayerManifest(layer.layer)) {
+      const scale = resolveSparseScaleEntry(layer, options?.scaleLevel);
+      recordScaleRequest(scale.level);
+      const key = createBrickPageTableCacheKey(layerKey, timepoint, scale.level);
+      const existing = brickPageTableCache.get(key);
+      if (existing) {
+        touchBrickPageTable(key, existing);
+        if (existing.pageTable) {
+          return existing.pageTable;
+        }
+        if (existing.inFlight) {
+          return awaitAbortableInFlight(existing, existing.inFlight, signal);
+        }
+      }
+      const entry: CachedBrickPageTableEntry = {
+        key,
+        layerKey,
+        timepoint,
+        scaleLevel: scale.level,
+        pageTable: null,
+        inFlight: null,
+        inFlightAbortController: null,
+        inFlightWaiters: 0
+      };
+      const inFlightAbortController = new AbortController();
+      entry.inFlightAbortController = inFlightAbortController;
+      const promise = buildSparseSegmentationPageTable(layer, timepoint, scale, inFlightAbortController.signal)
+        .then((pageTable) => {
+          entry.pageTable = pageTable;
+          entry.inFlight = null;
+          entry.inFlightAbortController = null;
+          entry.inFlightWaiters = 0;
+          touchBrickPageTable(key, entry);
+          evictBrickPageTableCacheIfNeeded();
+          return pageTable;
+        })
+        .catch((error) => {
+          entry.inFlight = null;
+          entry.inFlightAbortController = null;
+          entry.inFlightWaiters = 0;
+          brickPageTableCache.delete(key);
+          throw error;
+        });
+      entry.inFlight = promise;
+      brickPageTableCache.set(key, entry);
+      evictBrickPageTableCacheIfNeeded();
+      return awaitAbortableInFlight(entry, promise, signal);
     }
     const scale = resolveScaleEntry(layer, options?.scaleLevel);
     recordScaleRequest(scale.level);
@@ -2661,6 +3106,58 @@ export function createVolumeProvider({
     if (!layer) {
       throw new Error(`Unknown layer key: ${layerKey}`);
     }
+    if (isSparseSegmentationLayerManifest(layer.layer)) {
+      const scale = resolveSparseScaleEntry(layer, options?.scaleLevel);
+      recordScaleRequest(scale.level);
+      const key = createBrickAtlasCacheKey(layerKey, timepoint, scale.level);
+      const existing = brickAtlasCache.get(key);
+      if (existing) {
+        touchBrickAtlas(key, existing);
+        if (existing.atlas) {
+          return existing.atlas;
+        }
+        if (existing.inFlight) {
+          return awaitAbortableInFlight(existing, existing.inFlight, signal);
+        }
+      }
+      const entry: CachedBrickAtlasEntry = {
+        key,
+        layerKey,
+        timepoint,
+        scaleLevel: scale.level,
+        atlas: null,
+        inFlight: null,
+        inFlightAbortController: null,
+        inFlightWaiters: 0
+      };
+      const inFlightAbortController = new AbortController();
+      entry.inFlightAbortController = inFlightAbortController;
+      const promise = getBrickPageTable(layerKey, timepoint, {
+        scaleLevel: scale.level,
+        signal: inFlightAbortController.signal
+      })
+        .then((pageTable) => loadSparseSegmentationBrickAtlas(layer, timepoint, pageTable, inFlightAbortController.signal))
+        .then((atlas) => {
+          entry.atlas = atlas;
+          entry.inFlight = null;
+          entry.inFlightAbortController = null;
+          entry.inFlightWaiters = 0;
+          touchBrickAtlas(key, entry);
+          evictBrickAtlasCacheIfNeeded();
+          return atlas;
+        })
+        .catch((error) => {
+          entry.inFlight = null;
+          entry.inFlightAbortController = null;
+          entry.inFlightWaiters = 0;
+          brickAtlasCache.delete(key);
+          throw error;
+        });
+      entry.inFlight = promise;
+      brickAtlasCache.set(key, entry);
+      evictBrickAtlasCacheIfNeeded();
+      return awaitAbortableInFlight(entry, promise, signal);
+    }
     const scale = resolveScaleEntry(layer, options?.scaleLevel);
     recordScaleRequest(scale.level);
     const key = createBrickAtlasCacheKey(layerKey, timepoint, scale.level);
@@ -2714,6 +3211,213 @@ export function createVolumeProvider({
     brickAtlasCache.set(key, entry);
     evictBrickAtlasCacheIfNeeded();
     return awaitAbortableInFlight(entry, promise, signal);
+  };
+
+  const getSparseSegmentationField = async (
+    layerKey: string,
+    timepoint: number,
+    options?: { scaleLevel?: number; loadDirectory?: boolean; loadLabelMetadata?: boolean; signal?: AbortSignal | null }
+  ): Promise<SparseSegmentationField> => {
+    const signal = options?.signal ?? null;
+    throwIfAborted(signal);
+    if (!isValidTimepoint(timepoint)) {
+      throw new Error(`Invalid timepoint: ${timepoint}`);
+    }
+    const layer = layerIndex.get(layerKey);
+    if (!layer) {
+      throw new Error(`Unknown layer key: ${layerKey}`);
+    }
+    if (!isSparseSegmentationLayerManifest(layer.layer)) {
+      throw new Error(`Layer "${layerKey}" is not a sparse segmentation layer.`);
+    }
+    const scale = resolveSparseScaleEntry(layer, options?.scaleLevel);
+    recordScaleRequest(scale.level);
+    const key = `${layerKey}:${timepoint}:${scale.level}`;
+    const cached = sparseFieldCache.get(key);
+    if (cached && (options?.loadLabelMetadata === false || cached.labels.length > 0 || layer.layer.sparse.labels.recordCount === 0)) {
+      return cached;
+    }
+    const directory = await loadSparseDirectory(layer, scale, signal);
+    const records = directory.recordsForTimepoint(timepoint);
+    const occupancyHierarchy = buildSparseSegmentationOccupancyHierarchy({
+      brickGridShape: scale.brickGridShape,
+      records,
+      timepoint
+    });
+    const labels = options?.loadLabelMetadata === false ? [] : await loadSparseLabels(layer, signal);
+    const field: SparseSegmentationField = {
+      kind: 'sparse-segmentation',
+      layerKey,
+      timepoint,
+      scaleLevel: scale.level,
+      width: scale.width,
+      height: scale.height,
+      depth: scale.depth,
+      brickSize: scale.brickSize,
+      brickGridShape: scale.brickGridShape,
+      occupiedBrickCount: records.length,
+      nonzeroVoxelCount: records.reduce((sum, record) => sum + record.nonzeroVoxelCount, 0),
+      colorSeed: layer.layer.colorSeed,
+      labels,
+      directory,
+      occupancyHierarchy
+    };
+    if (options?.loadLabelMetadata !== false) {
+      sparseFieldCache.set(key, field);
+    } else if (!sparseFieldCache.has(key)) {
+      sparseFieldCache.set(key, field);
+    }
+    return field;
+  };
+
+  const getSparseSegmentationBrick = async (
+    layerKey: string,
+    timepoint: number,
+    scaleLevel: number,
+    brickCoord: SparseSegmentationBrickCoord,
+    options?: { signal?: AbortSignal | null }
+  ): Promise<DecodedSparseSegmentationBrick> => {
+    const signal = options?.signal ?? null;
+    throwIfAborted(signal);
+    if (!isValidTimepoint(timepoint)) {
+      throw new Error(`Invalid timepoint: ${timepoint}`);
+    }
+    const layer = layerIndex.get(layerKey);
+    if (!layer) {
+      throw new Error(`Unknown layer key: ${layerKey}`);
+    }
+    if (!isSparseSegmentationLayerManifest(layer.layer)) {
+      throw new Error(`Layer "${layerKey}" is not a sparse segmentation layer.`);
+    }
+    const scale = resolveSparseScaleEntry(layer, scaleLevel);
+    const directory = await loadSparseDirectory(layer, scale, signal);
+    const record = directory.lookup(timepoint, brickCoord);
+    if (!record) {
+      throw new Error(
+        `Sparse segmentation brick ${brickCoord.z},${brickCoord.y},${brickCoord.x} is empty or missing for layer ${layerKey} at timepoint ${timepoint}, scale ${scale.level}.`
+      );
+    }
+    return loadSparseBrickByRecord(layer, scale, record, signal);
+  };
+
+  const querySparseSegmentationLabel = async (
+    layerKey: string,
+    timepoint: number,
+    scaleLevel: number,
+    voxel: SparseSegmentationVoxelCoord,
+    options?: { signal?: AbortSignal | null }
+  ): Promise<number> => {
+    if (
+      !Number.isInteger(voxel.z) ||
+      !Number.isInteger(voxel.y) ||
+      !Number.isInteger(voxel.x) ||
+      voxel.z < 0 ||
+      voxel.y < 0 ||
+      voxel.x < 0
+    ) {
+      return 0;
+    }
+    const signal = options?.signal ?? null;
+    throwIfAborted(signal);
+    const layer = layerIndex.get(layerKey);
+    if (!layer) {
+      throw new Error(`Unknown layer key: ${layerKey}`);
+    }
+    if (!isSparseSegmentationLayerManifest(layer.layer)) {
+      throw new Error(`Layer "${layerKey}" is not a sparse segmentation layer.`);
+    }
+    const scale = resolveSparseScaleEntry(layer, scaleLevel);
+    if (voxel.z >= scale.depth || voxel.y >= scale.height || voxel.x >= scale.width) {
+      return 0;
+    }
+    const brickCoord = {
+      z: Math.floor(voxel.z / scale.brickSize[0]),
+      y: Math.floor(voxel.y / scale.brickSize[1]),
+      x: Math.floor(voxel.x / scale.brickSize[2])
+    };
+    const directory = await loadSparseDirectory(layer, scale, signal);
+    const record = directory.lookup(timepoint, brickCoord);
+    if (!record) {
+      return 0;
+    }
+    const brick = await loadSparseBrickByRecord(layer, scale, record, signal);
+    return brick.labelAtOffset(localOffsetForVoxel(voxel, scale.brickSize));
+  };
+
+  const extractSparseSegmentationSlice = async (
+    layerKey: string,
+    timepoint: number,
+    scaleLevel: number,
+    request: SparseSegmentationSliceRequest,
+    options?: { signal?: AbortSignal | null }
+  ): Promise<SparseSegmentationSlice> => {
+    const signal = options?.signal ?? null;
+    const layer = layerIndex.get(layerKey);
+    if (!layer) {
+      throw new Error(`Unknown layer key: ${layerKey}`);
+    }
+    if (!isSparseSegmentationLayerManifest(layer.layer)) {
+      throw new Error(`Layer "${layerKey}" is not a sparse segmentation layer.`);
+    }
+    const scale = resolveSparseScaleEntry(layer, scaleLevel);
+    const field = await getSparseSegmentationField(layerKey, timepoint, {
+      scaleLevel: scale.level,
+      loadLabelMetadata: false,
+      signal
+    });
+    return extractSparseSegmentationSliceFromField({
+      field,
+      axis: request.axis,
+      index: request.index,
+      loadBrick: (record) => loadSparseBrickByRecord(layer, scale, record, signal)
+    });
+  };
+
+  const prefetchSparseSegmentationBricks = async (
+    layerKey: string,
+    timepoint: number,
+    scaleLevel: number,
+    bricks: SparseSegmentationBrickCoord[],
+    options?: { signal?: AbortSignal | null }
+  ): Promise<void> => {
+    const signal = options?.signal ?? null;
+    throwIfAborted(signal);
+    const layer = layerIndex.get(layerKey);
+    if (!layer) {
+      throw new Error(`Unknown layer key: ${layerKey}`);
+    }
+    if (!isSparseSegmentationLayerManifest(layer.layer)) {
+      throw new Error(`Layer "${layerKey}" is not a sparse segmentation layer.`);
+    }
+    const scale = resolveSparseScaleEntry(layer, scaleLevel);
+    const directory = await loadSparseDirectory(layer, scale, signal);
+    const recordsByKey = new Map<string, SparseSegmentationBrickDirectoryRecord>();
+    for (const brick of bricks) {
+      const record = directory.lookup(timepoint, brick);
+      if (record) {
+        recordsByKey.set(`${brick.z}:${brick.y}:${brick.x}`, record);
+      }
+    }
+    const records = Array.from(recordsByKey.values());
+    let nextIndex = 0;
+    const workerCount = Math.min(Math.max(1, maxConcurrentPrefetchLoads), records.length);
+    const runWorker = async () => {
+      while (true) {
+        throwIfAborted(signal);
+        const index = nextIndex;
+        nextIndex += 1;
+        if (index >= records.length) {
+          return;
+        }
+        const record = records[index];
+        if (record) {
+          await loadSparseBrickByRecord(layer, scale, record, signal);
+        }
+      }
+    };
+    if (workerCount > 0) {
+      await Promise.all(Array.from({ length: workerCount }, () => runWorker()));
+    }
   };
 
   const hasBrickAtlas = (
@@ -2824,8 +3528,16 @@ export function createVolumeProvider({
         }
         const resolvedScaleLevels = normalizeScaleLevelSet(
           requestedScaleLevels.length > 0
-            ? requestedScaleLevels.map((scaleLevel) => resolveScaleEntry(layer, scaleLevel).level)
-            : [resolveScaleEntry(layer, undefined).level]
+            ? requestedScaleLevels.map((scaleLevel) =>
+                isSparseSegmentationLayerManifest(layer.layer)
+                  ? resolveSparseScaleEntry(layer, scaleLevel).level
+                  : resolveScaleEntry(layer, scaleLevel).level
+              )
+            : [
+                isSparseSegmentationLayerManifest(layer.layer)
+                  ? resolveSparseScaleEntry(layer, undefined).level
+                  : resolveScaleEntry(layer, undefined).level
+              ]
         );
         for (const scaleLevel of resolvedScaleLevels) {
           if (policy === 'missing-only' && hasBrickAtlas(layerKey, timepoint, { scaleLevel })) {
@@ -2925,12 +3637,44 @@ export function createVolumeProvider({
           throw new Error(`Unknown layer key: ${layerKey}`);
         }
 
+        const isSparseSegmentation = isSparseSegmentationLayerManifest(layer.layer);
         const resolvedScaleLevels = normalizeScaleLevelSet(
           requestedScaleLevels.length > 0
-            ? requestedScaleLevels.map((scaleLevel) => resolveScaleEntry(layer, scaleLevel).level)
-            : [resolveScaleEntry(layer, undefined).level]
+            ? requestedScaleLevels.map((scaleLevel) =>
+                isSparseSegmentation
+                  ? resolveSparseScaleEntry(layer, scaleLevel).level
+                  : resolveScaleEntry(layer, scaleLevel).level
+              )
+            : [
+                isSparseSegmentation
+                  ? resolveSparseScaleEntry(layer, undefined).level
+                  : resolveScaleEntry(layer, undefined).level
+              ]
         );
         for (const scaleLevel of resolvedScaleLevels) {
+          if (isSparseSegmentation) {
+            if (policy === 'missing-only' && hasBrickAtlas(layerKey, timepoint, { scaleLevel })) {
+              stats.prefetchSkippedCached += 1;
+              continue;
+            }
+            if (requestAborted || signal?.aborted) {
+              stats.prefetchLoadsCancelled += 1;
+              continue;
+            }
+            stats.prefetchLoadsStarted += 1;
+            try {
+              await getBrickAtlas(layerKey, timepoint, { scaleLevel, signal });
+              stats.prefetchLoadsCompleted += 1;
+            } catch (error) {
+              if (requestAborted || signal?.aborted || isAbortLikeError(error)) {
+                stats.prefetchLoadsCancelled += 1;
+                return;
+              }
+              stats.prefetchLoadsFailed += 1;
+              throw error;
+            }
+            continue;
+          }
           const existing = cache.get(createCacheKey(layerKey, timepoint, scaleLevel));
           if (policy === 'missing-only') {
             if (existing?.volume) {
@@ -2992,6 +3736,35 @@ export function createVolumeProvider({
     return Boolean(entry?.volume);
   };
 
+  const hasIntensityVolume = (
+    layerKey: string,
+    timepoint: number,
+    options?: { scaleLevel?: number }
+  ): boolean => {
+    const layer = layerIndex.get(layerKey);
+    if (!layer || isSparseSegmentationLayerManifest(layer.layer)) {
+      return false;
+    }
+    return hasVolume(layerKey, timepoint, options);
+  };
+
+  const hasSparseSegmentationField = (
+    layerKey: string,
+    timepoint: number,
+    scaleLevel?: number
+  ): boolean => {
+    const layer = layerIndex.get(layerKey);
+    if (!layer || !isSparseSegmentationLayerManifest(layer.layer)) {
+      return false;
+    }
+    try {
+      const scale = resolveSparseScaleEntry(layer, scaleLevel);
+      return sparseFieldCache.has(`${layerKey}:${timepoint}:${scale.level}`);
+    } catch {
+      return false;
+    }
+  };
+
   const clear = () => {
     for (const entry of cache.values()) {
       entry.inFlightAbortController?.abort('Volume cache cleared.');
@@ -3026,7 +3799,13 @@ export function createVolumeProvider({
     brickPageTableCache.clear();
     brickAtlasCache.clear();
     backgroundMaskCache.clear();
+    sparseDirectoryCache.clear();
+    sparseFieldCache.clear();
+    sparseDecodedBrickCache.clear();
+    sparseLabelCache.clear();
+    sparseShardCache.clear();
     chunkCacheBytes = 0;
+    sparseShardCacheBytes = 0;
     activePrefetchRequests.clear();
     scaleRequestCounts.clear();
   };
@@ -3042,6 +3821,7 @@ export function createVolumeProvider({
     evictIfNeeded();
     evictBrickPageTableCacheIfNeeded();
     evictBrickAtlasCacheIfNeeded();
+    evictSparseDecodedBrickCacheIfNeeded();
   };
 
   const setMaxCachedChunkBytes = (nextMaxCachedChunkBytes: number) => {
@@ -3053,6 +3833,7 @@ export function createVolumeProvider({
     }
     maxCachedChunkBytes = normalized;
     evictChunkCacheIfNeeded();
+    evictSparseShardCacheIfNeeded();
   };
 
   const getStats = (): VolumeProviderStats => {
@@ -3175,13 +3956,21 @@ export function createVolumeProvider({
   };
 
   return {
+    getIntensityVolume,
     getVolume,
     getBrickPageTable,
     getBrickAtlas,
+    getSparseSegmentationField,
+    getSparseSegmentationBrick,
+    querySparseSegmentationLabel,
+    extractSparseSegmentationSlice,
+    prefetchSparseSegmentationBricks,
     getBackgroundMask,
     prefetchBrickAtlases,
     prefetch,
     hasVolume,
+    hasIntensityVolume,
+    hasSparseSegmentationField,
     hasBrickAtlas,
     clear,
     setMaxCachedVolumes,
