@@ -3,8 +3,8 @@ import type { MutableRefObject } from 'react';
 import type { FollowedVoxelTarget, VolumeViewerProps } from '../VolumeViewer.types';
 
 type UseVolumeViewerRefSyncParams = {
-  paintbrush: VolumeViewerProps['paintbrush'];
-  paintbrushRef: MutableRefObject<VolumeViewerProps['paintbrush']>;
+  annotation: VolumeViewerProps['annotation'];
+  annotationRef: MutableRefObject<VolumeViewerProps['annotation']>;
   layers: VolumeViewerProps['layers'];
   layersRef: MutableRefObject<VolumeViewerProps['layers']>;
   followedTrackId: string | null;
@@ -19,8 +19,8 @@ type UseVolumeViewerRefSyncParams = {
 };
 
 export function useVolumeViewerRefSync({
-  paintbrush,
-  paintbrushRef,
+  annotation,
+  annotationRef,
   layers,
   layersRef,
   followedTrackId,
@@ -36,8 +36,8 @@ export function useVolumeViewerRefSync({
   trackFollowRequestCallbackRef.current = onTrackFollowRequest;
 
   useEffect(() => {
-    paintbrushRef.current = paintbrush;
-  }, [paintbrush, paintbrushRef]);
+    annotationRef.current = annotation;
+  }, [annotation, annotationRef]);
 
   useEffect(() => {
     layersRef.current = layers;

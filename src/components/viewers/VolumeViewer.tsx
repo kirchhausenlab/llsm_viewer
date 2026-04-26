@@ -432,7 +432,7 @@ function VolumeViewer({
   background,
   viewerPropsConfig,
   roiConfig,
-  paintbrush,
+  annotation,
   vr
 }: VolumeViewerProps) {
   const vrLog = (...args: Parameters<typeof console.debug>) => {
@@ -449,8 +449,8 @@ function VolumeViewer({
     activeChannelPanelId,
     onRegisterVrSession,
   } = resolveVolumeViewerVrRuntime(vr);
-  const paintbrushRef = useRef(paintbrush);
-  const paintStrokePointerIdRef = useRef<number | null>(null);
+  const annotationRef = useRef(annotation);
+  const annotationStrokePointerIdRef = useRef<number | null>(null);
   const roiBlOcclusionAlphaSceneRef = useRef<THREE.Scene | null>(new THREE.Scene());
   const roiBlOcclusionDepthSceneRef = useRef<THREE.Scene | null>(new THREE.Scene());
   const roiBlOcclusionAlphaTargetRef = useRef<THREE.WebGLRenderTarget | null>(null);
@@ -629,8 +629,8 @@ function VolumeViewer({
     requestHudPlacementReset,
     handleTrackFollowRequest,
   } = useVolumeViewerRefSync({
-    paintbrush,
-    paintbrushRef,
+    annotation,
+    annotationRef,
     layers,
     layersRef,
     followedTrackId,
@@ -1754,8 +1754,8 @@ function VolumeViewer({
     },
     interaction: {
       layersRef,
-      paintbrushRef,
-      paintStrokePointerIdRef,
+      annotationRef,
+      annotationStrokePointerIdRef,
       hoverIntensityRef,
       followedTrackIdRef,
       updateVoxelHover,

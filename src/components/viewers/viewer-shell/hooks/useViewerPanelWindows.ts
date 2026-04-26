@@ -43,9 +43,12 @@ type UseViewerPanelWindowsResult = {
   isTrackSettingsOpen: boolean;
   openTrackSettings: () => void;
   closeTrackSettings: () => void;
-  isPaintbrushOpen: boolean;
-  openPaintbrush: () => void;
-  closePaintbrush: () => void;
+  isAnnotateOpen: boolean;
+  openAnnotate: () => void;
+  closeAnnotate: () => void;
+  isExportChannelOpen: boolean;
+  openExportChannel: () => void;
+  closeExportChannel: () => void;
   isDrawRoiWindowOpen: boolean;
   openDrawRoiWindow: () => void;
   closeDrawRoiWindow: () => void;
@@ -75,7 +78,8 @@ export function useViewerPanelWindows({
   const [isAmplitudePlotOpen, setIsAmplitudePlotOpen] = useState(false);
   const [isPlotSettingsOpen, setIsPlotSettingsOpen] = useState(false);
   const [isTrackSettingsOpen, setIsTrackSettingsOpen] = useState(false);
-  const [isPaintbrushOpen, setIsPaintbrushOpen] = useState(false);
+  const [isAnnotateOpen, setIsAnnotateOpen] = useState(false);
+  const [isExportChannelOpen, setIsExportChannelOpen] = useState(false);
   const [isDrawRoiWindowOpen, setIsDrawRoiWindowOpen] = useState(false);
   const [isRoiManagerWindowOpen, setIsRoiManagerWindowOpen] = useState(false);
   const [isDiagnosticsWindowOpen, setIsDiagnosticsWindowOpen] = useState(false);
@@ -156,12 +160,20 @@ export function useViewerPanelWindows({
     setIsRecordWindowOpen(false);
   }, []);
 
-  const openPaintbrush = useCallback(() => {
-    setIsPaintbrushOpen(true);
+  const openAnnotate = useCallback(() => {
+    setIsAnnotateOpen(true);
   }, []);
 
-  const closePaintbrush = useCallback(() => {
-    setIsPaintbrushOpen(false);
+  const closeAnnotate = useCallback(() => {
+    setIsAnnotateOpen(false);
+  }, []);
+
+  const openExportChannel = useCallback(() => {
+    setIsExportChannelOpen(true);
+  }, []);
+
+  const closeExportChannel = useCallback(() => {
+    setIsExportChannelOpen(false);
   }, []);
 
   const openDrawRoiWindow = useCallback(() => {
@@ -278,9 +290,12 @@ export function useViewerPanelWindows({
     isTrackSettingsOpen,
     openTrackSettings,
     closeTrackSettings,
-    isPaintbrushOpen,
-    openPaintbrush,
-    closePaintbrush,
+    isAnnotateOpen,
+    openAnnotate,
+    closeAnnotate,
+    isExportChannelOpen,
+    openExportChannel,
+    closeExportChannel,
     isDrawRoiWindowOpen,
     openDrawRoiWindow,
     closeDrawRoiWindow,

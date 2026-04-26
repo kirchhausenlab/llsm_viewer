@@ -23,6 +23,8 @@ test('viewer panel window controls open and close the requested windows', () => 
   assert.equal(hook.result.isTrackSettingsOpen, false);
   assert.equal(hook.result.isPlotSettingsOpen, false);
   assert.equal(hook.result.isDiagnosticsWindowOpen, false);
+  assert.equal(hook.result.isAnnotateOpen, false);
+  assert.equal(hook.result.isExportChannelOpen, false);
   assert.equal(hook.result.isDrawRoiWindowOpen, false);
   assert.equal(hook.result.isRoiManagerWindowOpen, false);
 
@@ -44,7 +46,8 @@ test('viewer panel window controls open and close the requested windows', () => 
     hook.result.openAmplitudePlot();
     hook.result.openPlotSettings();
     hook.result.openPropsWindow();
-    hook.result.openPaintbrush();
+    hook.result.openAnnotate();
+    hook.result.openExportChannel();
     hook.result.openDrawRoiWindow();
     hook.result.openRoiManagerWindow();
     hook.result.openDiagnosticsWindow();
@@ -58,7 +61,8 @@ test('viewer panel window controls open and close the requested windows', () => 
   assert.equal(hook.result.isTrackSettingsOpen, true);
   assert.equal(hook.result.isAmplitudePlotOpen, true);
   assert.equal(hook.result.isPlotSettingsOpen, true);
-  assert.equal(hook.result.isPaintbrushOpen, true);
+  assert.equal(hook.result.isAnnotateOpen, true);
+  assert.equal(hook.result.isExportChannelOpen, true);
   assert.equal(hook.result.isDrawRoiWindowOpen, true);
   assert.equal(hook.result.isRoiManagerWindowOpen, true);
   assert.equal(hook.result.isDiagnosticsWindowOpen, true);
@@ -67,12 +71,16 @@ test('viewer panel window controls open and close the requested windows', () => 
     hook.result.closeTracksWindow();
     hook.result.closeAmplitudePlot();
     hook.result.closeBackgroundsWindow();
+    hook.result.closeAnnotate();
+    hook.result.closeExportChannel();
   });
 
   assert.equal(hook.result.isTracksWindowOpen, false);
   assert.equal(hook.result.isTrackSettingsOpen, false);
   assert.equal(hook.result.isAmplitudePlotOpen, false);
   assert.equal(hook.result.isBackgroundsWindowOpen, false);
+  assert.equal(hook.result.isAnnotateOpen, false);
+  assert.equal(hook.result.isExportChannelOpen, false);
   assert.equal(hook.result.isDrawRoiWindowOpen, true);
   assert.equal(hook.result.isRoiManagerWindowOpen, true);
   assert.equal(hook.result.isPlotSettingsOpen, false);

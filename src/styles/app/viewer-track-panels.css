@@ -33,49 +33,97 @@
   width: 100%;
 }
 
-.paintbrush-window .paintbrush-button-row {
+.annotate-window .annotate-create-row,
+.annotate-window .annotate-toolbar,
+.annotate-window .annotate-history-row,
+.annotate-window .annotate-label-actions,
+.export-channel-window .export-channel-actions {
   flex-wrap: wrap;
 }
 
-.paintbrush-window .paintbrush-toggle {
+.annotate-window .annotate-create-row.is-locked,
+.annotate-window .annotate-name-row.is-locked {
+  opacity: 0.55;
+}
+
+.annotate-window .annotate-toggle {
   flex: 1 1 0;
   text-align: center;
 }
 
-.paintbrush-window .paintbrush-controls-row {
+.annotate-window .annotate-name-row,
+.export-channel-window .export-channel-row {
   align-items: center;
-  flex-wrap: wrap;
 }
 
-.paintbrush-window .paintbrush-slider-group {
+.annotate-window .annotate-slider-group {
   min-width: 220px;
 }
 
-.paintbrush-window .paintbrush-color-picker {
-  background: transparent;
+.annotate-window .annotate-select-label,
+.export-channel-window .export-channel-row label {
+  min-width: 0;
 }
 
-.paintbrush-window .paintbrush-color-row {
-  display: inline-flex;
-  align-items: center;
+.annotate-window .annotate-select-label {
+  flex: 1 1 auto;
+}
+
+.annotate-window .annotate-divider {
+  height: 1px;
+  background: var(--control-border);
+  margin: 0.15rem 0;
+}
+
+.annotate-window .annotate-label-manager {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.65rem;
+}
+
+.annotate-window .annotate-label-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  min-height: 8rem;
+  max-height: 12rem;
+  overflow: auto;
+  border: 1px solid var(--control-border);
+  border-radius: 8px;
+  padding: 0.35rem;
+  background: var(--control-background-muted);
+}
+
+.annotate-window .annotate-label-item {
+  justify-content: flex-start;
+  text-align: left;
+}
+
+.annotate-window .annotate-label-item.is-active {
+  border-color: var(--control-border-strong);
+  background: var(--control-background);
+}
+
+.annotate-window .annotate-label-actions {
+  display: flex;
+  flex-direction: column;
   gap: 0.35rem;
 }
 
-.paintbrush-window .paintbrush-color-label {
-  font-weight: 600;
-  color: rgba(255, 255, 255, 0.85);
+.annotate-window .annotate-message,
+.export-channel-window .export-channel-message {
+  font-size: 0.85rem;
+  color: var(--text-secondary);
 }
 
-.paintbrush-window .paintbrush-label-row {
-  justify-content: space-between;
-  align-items: center;
-}
+@media (max-width: 640px) {
+  .annotate-window .annotate-label-manager {
+    grid-template-columns: 1fr;
+  }
 
-.paintbrush-window .paintbrush-label-count {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.5rem;
-  font-weight: 700;
+  .annotate-window .annotate-label-actions {
+    flex-direction: row;
+  }
 }
 
 .track-controls .control-group {

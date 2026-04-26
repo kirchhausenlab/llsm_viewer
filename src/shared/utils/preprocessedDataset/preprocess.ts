@@ -1,7 +1,7 @@
 import { fromBlob } from 'geotiff';
 import * as zarr from 'zarrita';
 
-import type { IntensityVolume, NormalizationParameters, NormalizedVolume } from '../../../core/volumeProcessing';
+import type { IntensityVolume, NormalizationParameters } from '../../../core/volumeProcessing';
 import {
   normalizeVolume,
 } from '../../../core/volumeProcessing';
@@ -109,11 +109,9 @@ import {
   encodeSparseSegmentationBrickPayload,
   encodeSparseSegmentationLabelMetadata,
   encodeSparseSegmentationOccupancyLevel,
-  hashSparseSegmentationLabelColor,
   localCoordForOffset,
   localOffsetForVoxel,
   updateSparseSegmentationLabelStats,
-  validBrickLocalSize,
   type SparseSegmentationBrickDirectoryRecord,
   type SparseSegmentationBrickSize,
   type SparseSegmentationGlobalVoxel,
@@ -2068,14 +2066,6 @@ function canonicalizeSegmentationLabelStrict(
   return value;
 }
 
-function canonicalizeSegmentationSlice(source: SupportedTypedArray): Uint32Array {
-  const labels = new Uint32Array(source.length);
-  for (let i = 0; i < source.length; i += 1) {
-    labels[i] = canonicalizeSegmentationLabelStrict(source[i] as number, `slice offset ${i}`);
-  }
-  return labels;
-}
-
 function downsampleDataSliceXYByMax({
   source,
   width,
@@ -3947,85 +3937,6 @@ function downsampleDataByMaxPooling(volume: {
     height: nextHeight,
     depth: nextDepth,
     channels: volume.channels,
-    data: downsampled
-  };
-}
-
-function downsampleLabelsByMode(volume: {
-  width: number;
-  height: number;
-  depth: number;
-  channels: 1;
-  data: Uint16Array;
-}): {
-  width: number;
-  height: number;
-  depth: number;
-  channels: 1;
-  data: Uint16Array;
-} {
-  const nextDepth = Math.max(1, Math.ceil(volume.depth / 2));
-  const nextHeight = Math.max(1, Math.ceil(volume.height / 2));
-  const nextWidth = Math.max(1, Math.ceil(volume.width / 2));
-  const downsampled = new Uint16Array(nextDepth * nextHeight * nextWidth);
-
-  for (let z = 0; z < nextDepth; z += 1) {
-    const sourceZStart = z * 2;
-    const sourceZEnd = Math.min(volume.depth, sourceZStart + 2);
-    for (let y = 0; y < nextHeight; y += 1) {
-      const sourceYStart = y * 2;
-      const sourceYEnd = Math.min(volume.height, sourceYStart + 2);
-      for (let x = 0; x < nextWidth; x += 1) {
-        const sourceXStart = x * 2;
-        const sourceXEnd = Math.min(volume.width, sourceXStart + 2);
-        const destinationIndex = (z * nextHeight + y) * nextWidth + x;
-
-        const candidateLabels = new Uint16Array(8);
-        const candidateCounts = new Uint8Array(8);
-        let candidateSize = 0;
-        let bestLabel = 0;
-        let bestCount = -1;
-        for (let sourceZ = sourceZStart; sourceZ < sourceZEnd; sourceZ += 1) {
-          for (let sourceY = sourceYStart; sourceY < sourceYEnd; sourceY += 1) {
-            for (let sourceX = sourceXStart; sourceX < sourceXEnd; sourceX += 1) {
-              const sourceIndex = (sourceZ * volume.height + sourceY) * volume.width + sourceX;
-              const label = volume.data[sourceIndex] ?? 0;
-              let slot = -1;
-              for (let candidateIndex = 0; candidateIndex < candidateSize; candidateIndex += 1) {
-                if ((candidateLabels[candidateIndex] ?? 0) === label) {
-                  slot = candidateIndex;
-                  break;
-                }
-              }
-              if (slot < 0) {
-                slot = candidateSize;
-                candidateLabels[slot] = label;
-                candidateCounts[slot] = 0;
-                candidateSize += 1;
-              }
-              const nextCount = (candidateCounts[slot] ?? 0) + 1;
-              candidateCounts[slot] = nextCount;
-              if (
-                nextCount > bestCount ||
-                (nextCount === bestCount && bestLabel === 0 && label !== 0) ||
-                (nextCount === bestCount && label > bestLabel)
-              ) {
-                bestCount = nextCount;
-                bestLabel = label;
-              }
-            }
-          }
-        }
-        downsampled[destinationIndex] = bestLabel;
-      }
-    }
-  }
-
-  return {
-    width: nextWidth,
-    height: nextHeight,
-    depth: nextDepth,
-    channels: 1,
     data: downsampled
   };
 }

@@ -473,7 +473,6 @@
 .track-length-controls label,
 .track-color-control-header,
 .selected-tracks-slider__label,
-.paintbrush-window .paintbrush-color-picker,
 .track-list-summary,
 .global-controls .control-label,
 .global-controls label:not(.control-label),
@@ -1886,8 +1885,7 @@
 .floating-window .color-swatch-row,
 .floating-window .track-color-swatch-row,
 .floating-window .props-color-swatch-row,
-.floating-window .draw-roi-color-row,
-.floating-window .paintbrush-color-row {
+.floating-window .draw-roi-color-row {
   display: flex;
   align-items: center;
   gap: 0.15rem;
@@ -2178,8 +2176,6 @@
   opacity: 0.88;
 }
 
-.paintbrush-window .paintbrush-color-input,
-.paintbrush-window .paintbrush-color-preview,
 .track-controls .color-swatch-button,
 .channel-controls .color-swatch-button,
 .channel-controls .color-picker-trigger {

@@ -58,7 +58,7 @@ console.log('Starting volume viewer runtime args helper tests');
     applyKeyboardRotation: () => {},
   } as unknown as VolumeViewerLifecycleOptionGroups['renderLoop'];
   const interaction = {
-    paintbrushRef: { current: null },
+    annotationRef: { current: null },
     onVoxelFollowRequest: () => {},
   } as unknown as VolumeViewerLifecycleOptionGroups['interaction'];
   const hoverLifecycle = {

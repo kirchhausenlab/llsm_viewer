@@ -114,11 +114,11 @@ const HELP_TABS: HelpTab[] = [
       {
         title: 'Editing labels',
         items: [
-          'Open Edit > Paintbrush to create or refine labels.',
-          'Enable the paintbrush, then hold Ctrl + left-click or drag in the viewer to paint.',
+          'Open Edit > Annotate to create or refine labels.',
+          'Enable Annotate, then hold Ctrl + left-click or drag in the viewer to draw labels.',
           'Switch to Eraser to remove labels, and use the radius control to change brush size.',
-          'Use Undo, Redo, Clear, and Save in the Paintbrush window to manage your edits.',
-          'Show overlay lets you preview painted labels directly in the viewer.'
+          'Use Undo, Redo, Clear, and Save in the Annotate window to manage your edits.',
+          'Show/Hide lets you preview editable labels directly in the viewer.'
         ]
       }
     ]

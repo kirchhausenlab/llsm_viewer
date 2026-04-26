@@ -3,13 +3,14 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import BackgroundsWindow from './viewer-shell/BackgroundsWindow';
 import CameraWindow from './viewer-shell/CameraWindow';
 import CameraSettingsWindow from './viewer-shell/CameraSettingsWindow';
+import AnnotateWindow from './viewer-shell/AnnotateWindow';
 import DrawRoiWindow from './viewer-shell/DrawRoiWindow';
+import ExportChannelWindow, { getChannelExportSourceId } from './viewer-shell/ExportChannelWindow';
 import HoverSettingsWindow from './viewer-shell/HoverSettingsWindow';
 import VolumeViewer from './VolumeViewer';
 import ChannelsPanel from './viewer-shell/ChannelsPanel';
 import MeasurementsWindow from './viewer-shell/MeasurementsWindow';
 import NavigationHelpWindow, { computeNavigationHelpInitialPosition } from './viewer-shell/NavigationHelpWindow';
-import PaintbrushWindow from './viewer-shell/PaintbrushWindow';
 import PlotSettingsPanel from './viewer-shell/PlotSettingsPanel';
 import PropsWindow from './viewer-shell/PropsWindow';
 import RecordWindow from './viewer-shell/RecordWindow';
@@ -19,7 +20,6 @@ import TopMenu from './viewer-shell/TopMenu';
 import TracksPanel from './viewer-shell/TracksPanel';
 import ViewerSettingsWindow from './viewer-shell/ViewerSettingsWindow';
 import { useViewerModeControls } from './viewer-shell/hooks/useViewerModeControls';
-import { useViewerPaintbrushIntegration } from './viewer-shell/hooks/useViewerPaintbrushIntegration';
 import { useViewerPanelWindows } from './viewer-shell/hooks/useViewerPanelWindows';
 import { useViewerPropsState } from './viewer-shell/hooks/useViewerPropsState';
 import { useViewerRoiState } from './viewer-shell/hooks/useViewerRoiState';
@@ -68,6 +68,15 @@ import {
   computeHoverSettingsWindowDefaultPosition,
   MEASUREMENTS_WINDOW_WIDTH,
 } from '../../shared/utils/windowLayout';
+import { useAnnotate } from '../../hooks/annotation/useAnnotate';
+import type { AnnotateSourceOption, EditableSegmentationChannel, LoadedEditableSegmentationCopy } from '../../types/annotation';
+import {
+  exportChannel,
+  materializeRegularSegmentationSource,
+  sanitizeExportBaseName,
+  type ChannelExportSource,
+} from '../../shared/utils/channelExport';
+import { writeEditableSegmentationChannel } from '../../shared/utils/preprocessedDataset/editableSegmentation/sparseWriter';
 import {
   DEFAULT_HOVER_SETTINGS,
   clampHoverSliderValue,
@@ -84,6 +93,7 @@ import {
   type DesktopRenderResolution,
 } from '../../types/renderResolution';
 import { useUiTheme } from '../../ui/app/providers/UiThemeProvider';
+import type { LoadedDatasetLayer } from '../../hooks/dataset';
 
 type CoordinateDraft = {
   x: string;
@@ -132,6 +142,55 @@ function resolveViewerBackgroundConfig(
     floorEnabled: selection.floorEnabled,
     floorColor,
   };
+}
+
+async function ensureAnnotationWriteAccess(
+  storageHandle: ViewerShellProps['datasetAccess']['storageHandle']
+): Promise<void> {
+  if (!storageHandle) {
+    throw new Error('No writable dataset is loaded. Use File > Export channel to save a copy.');
+  }
+  if (storageHandle.backend === 'http') {
+    throw new Error('Annotate is unavailable for public datasets.');
+  }
+  if (storageHandle.backend !== 'directory') {
+    return;
+  }
+
+  const query = storageHandle.permissions?.queryWritePermission;
+  const request = storageHandle.permissions?.requestWritePermission;
+  const current = query ? await query() : 'prompt';
+  if (current === 'granted') {
+    return;
+  }
+  if (!request) {
+    throw new Error('Write access cannot be requested in this browser. Use File > Export channel to save a copy.');
+  }
+  const next = await request();
+  if (next !== 'granted') {
+    throw new Error('Write access was denied. Use File > Export channel to save a copy.');
+  }
+}
+
+function downloadBytes(bytes: Uint8Array, fileName: string, mimeType: string): void {
+  if (typeof document === 'undefined') {
+    return;
+  }
+  const arrayBuffer = new ArrayBuffer(bytes.byteLength);
+  new Uint8Array(arrayBuffer).set(bytes);
+  const blob = new Blob([arrayBuffer], { type: mimeType });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = fileName;
+  link.rel = 'noopener';
+  link.style.position = 'fixed';
+  link.style.left = '-9999px';
+  link.style.top = '-9999px';
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
 function coordinateToDraft(
@@ -232,6 +291,7 @@ function ViewerShell({
   viewerMode,
   volumeViewerProps,
   loadMeasurementVolume,
+  datasetAccess,
   topMenu,
   layout,
   modeControls,
@@ -254,7 +314,8 @@ function ViewerShell({
     viewerSettingsWindowInitialPosition,
     recordWindowInitialPosition,
     layersWindowInitialPosition,
-    paintbrushWindowInitialPosition,
+    annotateWindowInitialPosition,
+    exportChannelWindowInitialPosition,
     drawRoiWindowInitialPosition,
     propsWindowInitialPosition,
     roiManagerWindowInitialPosition,
@@ -391,15 +452,167 @@ function ViewerShell({
     Math.max(1, playbackState.selectedIndex + 1)
   );
 
-  const {
-    paintbrushController,
-    volumeViewerProps: volumeViewerWithCaptureTarget,
-    handleSavePainting
-  } = useViewerPaintbrushIntegration({
-    volumeViewerProps,
-    resetToken,
-    onVolumeCaptureTarget: registerVolumeCaptureTarget
+  const editableLabelNamesByLayerKey = useMemo(() => {
+    const byLayer = new Map<string, string[]>();
+    for (const channel of datasetAccess.manifest?.dataset.channels ?? []) {
+      for (const layer of channel.layers) {
+        if (layer.isSegmentation && 'editableSegmentation' in layer && layer.editableSegmentation) {
+          byLayer.set(layer.key, layer.editableSegmentation.labelNames);
+        }
+      }
+    }
+    return byLayer;
+  }, [datasetAccess.manifest]);
+
+  const regularSegmentationSources = useMemo<Extract<AnnotateSourceOption, { kind: 'regular-segmentation' }>[]>(() => {
+    const sources: Extract<AnnotateSourceOption, { kind: 'regular-segmentation' }>[] = [];
+    for (const channelId of channelsPanel.loadedChannelIds) {
+      const channelLayers = channelsPanel.channelLayersMap.get(channelId) ?? [];
+      if (channelLayers.length === 0 || !channelLayers.every((layer) => layer.isSegmentation)) {
+        continue;
+      }
+      const layer = channelLayers[0]!;
+      sources.push({
+        id: `regular:${layer.key}`,
+        kind: 'regular-segmentation',
+        label: channelsPanel.channelNameMap.get(channelId) ?? layer.label,
+        channelId,
+        layerKey: layer.key,
+        volumeCount: layer.volumeCount,
+        dimensions: { width: layer.width, height: layer.height, depth: layer.depth },
+        editableLabelNames: editableLabelNamesByLayerKey.get(layer.key) ?? null,
+      });
+    }
+    return sources;
+  }, [
+    channelsPanel.channelLayersMap,
+    channelsPanel.channelNameMap,
+    channelsPanel.loadedChannelIds,
+    editableLabelNamesByLayerKey,
+  ]);
+
+  const regularSegmentationLayerByKey = useMemo(() => {
+    const byKey = new Map<string, LoadedDatasetLayer>();
+    for (const layer of managedChannelLayers) {
+      if (layer.isSegmentation) {
+        byKey.set(layer.key, layer);
+      }
+    }
+    return byKey;
+  }, [managedChannelLayers]);
+
+  const loadRegularSegmentationSource = useCallback(
+    async (
+      source: Extract<AnnotateSourceOption, { kind: 'regular-segmentation' }>
+    ): Promise<LoadedEditableSegmentationCopy> => {
+      const provider = datasetAccess.volumeProvider;
+      if (!provider) {
+        throw new Error('Segmentation source is unavailable until the dataset provider is ready.');
+      }
+      const layer = regularSegmentationLayerByKey.get(source.layerKey);
+      if (!layer) {
+        throw new Error('Segmentation source no longer exists.');
+      }
+
+      const timepointLabels = new Map<number, Uint32Array>();
+      const uniqueLabels = new Set<number>();
+      let maxLabel = 0;
+      for (let timepoint = 0; timepoint < source.volumeCount; timepoint += 1) {
+        const materialized = await materializeRegularSegmentationSource({
+          provider,
+          layer,
+          timepoint,
+        });
+        timepointLabels.set(timepoint, materialized.labels);
+        for (let index = 0; index < materialized.labels.length; index += 1) {
+          const label = materialized.labels[index] ?? 0;
+          if (label > 0) {
+            uniqueLabels.add(label);
+            maxLabel = Math.max(maxLabel, label);
+          }
+        }
+      }
+
+      if (source.editableLabelNames) {
+        const labelCount = Math.max(1, source.editableLabelNames.length, maxLabel);
+        return {
+          labels: Array.from({ length: labelCount }, (_, index) => ({
+            name: source.editableLabelNames?.[index] ?? '',
+          })),
+          timepointLabels,
+        };
+      }
+
+      const sortedLabels = [...uniqueLabels].sort((left, right) => left - right);
+      const remap = new Map(sortedLabels.map((label, index) => [label, index + 1]));
+      for (const labels of timepointLabels.values()) {
+        for (let index = 0; index < labels.length; index += 1) {
+          const label = labels[index] ?? 0;
+          labels[index] = label === 0 ? 0 : remap.get(label) ?? 0;
+        }
+      }
+      return {
+        labels: Array.from({ length: Math.max(1, sortedLabels.length) }, () => ({ name: '' })),
+        timepointLabels,
+      };
+    },
+    [datasetAccess.volumeProvider, regularSegmentationLayerByKey]
+  );
+
+  const saveEditableChannel = useCallback(
+    async (channel: EditableSegmentationChannel) => {
+      const { storageHandle, manifest } = datasetAccess;
+      if (!manifest || !storageHandle) {
+        throw new Error('No writable dataset is loaded. Use File > Export channel to save a copy.');
+      }
+      await ensureAnnotationWriteAccess(storageHandle);
+      const nextManifest = await writeEditableSegmentationChannel({
+        storage: storageHandle.storage,
+        manifest,
+        channel,
+        revision: channel.savedRevision + 1,
+      });
+      datasetAccess.onManifestUpdated(nextManifest);
+    },
+    [datasetAccess]
+  );
+
+  const annotateController = useAnnotate({
+    available: datasetAccess.storageHandle?.backend !== 'http',
+    unavailableReason: 'Annotate is unavailable for public datasets.',
+    dimensions: volumeDimensions,
+    volumeCount: Math.max(1, playbackState.volumeTimepointCount),
+    currentTimepoint: playbackState.selectedIndex,
+    resetSignal: resetToken,
+    baseChannelNames: channelsPanel.channelNameMap.values(),
+    regularSegmentationSources,
+    loadRegularSegmentationSource,
+    saveEditableChannel,
   });
+
+  const annotationStrokeHandlers = useMemo(() => ({
+    enabled: Boolean(annotateController.available && annotateController.activeChannel?.enabled),
+    onStrokeStart: annotateController.beginStroke,
+    onStrokeApply: annotateController.applyStrokeAt,
+    onStrokeEnd: annotateController.endStroke,
+  }), [
+    annotateController.activeChannel?.enabled,
+    annotateController.applyStrokeAt,
+    annotateController.available,
+    annotateController.beginStroke,
+    annotateController.endStroke,
+  ]);
+
+  const volumeViewerWithAnnotation = useMemo(
+    () =>
+      ({
+        ...volumeViewerProps,
+        layers: [...volumeViewerProps.layers, ...annotateController.getEditableViewerLayers()],
+        onRegisterCaptureTarget: registerVolumeCaptureTarget,
+        annotation: annotationStrokeHandlers,
+      }) satisfies ViewerShellProps['volumeViewerProps'],
+    [annotateController, annotationStrokeHandlers, registerVolumeCaptureTarget, volumeViewerProps]
+  );
 
   const {
     isChannelsWindowOpen,
@@ -438,9 +651,12 @@ function ViewerShell({
     isTrackSettingsOpen,
     openTrackSettings,
     closeTrackSettings,
-    isPaintbrushOpen,
-    openPaintbrush,
-    closePaintbrush,
+    isAnnotateOpen,
+    openAnnotate,
+    closeAnnotate,
+    isExportChannelOpen,
+    openExportChannel,
+    closeExportChannel,
     isDrawRoiWindowOpen,
     openDrawRoiWindow,
     closeDrawRoiWindow,
@@ -455,6 +671,195 @@ function ViewerShell({
     hasTrackData,
     canShowPlotSettings: selectedTracksPanel.shouldRender
   });
+
+  const resolvedChannelsPanel = useMemo(() => {
+    const editableLayers = annotateController.getEditableLoadedLayers();
+    const channelLayersMap = new Map(channelsPanel.channelLayersMap);
+    const channelNameMap = new Map(channelsPanel.channelNameMap);
+    const channelTintMap = new Map(channelsPanel.channelTintMap);
+    const layerVolumesByKey = { ...channelsPanel.layerVolumesByKey };
+    const layerBrickAtlasesByKey = { ...channelsPanel.layerBrickAtlasesByKey };
+    const layerSettings = { ...channelsPanel.layerSettings };
+    const loadedChannelIds = [...channelsPanel.loadedChannelIds];
+    const channelVisibility = { ...channelsPanel.channelVisibility };
+
+    for (const channel of annotateController.channels) {
+      const layer = editableLayers.find((entry) => entry.channelId === channel.channelId);
+      if (!layer) {
+        continue;
+      }
+      if (!loadedChannelIds.includes(channel.channelId)) {
+        loadedChannelIds.push(channel.channelId);
+      }
+      channelLayersMap.set(channel.channelId, [layer]);
+      channelNameMap.set(channel.channelId, channel.name);
+      channelTintMap.set(channel.channelId, '#ffffff');
+      channelVisibility[channel.channelId] = annotateController.editableVisibility[channel.channelId] ?? true;
+      layerVolumesByKey[channel.layerKey] = null;
+      layerBrickAtlasesByKey[channel.layerKey] = annotateController.editableLayerBrickAtlases[channel.layerKey] ?? null;
+      layerSettings[channel.layerKey] = channelsPanel.layerSettings[channel.layerKey] ?? createDefaultLayerSettings();
+    }
+
+    const onChannelTabSelect = (channelId: string) => {
+      if (annotateController.getEditableChannelById(channelId)) {
+        annotateController.setActiveChannelId(channelId);
+        return;
+      }
+      annotateController.setActiveChannelId(null);
+      channelsPanel.onChannelTabSelect(channelId);
+    };
+
+    const onChannelVisibilityToggle = (channelId: string) => {
+      const editable = annotateController.getEditableChannelById(channelId);
+      if (editable) {
+        annotateController.setChannelVisible(channelId, !(channelVisibility[channelId] ?? true));
+        return;
+      }
+      channelsPanel.onChannelVisibilityToggle(channelId);
+    };
+
+    return {
+      ...channelsPanel,
+      loadedChannelIds,
+      channelNameMap,
+      channelVisibility,
+      channelTintMap,
+      activeChannelId: annotateController.activeChannelId ?? channelsPanel.activeChannelId,
+      onChannelTabSelect,
+      onChannelVisibilityToggle,
+      channelLayersMap,
+      layerVolumesByKey,
+      layerBrickAtlasesByKey,
+      layerSettings,
+      getLayerDefaultSettings: (layerKey: string) =>
+        annotateController.channels.some((channel) => channel.layerKey === layerKey)
+          ? createDefaultLayerSettings()
+          : channelsPanel.getLayerDefaultSettings(layerKey),
+    } satisfies ViewerShellProps['channelsPanel'];
+  }, [
+    annotateController,
+    channelsPanel,
+  ]);
+
+  const exportSources = useMemo<ChannelExportSource[]>(() => {
+    const sources: ChannelExportSource[] = [];
+    for (const channelId of channelsPanel.loadedChannelIds) {
+      const layer = channelsPanel.channelLayersMap.get(channelId)?.[0] ?? null;
+      if (!layer || layer.volumeCount <= 0) {
+        continue;
+      }
+      sources.push({
+        kind: 'regular',
+        channelId,
+        name: channelsPanel.channelNameMap.get(channelId) ?? layer.label,
+        layer,
+      });
+    }
+    for (const channel of annotateController.channels) {
+      sources.push({
+        kind: 'editable',
+        channelId: channel.channelId,
+        name: channel.name,
+        channel,
+      });
+    }
+    return sources;
+  }, [
+    annotateController.channels,
+    channelsPanel.channelLayersMap,
+    channelsPanel.channelNameMap,
+    channelsPanel.loadedChannelIds,
+  ]);
+  const [selectedExportSourceId, setSelectedExportSourceId] = useState('');
+  const [exportFileName, setExportFileName] = useState('');
+  const [exportMessage, setExportMessage] = useState<string | null>(null);
+  const [isExportBusy, setIsExportBusy] = useState(false);
+  const selectedExportSource = useMemo(
+    () => exportSources.find((source) => getChannelExportSourceId(source) === selectedExportSourceId) ?? null,
+    [exportSources, selectedExportSourceId]
+  );
+
+  useEffect(() => {
+    if (exportSources.length === 0) {
+      if (selectedExportSourceId !== '') {
+        setSelectedExportSourceId('');
+      }
+      return;
+    }
+    if (selectedExportSource) {
+      return;
+    }
+    const nextSource = exportSources[0]!;
+    setSelectedExportSourceId(getChannelExportSourceId(nextSource));
+    setExportFileName(sanitizeExportBaseName(nextSource.name));
+  }, [exportSources, selectedExportSource, selectedExportSourceId]);
+
+  const handleExportSourceChange = useCallback((sourceId: string) => {
+    setSelectedExportSourceId(sourceId);
+    setExportMessage(null);
+    const source = exportSources.find((entry) => getChannelExportSourceId(entry) === sourceId) ?? null;
+    if (source) {
+      setExportFileName(sanitizeExportBaseName(source.name));
+    }
+  }, [exportSources]);
+
+  const handleExportChannel = useCallback(async () => {
+    if (!selectedExportSource || isExportBusy) {
+      return;
+    }
+    setIsExportBusy(true);
+    setExportMessage('Exporting channel...');
+    try {
+      const result = await exportChannel({
+        source: selectedExportSource,
+        provider: datasetAccess.volumeProvider,
+        fileName: exportFileName,
+      });
+      downloadBytes(result.bytes, result.fileName, result.mimeType);
+      setExportMessage(`Exported ${result.fileName}.`);
+    } catch (error) {
+      setExportMessage(error instanceof Error ? error.message : String(error));
+    } finally {
+      setIsExportBusy(false);
+    }
+  }, [
+    datasetAccess.volumeProvider,
+    exportFileName,
+    isExportBusy,
+    selectedExportSource,
+  ]);
+
+  const confirmDiscardAnnotationChanges = useCallback(() => {
+    if (!annotateController.hasDirtyChannels) {
+      return true;
+    }
+    if (typeof window === 'undefined' || typeof window.confirm !== 'function') {
+      return false;
+    }
+    return window.confirm('Discard unsaved annotation changes?');
+  }, [annotateController.hasDirtyChannels]);
+
+  const handleReturnToLauncher = useCallback(() => {
+    if (!confirmDiscardAnnotationChanges()) {
+      return;
+    }
+    topMenu.onReturnToLauncher();
+  }, [confirmDiscardAnnotationChanges, topMenu]);
+
+  useEffect(() => {
+    if (!annotateController.hasDirtyChannels || typeof window === 'undefined') {
+      return;
+    }
+
+    const handleBeforeUnload = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = '';
+    };
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+    };
+  }, [annotateController.hasDirtyChannels]);
 
   useEffect(() => {
     if (lastFloatingWindowResetTokenRef.current === resetToken) {
@@ -1600,15 +2005,15 @@ function ViewerShell({
   const segmentationChannelIds = useMemo(() => {
     const next = new Set<string>();
 
-    for (const channelId of channelsPanel.loadedChannelIds) {
-      const channelLayers = channelsPanel.channelLayersMap.get(channelId) ?? [];
+    for (const channelId of resolvedChannelsPanel.loadedChannelIds) {
+      const channelLayers = resolvedChannelsPanel.channelLayersMap.get(channelId) ?? [];
       if (channelLayers.length > 0 && channelLayers.every((layer) => layer.isSegmentation)) {
         next.add(channelId);
       }
     }
 
     return next;
-  }, [channelsPanel.channelLayersMap, channelsPanel.loadedChannelIds]);
+  }, [resolvedChannelsPanel.channelLayersMap, resolvedChannelsPanel.loadedChannelIds]);
   const trackVisibilitySummaryByTrackSet = useMemo(() => {
     const summary = new Map<string, { total: number; visible: number }>();
 
@@ -1648,12 +2053,16 @@ function ViewerShell({
   const topMenuProps = useMemo(
     () => ({
       ...topMenu,
+      onReturnToLauncher: handleReturnToLauncher,
       onOpenChannelsWindow: openChannelsWindow,
       onOpenCameraWindow: openCameraWindow,
       onOpenCameraSettingsWindow: openCameraSettingsWindow,
       onOpenBackgroundsWindow: openBackgroundsWindow,
       onOpenPropsWindow: openPropsWindow,
-      onOpenPaintbrush: openPaintbrush,
+      onOpenAnnotate: openAnnotate,
+      annotateDisabled: !annotateController.available,
+      annotateDisabledTitle: annotateController.available ? undefined : annotateController.unavailableReason ?? undefined,
+      onOpenExportChannel: openExportChannel,
       onOpenDrawRoiWindow: openDrawRoiWindow,
       onOpenRoiManagerWindow: openRoiManagerWindow,
       onOpenSetMeasurementsWindow: handleOpenSetMeasurementsWindow,
@@ -1685,14 +2094,14 @@ function ViewerShell({
       zSliderValue: playbackState.zSliderValue,
       zSliderMax: playbackState.zSliderMax,
       onZSliderChange: playbackState.onZSliderChange,
-      loadedChannelIds: channelsPanel.loadedChannelIds,
-      channelNameMap: channelsPanel.channelNameMap,
-      channelVisibility: channelsPanel.channelVisibility,
-      channelTintMap: channelsPanel.channelTintMap,
+      loadedChannelIds: resolvedChannelsPanel.loadedChannelIds,
+      channelNameMap: resolvedChannelsPanel.channelNameMap,
+      channelVisibility: resolvedChannelsPanel.channelVisibility,
+      channelTintMap: resolvedChannelsPanel.channelTintMap,
       segmentationChannelIds,
-      activeChannelId: channelsPanel.activeChannelId,
-      onChannelTabSelect: channelsPanel.onChannelTabSelect,
-      onChannelVisibilityToggle: channelsPanel.onChannelVisibilityToggle,
+      activeChannelId: resolvedChannelsPanel.activeChannelId,
+      onChannelTabSelect: resolvedChannelsPanel.onChannelTabSelect,
+      onChannelVisibilityToggle: resolvedChannelsPanel.onChannelVisibilityToggle,
       trackSets: tracksPanel.trackSets,
       trackHeadersByTrackSet: tracksPanel.trackHeadersByTrackSet,
       activeTrackSetId: tracksPanel.activeTrackSetId,
@@ -1704,7 +2113,9 @@ function ViewerShell({
       hoverIntensityValueDigits
     }),
     [
-      channelsPanel,
+      annotateController.available,
+      annotateController.unavailableReason,
+      handleReturnToLauncher,
       hoverCoordinateDigits,
       hoverIntensityValueDigits,
       modeToggle,
@@ -1715,8 +2126,9 @@ function ViewerShell({
       openPlotSettings,
       openChannelsWindow,
       openDiagnosticsWindow,
+      openExportChannel,
       openHoverSettingsWindow,
-      openPaintbrush,
+      openAnnotate,
       openDrawRoiWindow,
       handleOpenSetMeasurementsWindow,
       handleToggle2dView,
@@ -1727,6 +2139,7 @@ function ViewerShell({
       openTracksWindow,
       openViewerSettings,
       playbackState,
+      resolvedChannelsPanel,
       segmentationChannelIds,
       is2dViewActive,
       twoDViewButtonDisabled,
@@ -1751,6 +2164,12 @@ function ViewerShell({
         group: 'File',
         label: 'Diagnostics',
         onSelect: topMenuProps.onOpenDiagnosticsWindow,
+      },
+      {
+        id: 'file-export-channel',
+        group: 'File',
+        label: 'Export channel',
+        onSelect: topMenuProps.onOpenExportChannel,
       },
       ...(topMenuProps.is3dModeAvailable
         ? [
@@ -1831,10 +2250,11 @@ function ViewerShell({
         onSelect: topMenuProps.onOpenPropsWindow,
       },
       {
-        id: 'edit-paintbrush',
+        id: 'edit-annotate',
         group: 'Edit',
-        label: 'Paintbrush',
-        onSelect: topMenuProps.onOpenPaintbrush,
+        label: 'Annotate',
+        disabled: topMenuProps.annotateDisabled,
+        onSelect: topMenuProps.onOpenAnnotate,
       },
       {
         id: 'edit-draw-roi',
@@ -1890,10 +2310,10 @@ function ViewerShell({
   }, [isDarkMode, toggleThemeMode, topMenuProps]);
   const volumeViewerPropsWithViewerProps = useMemo(
     () => ({
-      ...volumeViewerWithCaptureTarget,
-      vr: volumeViewerWithCaptureTarget.vr
+      ...volumeViewerWithAnnotation,
+      vr: volumeViewerWithAnnotation.vr
         ? {
-            ...volumeViewerWithCaptureTarget.vr,
+            ...volumeViewerWithAnnotation.vr,
             menuActions: vrWristMenuActions,
           }
         : undefined,
@@ -1957,7 +2377,6 @@ function ViewerShell({
       showAllSavedRois,
       volumeViewerProps.temporalResolution,
       vrWristMenuActions,
-      volumeViewerWithCaptureTarget,
       hoverSettings,
       desktopRenderResolution,
       resolvedViewerBackground,
@@ -1968,6 +2387,7 @@ function ViewerShell({
       handleRegisterCameraWindowController,
       workingRoi,
       playbackState.zSliderValue,
+      volumeViewerWithAnnotation,
     ]
   );
 
@@ -2118,31 +2538,32 @@ function ViewerShell({
         projectionLocked={is2dViewActive}
       />
 
-      {isPaintbrushOpen ? (
-        <PaintbrushWindow
-          initialPosition={paintbrushWindowInitialPosition}
+      {isAnnotateOpen && annotateController.available ? (
+        <AnnotateWindow
+          initialPosition={annotateWindowInitialPosition}
           windowMargin={windowMargin}
           controlWindowWidth={controlWindowWidth}
           resetSignal={resetToken}
-          enabled={paintbrushController.enabled}
-          overlayVisible={paintbrushController.overlayVisible}
-          mode={paintbrushController.mode}
-          radius={paintbrushController.radius}
-          color={paintbrushController.color}
-          labelCount={paintbrushController.labelCount}
-          canUndo={paintbrushController.canUndo}
-          canRedo={paintbrushController.canRedo}
-          onEnabledChange={paintbrushController.setEnabled}
-          onOverlayVisibleChange={paintbrushController.setOverlayVisible}
-          onModeChange={paintbrushController.setMode}
-          onRadiusChange={paintbrushController.setRadius}
-          onColorChange={paintbrushController.setColor}
-          onRandomColor={paintbrushController.pickRandomUnusedColor}
-          onUndo={paintbrushController.undo}
-          onRedo={paintbrushController.redo}
-          onClear={paintbrushController.clear}
-          onSave={handleSavePainting}
-          onClose={closePaintbrush}
+          controller={annotateController}
+          onClose={closeAnnotate}
+        />
+      ) : null}
+
+      {isExportChannelOpen ? (
+        <ExportChannelWindow
+          initialPosition={exportChannelWindowInitialPosition}
+          windowMargin={windowMargin}
+          controlWindowWidth={controlWindowWidth}
+          resetSignal={resetToken}
+          sources={exportSources}
+          selectedSourceId={selectedExportSourceId}
+          fileName={exportFileName}
+          busy={isExportBusy}
+          message={exportMessage}
+          onSourceChange={handleExportSourceChange}
+          onFileNameChange={setExportFileName}
+          onExport={handleExportChannel}
+          onClose={closeExportChannel}
         />
       ) : null}
 
@@ -2336,7 +2757,7 @@ function ViewerShell({
         isOpen={isChannelsWindowOpen}
         onClose={closeChannelsWindow}
         renderModeLocked={is2dViewActive}
-        {...channelsPanel}
+        {...resolvedChannelsPanel}
       />
 
       <TracksPanel

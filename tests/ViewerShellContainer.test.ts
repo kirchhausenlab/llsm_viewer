@@ -11,6 +11,13 @@ const noopWithArgs = (..._args: unknown[]) => {};
 function createViewerShellContainerProps(): ViewerShellContainerProps {
   return {
     viewerMode: '3d',
+    loadMeasurementVolume: null,
+    datasetAccess: {
+      storageHandle: null,
+      manifest: null,
+      volumeProvider: null,
+      onManifestUpdated: noopWithArgs
+    },
     isHelpMenuOpen: false,
     openHelpMenu: noop,
     closeHelpMenu: noop,
@@ -90,17 +97,23 @@ function createViewerShellContainerProps(): ViewerShellContainerProps {
     },
     layout: {
       resetToken: 0,
+      cameraWindowInitialPosition: { x: 0, y: 0 },
+      cameraSettingsWindowInitialPosition: { x: 0, y: 0 },
       viewerSettingsWindowInitialPosition: { x: 0, y: 0 },
       recordWindowInitialPosition: { x: 0, y: 0 },
       layersWindowInitialPosition: { x: 0, y: 0 },
-      paintbrushWindowInitialPosition: { x: 0, y: 0 },
+      annotateWindowInitialPosition: { x: 0, y: 0 },
+      exportChannelWindowInitialPosition: { x: 0, y: 0 },
       drawRoiWindowInitialPosition: { x: 0, y: 0 },
       propsWindowInitialPosition: { x: 0, y: 0 },
       roiManagerWindowInitialPosition: { x: 0, y: 0 },
       trackWindowInitialPosition: { x: 0, y: 0 },
       selectedTracksWindowInitialPosition: { x: 0, y: 0 },
       plotSettingsWindowInitialPosition: { x: 0, y: 0 },
-      trackSettingsWindowInitialPosition: { x: 0, y: 0 }
+      trackSettingsWindowInitialPosition: { x: 0, y: 0 },
+      hoverSettingsWindowInitialPosition: { x: 0, y: 0 },
+      measurementsWindowInitialPosition: { x: 0, y: 0 },
+      setMeasurementsWindowInitialPosition: { x: 0, y: 0 }
     },
     modeControls: {
       is3dModeAvailable: true,
@@ -172,6 +185,7 @@ function createViewerShellContainerProps(): ViewerShellContainerProps {
     },
     tracksPanel: {
       trackSets: [],
+      trackHeadersByTrackSet: new Map(),
       activeTrackSetId: null,
       onTrackSetTabSelect: noopWithArgs,
       parsedTracksByTrackSet: new Map(),

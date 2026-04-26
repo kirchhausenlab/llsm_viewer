@@ -212,6 +212,11 @@ export type SparseSegmentationManifest = {
   scales: SparseSegmentationScaleManifestEntry[];
 };
 
+export type EditableSegmentationMetadata = {
+  version: 1;
+  labelNames: string[];
+};
+
 export type PreprocessedLayerKind = 'intensity' | 'segmentation';
 
 export type PreprocessedIntensityLayerManifestEntry = {
@@ -253,6 +258,7 @@ export type PreprocessedSparseSegmentationLayerManifestEntry = {
   brickSize: [number, number, number];
   colorSeed: number;
   sparse: SparseSegmentationManifest;
+  editableSegmentation?: EditableSegmentationMetadata;
   storedDataType?: never;
   isBinaryLike?: never;
   zarr?: never;

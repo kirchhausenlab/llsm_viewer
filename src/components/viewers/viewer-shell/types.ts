@@ -10,7 +10,9 @@ import type {
 } from '../VolumeViewer.types';
 import type { LoadedDatasetLayer } from '../../../hooks/dataset';
 import type { NormalizedVolume } from '../../../core/volumeProcessing';
-import type { VolumeBrickAtlas } from '../../../core/volumeProvider';
+import type { VolumeBrickAtlas, VolumeProvider } from '../../../core/volumeProvider';
+import type { PreprocessedStorageHandle } from '../../../shared/storage/preprocessedStorage';
+import type { PreprocessedManifest } from '../../../shared/utils/preprocessedDataset/types';
 import type { LayerSettings, RenderStyle, SamplingMode } from '../../../state/layerSettings';
 import type { TrackSetState } from '../../../types/channelTracks';
 import type { FollowedVoxelTarget } from '../../../types/follow';
@@ -72,7 +74,10 @@ export type TopMenuProps = TopMenuChromeProps &
     onOpenCameraSettingsWindow: () => void;
     onOpenBackgroundsWindow: () => void;
     onOpenPropsWindow: () => void;
-    onOpenPaintbrush: () => void;
+    onOpenAnnotate: () => void;
+    annotateDisabled?: boolean;
+    annotateDisabledTitle?: string;
+    onOpenExportChannel: () => void;
     onOpenDrawRoiWindow: () => void;
     onOpenRoiManagerWindow: () => void;
     onOpenSetMeasurementsWindow: () => void;
@@ -304,7 +309,8 @@ export type LayoutProps = {
   viewerSettingsWindowInitialPosition: Position;
   recordWindowInitialPosition: Position;
   layersWindowInitialPosition: Position;
-  paintbrushWindowInitialPosition: Position;
+  annotateWindowInitialPosition: Position;
+  exportChannelWindowInitialPosition: Position;
   drawRoiWindowInitialPosition: Position;
   propsWindowInitialPosition: Position;
   roiManagerWindowInitialPosition: Position;
@@ -347,6 +353,12 @@ export type ViewerShellProps = {
   viewerMode: '3d';
   volumeViewerProps: VolumeViewerProps;
   loadMeasurementVolume: ((layerKey: string, timepoint: number) => Promise<NormalizedVolume>) | null;
+  datasetAccess: {
+    storageHandle: PreprocessedStorageHandle | null;
+    manifest: PreprocessedManifest | null;
+    volumeProvider: VolumeProvider | null;
+    onManifestUpdated: (manifest: PreprocessedManifest) => void;
+  };
   topMenu: TopMenuChromeProps;
   layout: LayoutProps;
   modeControls: ModeControlsProps;

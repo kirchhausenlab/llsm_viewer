@@ -134,8 +134,8 @@ export type VolumeViewerLifecycleOptionGroups = {
   interaction: Pick<
     VolumeViewerLifecycleParams,
     | 'layersRef'
-    | 'paintbrushRef'
-    | 'paintStrokePointerIdRef'
+    | 'annotationRef'
+    | 'annotationStrokePointerIdRef'
     | 'hoverIntensityRef'
     | 'followedTrackIdRef'
     | 'updateVoxelHover'

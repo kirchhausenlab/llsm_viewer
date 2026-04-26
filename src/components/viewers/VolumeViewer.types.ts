@@ -16,7 +16,7 @@ import type { NormalizedVolume } from '../../core/volumeProcessing';
 import type { ViewerLayer } from '../../ui/contracts/viewerLayer';
 import type { FollowedVoxelTarget } from '../../types/follow';
 import type { HoveredVoxelInfo, HoverSettings } from '../../types/hover';
-import type { PaintbrushStrokeHandlers } from '../../types/paintbrush';
+import type { AnnotationStrokeHandlers } from '../../types/annotation';
 import type { RoiDefinition, RoiDimensionMode, RoiTool, SavedRoi } from '../../types/roi';
 import type {
   CompiledTrackSetPayload,
@@ -278,7 +278,7 @@ export type VolumeViewerProps = {
   background?: DesktopViewerBackgroundConfig;
   viewerPropsConfig?: ViewerPropsConfig;
   roiConfig?: ViewerRoiConfig;
-  paintbrush?: PaintbrushStrokeHandlers;
+  annotation?: AnnotationStrokeHandlers;
   vr?: VolumeViewerVrProps;
 };
 

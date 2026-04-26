@@ -35,6 +35,7 @@ import {
   DEFAULT_MAX_CONCURRENT_PREFETCH_LOADS
 } from '../../../core/volumeProvider';
 import { isSparseSegmentationLayerManifest } from '../../../shared/utils/preprocessedDataset/types';
+import { buildChannelSummariesFromManifest, buildTrackSummariesFromManifest } from '../../../shared/utils/preprocessedDataset/manifest';
 import { useViewerPlayback } from '../../../hooks/viewer';
 import useChannelEditing from './useChannelEditing';
 import { useRouteDatasetResetState } from './useRouteDatasetResetState';
@@ -351,7 +352,8 @@ export function useAppRouteState(): AppRouteState {
     layersWindowInitialPosition,
     cameraWindowInitialPosition,
     cameraSettingsWindowInitialPosition,
-    paintbrushWindowInitialPosition,
+    annotateWindowInitialPosition,
+    exportChannelWindowInitialPosition,
     drawRoiWindowInitialPosition,
     propsWindowInitialPosition,
     roiManagerWindowInitialPosition,
@@ -416,6 +418,22 @@ export function useAppRouteState(): AppRouteState {
       maxConcurrentPrefetchLoads: DEFAULT_MAX_CONCURRENT_PREFETCH_LOADS
     });
   }, [preprocessedExperiment]);
+
+  const handlePreprocessedManifestUpdated = useCallback((manifest: NonNullable<typeof preprocessedExperiment>['manifest']) => {
+    setPreprocessedExperiment((current) => {
+      if (!current) {
+        return current;
+      }
+      return {
+        ...current,
+        manifest,
+        channelSummaries: buildChannelSummariesFromManifest(manifest),
+        trackSummaries: buildTrackSummariesFromManifest(manifest),
+        totalVolumeCount: manifest.dataset.totalVolumeCount,
+      };
+    });
+    volumeProvider?.clear();
+  }, [volumeProvider]);
 
   useEffect(() => {
     if (typeof window === 'undefined') {
@@ -1505,6 +1523,12 @@ export function useAppRouteState(): AppRouteState {
     viewer: {
       viewerMode,
       loadMeasurementVolume: volumeProvider ? volumeProvider.getVolume : null,
+      datasetAccess: {
+        storageHandle: preprocessedExperiment?.storageHandle ?? null,
+        manifest: preprocessedExperiment?.manifest ?? null,
+        volumeProvider,
+        onManifestUpdated: handlePreprocessedManifestUpdated,
+      },
       viewerPanels: {
         layers: viewerLayers,
         playbackWarmupLayers: viewerPlaybackWarmupLayers,
@@ -1605,7 +1629,8 @@ export function useAppRouteState(): AppRouteState {
         viewerSettingsWindowInitialPosition,
         recordWindowInitialPosition,
         layersWindowInitialPosition,
-        paintbrushWindowInitialPosition,
+        annotateWindowInitialPosition,
+        exportChannelWindowInitialPosition,
         drawRoiWindowInitialPosition,
         propsWindowInitialPosition,
         roiManagerWindowInitialPosition,

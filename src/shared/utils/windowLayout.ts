@@ -7,7 +7,6 @@ export const CONTROL_WINDOW_WIDTH = 288;
 export const PROPS_WINDOW_WIDTH = CONTROL_WINDOW_WIDTH;
 export const SELECTED_TRACKS_WINDOW_WIDTH = 1120;
 export const SELECTED_TRACKS_WINDOW_HEIGHT = 220;
-export const PAINTBRUSH_WINDOW_VERTICAL_OFFSET = 220;
 export const WARNING_WINDOW_WIDTH = 360;
 export const RUNTIME_DIAGNOSTICS_WINDOW_WIDTH = CONTROL_WINDOW_WIDTH;
 export const VIEWER_SETTINGS_WINDOW_ESTIMATED_HEIGHT = 320;
@@ -16,7 +15,8 @@ export const HOVER_SETTINGS_WINDOW_ESTIMATED_HEIGHT = 260;
 export const BACKGROUNDS_WINDOW_ESTIMATED_HEIGHT = 220;
 export const RECORD_WINDOW_ESTIMATED_HEIGHT = 220;
 export const PROPS_WINDOW_ESTIMATED_HEIGHT = 560;
-export const PAINTBRUSH_WINDOW_ESTIMATED_HEIGHT = 420;
+export const ANNOTATE_WINDOW_ESTIMATED_HEIGHT = 520;
+export const EXPORT_CHANNEL_WINDOW_ESTIMATED_HEIGHT = 260;
 export const DRAW_ROI_WINDOW_ESTIMATED_HEIGHT = 520;
 export const TRACK_WINDOW_ESTIMATED_HEIGHT = 360;
 export const ROI_MANAGER_WINDOW_ESTIMATED_HEIGHT = 420;
@@ -88,10 +88,11 @@ export const computeLayersWindowDefaultPosition = (): WindowPosition => ({
   y: TOP_MENU_HEIGHT + TOP_MENU_WINDOW_PADDING
 });
 
-export const computePaintbrushWindowDefaultPosition = (): WindowPosition => ({
-  x: WINDOW_MARGIN,
-  y: TOP_MENU_HEIGHT + TOP_MENU_WINDOW_PADDING + PAINTBRUSH_WINDOW_VERTICAL_OFFSET
-});
+export const computeAnnotateWindowDefaultPosition = (): WindowPosition =>
+  computeTopCenteredWindowPosition(CONTROL_WINDOW_WIDTH, ANNOTATE_WINDOW_ESTIMATED_HEIGHT);
+
+export const computeExportChannelWindowDefaultPosition = (): WindowPosition =>
+  computeTopCenteredWindowPosition(CONTROL_WINDOW_WIDTH, EXPORT_CHANNEL_WINDOW_ESTIMATED_HEIGHT);
 
 export const computeViewerSettingsWindowDefaultPosition = (): WindowPosition => {
   return computeTopCenteredWindowPosition(CONTROL_WINDOW_WIDTH, VIEWER_SETTINGS_WINDOW_ESTIMATED_HEIGHT);
@@ -224,8 +225,11 @@ export const computeCameraSettingsWindowRecenterPosition = (): WindowPosition =>
 export const computePropsWindowRecenterPosition = (): WindowPosition =>
   computeTopCenteredWindowPosition(PROPS_WINDOW_WIDTH, PROPS_WINDOW_ESTIMATED_HEIGHT);
 
-export const computePaintbrushWindowRecenterPosition = (): WindowPosition =>
-  computeTopCenteredWindowPosition(CONTROL_WINDOW_WIDTH, PAINTBRUSH_WINDOW_ESTIMATED_HEIGHT);
+export const computeAnnotateWindowRecenterPosition = (): WindowPosition =>
+  computeTopCenteredWindowPosition(CONTROL_WINDOW_WIDTH, ANNOTATE_WINDOW_ESTIMATED_HEIGHT);
+
+export const computeExportChannelWindowRecenterPosition = (): WindowPosition =>
+  computeTopCenteredWindowPosition(CONTROL_WINDOW_WIDTH, EXPORT_CHANNEL_WINDOW_ESTIMATED_HEIGHT);
 
 export const computeDrawRoiWindowRecenterPosition = (): WindowPosition =>
   computeTopCenteredWindowPosition(CONTROL_WINDOW_WIDTH, DRAW_ROI_WINDOW_ESTIMATED_HEIGHT);

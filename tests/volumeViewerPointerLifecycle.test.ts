@@ -104,19 +104,19 @@ function createPointerEvent(
   camera.lookAt(0, 0, 0);
   camera.updateMatrixWorld(true);
 
-  const paintCounters = { start: 0, apply: 0, end: 0 };
+  const annotationCounters = { start: 0, apply: 0, end: 0 };
   const pointerLookCounters = { begin: 0, move: 0, end: 0 };
-  const paintbrushRef = {
+  const annotationRef = {
     current: {
       enabled: true,
       onStrokeStart: () => {
-        paintCounters.start += 1;
+        annotationCounters.start += 1;
       },
       onStrokeApply: () => {
-        paintCounters.apply += 1;
+        annotationCounters.apply += 1;
       },
       onStrokeEnd: () => {
-        paintCounters.end += 1;
+        annotationCounters.end += 1;
       },
     },
   };
@@ -131,8 +131,8 @@ function createPointerEvent(
     layersRef: { current: [] },
     resourcesRef: { current: new Map() },
     volumeRootGroupRef: { current: null },
-    paintbrushRef,
-    paintStrokePointerIdRef: { current: null },
+    annotationRef,
+    annotationStrokePointerIdRef: { current: null },
     hoverIntensityRef,
     followTargetActiveRef: { current: false },
     followedTrackIdRef: { current: null },
@@ -175,10 +175,10 @@ function createPointerEvent(
   domElement.emitPointer('pointermove', createPointerEvent({ ctrlKey: true, pointerId: 1, clientX: 110 }));
   domElement.emitPointer('pointerup', createPointerEvent({ ctrlKey: true, pointerId: 1, clientX: 115 }));
 
-  assert.equal(paintCounters.start, 1, 'CTRL down should start paint stroke');
-  assert.equal(paintCounters.end, 1, 'CTRL up should end paint stroke');
-  assert.equal(paintCounters.apply, 3, 'paint should apply on down/move/up');
-  assert.equal(pointerLookCounters.begin, 0, 'paint gesture should not start pointer-look');
+  assert.equal(annotationCounters.start, 1, 'CTRL down should start annotation stroke');
+  assert.equal(annotationCounters.end, 1, 'CTRL up should end annotation stroke');
+  assert.equal(annotationCounters.apply, 3, 'annotation should apply on down/move/up');
+  assert.equal(pointerLookCounters.begin, 0, 'annotation gesture should not start pointer-look');
   detach();
 })();
 
@@ -187,7 +187,7 @@ function createPointerEvent(
   const controls = { target: new THREE.Vector3() } as unknown as import('three/addons/controls/OrbitControls.js').OrbitControls;
   const camera = new THREE.PerspectiveCamera(60, 1, 0.1, 1000);
   const pointerLookCounters = { begin: 0, move: 0, end: 0 };
-  const paintCounters = { start: 0, end: 0 };
+  const annotationCounters = { start: 0, end: 0 };
 
   const detach = attachVolumeViewerPointerLifecycle({
     domElement,
@@ -196,19 +196,19 @@ function createPointerEvent(
     layersRef: { current: [] },
     resourcesRef: { current: new Map<string, VolumeResources>() },
     volumeRootGroupRef: { current: null },
-    paintbrushRef: {
+    annotationRef: {
       current: {
         enabled: false,
         onStrokeStart: () => {
-          paintCounters.start += 1;
+          annotationCounters.start += 1;
         },
         onStrokeApply: () => {},
         onStrokeEnd: () => {
-          paintCounters.end += 1;
+          annotationCounters.end += 1;
         },
       },
     },
-    paintStrokePointerIdRef: { current: null },
+    annotationStrokePointerIdRef: { current: null },
     hoverIntensityRef: { current: null },
     followTargetActiveRef: { current: false },
     followedTrackIdRef: { current: null },
@@ -251,8 +251,8 @@ function createPointerEvent(
   );
   domElement.emitPointer('pointerup', createPointerEvent({ shiftKey: true, pointerId: 7, clientX: 140 }));
 
-  assert.equal(paintCounters.start, 0, 'SHIFT drag should not trigger paint when CTRL is not pressed');
-  assert.equal(paintCounters.end, 0, 'SHIFT drag should not end paint when paint mode is disabled');
+  assert.equal(annotationCounters.start, 0, 'SHIFT drag should not trigger annotation when CTRL is not pressed');
+  assert.equal(annotationCounters.end, 0, 'SHIFT drag should not end annotation when annotation mode is disabled');
   assert.equal(pointerLookCounters.begin, 1, 'SHIFT drag should start pointer-look');
   assert.equal(pointerLookCounters.move, 1, 'SHIFT drag should update pointer-look');
   assert.equal(pointerLookCounters.end, 1, 'SHIFT drag should end pointer-look');
@@ -273,7 +273,7 @@ function createPointerEvent(
     layersRef: { current: [] },
     resourcesRef: { current: new Map<string, VolumeResources>() },
     volumeRootGroupRef: { current: null },
-    paintbrushRef: {
+    annotationRef: {
       current: {
         enabled: false,
         onStrokeStart: () => {},
@@ -281,7 +281,7 @@ function createPointerEvent(
         onStrokeEnd: () => {},
       },
     },
-    paintStrokePointerIdRef: { current: null },
+    annotationStrokePointerIdRef: { current: null },
     hoverIntensityRef: { current: null },
     followTargetActiveRef: { current: false },
     followedTrackIdRef: { current: null },
@@ -339,7 +339,7 @@ function createPointerEvent(
     layersRef: { current: [] },
     resourcesRef: { current: new Map<string, VolumeResources>() },
     volumeRootGroupRef: { current: null },
-    paintbrushRef: {
+    annotationRef: {
       current: {
         enabled: false,
         onStrokeStart: () => {},
@@ -347,7 +347,7 @@ function createPointerEvent(
         onStrokeEnd: () => {},
       },
     },
-    paintStrokePointerIdRef: { current: null },
+    annotationStrokePointerIdRef: { current: null },
     hoverIntensityRef: { current: null },
     followTargetActiveRef: { current: false },
     followedTrackIdRef: { current: null },
@@ -406,7 +406,7 @@ function createPointerEvent(
     layersRef: { current: [] },
     resourcesRef: { current: new Map<string, VolumeResources>() },
     volumeRootGroupRef: { current: null },
-    paintbrushRef: {
+    annotationRef: {
       current: {
         enabled: false,
         onStrokeStart: () => {},
@@ -414,7 +414,7 @@ function createPointerEvent(
         onStrokeEnd: () => {},
       },
     },
-    paintStrokePointerIdRef: { current: null },
+    annotationStrokePointerIdRef: { current: null },
     hoverIntensityRef: { current: null },
     followTargetActiveRef: { current: false },
     followedTrackIdRef: { current: null },
@@ -485,7 +485,7 @@ function createPointerEvent(
     layersRef: { current: [] },
     resourcesRef: { current: new Map<string, VolumeResources>() },
     volumeRootGroupRef: { current: null },
-    paintbrushRef: {
+    annotationRef: {
       current: {
         enabled: false,
         onStrokeStart: () => {},
@@ -493,7 +493,7 @@ function createPointerEvent(
         onStrokeEnd: () => {},
       },
     },
-    paintStrokePointerIdRef: { current: null },
+    annotationStrokePointerIdRef: { current: null },
     hoverIntensityRef: { current: null },
     followTargetActiveRef: { current: false },
     followedTrackIdRef: { current: null },
@@ -565,7 +565,7 @@ function createPointerEvent(
     layersRef: { current: [] },
     resourcesRef: { current: new Map<string, VolumeResources>() },
     volumeRootGroupRef: { current: null },
-    paintbrushRef: {
+    annotationRef: {
       current: {
         enabled: false,
         onStrokeStart: () => {},
@@ -573,7 +573,7 @@ function createPointerEvent(
         onStrokeEnd: () => {},
       },
     },
-    paintStrokePointerIdRef: { current: null },
+    annotationStrokePointerIdRef: { current: null },
     hoverIntensityRef: { current: null },
     followTargetActiveRef: { current: false },
     followedTrackIdRef: { current: null },

@@ -133,6 +133,7 @@ export function useViewerShellProps(props: ViewerShellContainerProps): ViewerShe
     viewerMode: props.viewerMode,
     volumeViewerProps: mapVolumeViewerProps(props),
     loadMeasurementVolume: props.loadMeasurementVolume,
+    datasetAccess: props.datasetAccess,
     topMenu: mapTopMenuProps(props),
     layout: mapLayoutProps(props.layout),
     modeControls: props.modeControls,

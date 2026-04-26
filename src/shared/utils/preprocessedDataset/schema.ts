@@ -21,6 +21,7 @@ import type {
   SparseSegmentationOccupancyHierarchyLevelDescriptor,
   SparseSegmentationPayloadShardSetDescriptor,
   SparseSegmentationScaleManifestEntry,
+  EditableSegmentationMetadata,
   PreprocessedTrackSetManifestEntry,
   ZarrArrayDescriptor,
   ZarrArrayShardingPlan,
@@ -1279,6 +1280,27 @@ function rejectForbiddenSparseSegmentationField(layer: UnknownRecord, field: str
   }
 }
 
+function validateEditableSegmentationMetadata(
+  value: unknown,
+  path: string
+): EditableSegmentationMetadata | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+  const metadata = expectRecord(value, path);
+  const version = expectPositiveInteger(metadata.version, `${path}.version`);
+  if (version !== 1) {
+    throw new Error(`Invalid manifest schema at ${path}.version: expected 1, got ${version}.`);
+  }
+  const labelNames = expectArray(metadata.labelNames, `${path}.labelNames`).map((entry, index) =>
+    expectString(entry, `${path}.labelNames[${index}]`)
+  );
+  return {
+    version: 1,
+    labelNames,
+  };
+}
+
 function validateSparseSegmentationLayer({
   layer,
   path,
@@ -1354,6 +1376,10 @@ function validateSparseSegmentationLayer({
   rejectForbiddenSparseSegmentationField(layer, 'histogram', path);
   const brickSize = expectBrickSize(layer.brickSize, `${path}.brickSize`);
   const colorSeed = expectNonNegativeInteger(layer.colorSeed, `${path}.colorSeed`);
+  const editableSegmentation = validateEditableSegmentationMetadata(
+    layer.editableSegmentation,
+    `${path}.editableSegmentation`
+  );
   const sparse = expectRecord(layer.sparse, `${path}.sparse`);
   const version = expectPositiveInteger(sparse.version, `${path}.sparse.version`);
   if (version !== 1) {
@@ -1404,7 +1430,8 @@ function validateSparseSegmentationLayer({
       version: 1,
       labels,
       scales
-    }
+    },
+    ...(editableSegmentation !== undefined ? { editableSegmentation } : {})
   };
 }
 
