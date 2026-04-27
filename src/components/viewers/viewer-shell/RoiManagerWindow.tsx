@@ -1,4 +1,5 @@
 import FloatingWindow from '../../widgets/FloatingWindow';
+import { useActionColumnHeightCssVar } from './hooks/useActionColumnHeightCssVar';
 import type { LayoutProps } from './types';
 import type { SavedRoi } from '../../../types/roi';
 
@@ -54,6 +55,7 @@ export default function RoiManagerWindow({
   onClose,
 }: RoiManagerWindowProps) {
   const hasActiveRoi = activeSavedRoiId !== null;
+  const { actionsRef, managerStyle } = useActionColumnHeightCssVar();
 
   return (
     <FloatingWindow
@@ -64,7 +66,7 @@ export default function RoiManagerWindow({
       className="floating-window--roi-manager"
       onClose={onClose}
     >
-      <div className="roi-manager-window">
+      <div className="roi-manager-window" style={managerStyle}>
         <div className="roi-manager-list" role="listbox" aria-label="Saved ROIs" aria-multiselectable="true">
           {savedRois.length > 0 ? (
             savedRois.map((roi) => {
@@ -102,7 +104,7 @@ export default function RoiManagerWindow({
           )}
         </div>
 
-        <div className="roi-manager-actions">
+        <div className="roi-manager-actions" ref={actionsRef}>
           <button type="button" onClick={onAdd} disabled={!canAdd}>
             Add
           </button>

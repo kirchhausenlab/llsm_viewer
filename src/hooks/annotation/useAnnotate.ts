@@ -11,6 +11,7 @@ import type {
 import type { LoadedDatasetLayer } from '../dataset';
 import type { ViewerLayer } from '../../ui/contracts/viewerLayer';
 import type { VolumeBrickAtlas } from '../../core/volumeProvider';
+import type { LayerSettings } from '../../state/layerSettings';
 import {
   buildEditableSegmentationBrickAtlas,
   clearEditableSegmentationChannelInPlace,
@@ -81,6 +82,15 @@ type UseAnnotateOptions = {
   saveEditableChannel: (channel: EditableSegmentationChannel) => Promise<void>;
 };
 
+export type AnnotateCreateChannelOptions = {
+  name?: string;
+  sourceId?: string;
+};
+
+export type AnnotateCreateChannelResult =
+  | { ok: true; channelId: string }
+  | { ok: false; message: string };
+
 export type AnnotateController = {
   available: boolean;
   unavailableReason: string | null;
@@ -101,7 +111,8 @@ export type AnnotateController = {
   editableLayerBrickAtlases: Record<string, VolumeBrickAtlas | null>;
   setSelectedSourceId: (value: string) => void;
   setCreationName: (value: string) => void;
-  createChannel: () => Promise<void>;
+  createChannel: (options?: AnnotateCreateChannelOptions) => Promise<AnnotateCreateChannelResult>;
+  deleteActiveChannel: () => void;
   setActiveChannelId: (channelId: string | null) => void;
   setChannelVisible: (channelId: string, visible: boolean) => void;
   setEnabled: (value: boolean) => void;
@@ -122,7 +133,7 @@ export type AnnotateController = {
   endStroke: () => void;
   resetTool: () => void;
   getEditableLoadedLayers: () => LoadedDatasetLayer[];
-  getEditableViewerLayers: () => ViewerLayer[];
+  getEditableViewerLayers: (layerSettingsByKey?: Record<string, LayerSettings | undefined>) => ViewerLayer[];
   getEditableChannelById: (channelId: string) => EditableSegmentationChannel | null;
 };
 
@@ -292,21 +303,21 @@ export function useAnnotate({
     setCanRedo(false);
   }, []);
 
-  const createChannel = useCallback(async () => {
+  const createChannel = useCallback(async (
+    options: AnnotateCreateChannelOptions = {}
+  ): Promise<AnnotateCreateChannelResult> => {
     if (!available) {
-      setMessage(unavailableReason);
-      return;
+      return { ok: false, message: unavailableReason };
     }
-    const name = creationName.trim();
+    const name = (options.name ?? creationName).trim();
     if (!name) {
-      setMessage('Channel name is required.');
-      return;
+      return { ok: false, message: 'Channel name is required.' };
     }
     if (isNameConflict(name, baseChannelNamesRef.current, channelsRef.current.values())) {
-      setMessage('Channel name must be unique.');
-      return;
+      return { ok: false, message: 'Channel name must be unique.' };
     }
-    const source = sourceOptions.find((option) => option.id === selectedSourceId) ?? sourceOptions[0]!;
+    const requestedSourceId = options.sourceId ?? selectedSourceId;
+    const source = sourceOptions.find((option) => option.id === requestedSourceId) ?? sourceOptions[0]!;
     setBusy(true);
     setMessage(null);
     try {
@@ -363,10 +374,13 @@ export function useAnnotate({
       setChannelOrder((current) => [...current, channel.channelId]);
       setEditableVisibility((current) => ({ ...current, [channel.channelId]: true }));
       setActiveChannelIdState(channel.channelId);
-      setCreationName(`${name} copy`);
+      setCreationName(name);
+      setSelectedSourceId(source.id);
       markChanged(channel, true);
+      return { ok: true, channelId: channel.channelId };
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : String(error));
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      return { ok: false, message: errorMessage };
     } finally {
       setBusy(false);
     }
@@ -382,9 +396,51 @@ export function useAnnotate({
     volumeCount,
   ]);
 
+  const deleteActiveChannel = useCallback(() => {
+    const channelId = activeChannelId;
+    if (!channelId) {
+      return;
+    }
+    const channel = channelsRef.current.get(channelId);
+    if (!channel) {
+      return;
+    }
+    if (typeof globalThis.confirm === 'function') {
+      const confirmed = globalThis.confirm(`Delete annotation channel "${channel.name}"?`);
+      if (!confirmed) {
+        return;
+      }
+    }
+    channelsRef.current.delete(channelId);
+    undoStackRef.current = undoStackRef.current.filter((entry) => entry.channelId !== channelId);
+    redoStackRef.current = redoStackRef.current.filter((entry) => entry.channelId !== channelId);
+    if (strokeRef.current?.channelId === channelId) {
+      strokeRef.current = null;
+    }
+    setChannelOrder((current) => current.filter((entry) => entry !== channelId));
+    setEditableVisibility((current) => {
+      const next = { ...current };
+      delete next[channelId];
+      return next;
+    });
+    setActiveChannelIdState(null);
+    setMessage(null);
+    scheduleUiUpdate();
+  }, [activeChannelId, scheduleUiUpdate]);
+
   const setActiveChannelId = useCallback((channelId: string | null) => {
-    setActiveChannelIdState(channelId && channelsRef.current.has(channelId) ? channelId : null);
-  }, []);
+    const nextChannelId = channelId && channelsRef.current.has(channelId) ? channelId : null;
+    setActiveChannelIdState((current) => {
+      if (current && current !== nextChannelId) {
+        const previousChannel = channelsRef.current.get(current);
+        if (previousChannel) {
+          previousChannel.enabled = false;
+        }
+      }
+      return nextChannelId;
+    });
+    scheduleUiUpdate();
+  }, [scheduleUiUpdate]);
 
   const setChannelVisible = useCallback((channelId: string, visible: boolean) => {
     setEditableVisibility((current) => ({ ...current, [channelId]: visible }));
@@ -560,7 +616,8 @@ export function useAnnotate({
     stroke.visitedCenters.add(centerIndex);
 
     const labels = getOrCreateEditableTimepointLabels(channel, stroke.timepoint);
-    const nextLabel = stroke.brushMode === 'eraser' ? 0 : stroke.labelId;
+    const isEraserStroke = stroke.brushMode === 'eraser';
+    const nextLabel = isEraserStroke ? 0 : stroke.labelId;
     for (const { dx, dy, dz } of computeAnnotationBrushOffsets(stroke.radius, stroke.mode)) {
       const x = safeX + dx;
       const y = safeY + dy;
@@ -570,6 +627,9 @@ export function useAnnotate({
       }
       const index = (z * height + y) * width + x;
       const previous = labels[index] ?? 0;
+      if (isEraserStroke && previous !== stroke.labelId) {
+        continue;
+      }
       if (previous === nextLabel) {
         continue;
       }
@@ -680,12 +740,13 @@ export function useAnnotate({
   );
 
   const getEditableViewerLayers = useCallback(
-    () =>
+    (layerSettingsByKey?: Record<string, LayerSettings | undefined>) =>
       channels.map((channel) =>
         createEditableViewerLayer({
           channel,
           visible: editableVisibility[channel.channelId] ?? true,
           brickAtlas: editableLayerBrickAtlases[channel.layerKey] ?? null,
+          settings: layerSettingsByKey?.[channel.layerKey],
         })
       ),
     [channels, editableLayerBrickAtlases, editableVisibility]
@@ -716,6 +777,7 @@ export function useAnnotate({
     setSelectedSourceId,
     setCreationName,
     createChannel,
+    deleteActiveChannel,
     setActiveChannelId,
     setChannelVisible,
     setEnabled,

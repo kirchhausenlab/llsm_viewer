@@ -33,40 +33,130 @@
   width: 100%;
 }
 
-.annotate-window .annotate-create-row,
-.annotate-window .annotate-toolbar,
-.annotate-window .annotate-history-row,
-.annotate-window .annotate-label-actions,
+.annotate-window .annotate-top-row,
+.annotate-window .annotate-tool-row,
+.annotate-window .annotate-mode-history-row,
 .export-channel-window .export-channel-actions {
   flex-wrap: wrap;
 }
 
-.annotate-window .annotate-create-row.is-locked,
-.annotate-window .annotate-name-row.is-locked {
-  opacity: 0.55;
+.floating-window--annotate-create {
+  z-index: 22;
 }
 
-.annotate-window .annotate-toggle {
+.annotate-window .annotate-top-row button {
   flex: 1 1 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   text-align: center;
 }
 
-.annotate-window .annotate-name-row,
+.annotate-window .annotate-body {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  transition: opacity 0.18s ease;
+}
+
+.annotate-window .annotate-body.is-disabled {
+  opacity: 0.46;
+}
+
+.annotate-window .annotate-info-row {
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 0;
+}
+
+.annotate-window .annotate-info-label {
+  flex: 0 0 auto;
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: rgba(255, 255, 255, 0.78);
+}
+
+.annotate-window .annotate-info-value,
+.annotate-window .annotate-current-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.9rem;
+  font-weight: var(--type-weight-label);
+  letter-spacing: var(--type-tracking-ui);
+}
+
+.annotate-window .annotate-info-value {
+  color: var(--text-primary);
+}
+
+.annotate-window .annotate-tool-segmented-control {
+  grid-template-columns: repeat(3, 2.6rem);
+}
+
+.annotate-window .annotate-mode-history-row {
+  align-items: stretch;
+}
+
+.annotate-window .annotate-icon-button {
+  flex: 0 0 2.35rem;
+  width: 2.35rem;
+  min-width: 2.35rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+}
+
+.annotate-window .annotate-tool-icon {
+  width: 1.15rem;
+  height: 1.15rem;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.annotate-create-window .annotate-create-form-row,
 .export-channel-window .export-channel-row {
   align-items: center;
+}
+
+.annotate-create-window .annotate-create-form-row label {
+  flex: 0 0 4.5rem;
+}
+
+.annotate-create-window .annotate-create-form-row input,
+.annotate-create-window .annotate-create-form-row select {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+.annotate-create-window .annotate-create-actions {
+  justify-content: center;
+}
+
+.annotate-create-window .annotate-create-actions button {
+  min-width: 6rem;
+  text-align: center;
+}
+
+.annotate-create-window .annotate-create-message {
+  font-size: 0.85rem;
+}
+
+.annotate-create-window .annotate-create-message--error {
+  color: var(--danger-text, #ff7b7b);
 }
 
 .annotate-window .annotate-slider-group {
   min-width: 220px;
 }
 
-.annotate-window .annotate-select-label,
 .export-channel-window .export-channel-row label {
   min-width: 0;
-}
-
-.annotate-window .annotate-select-label {
-  flex: 1 1 auto;
 }
 
 .annotate-window .annotate-divider {
@@ -77,37 +167,51 @@
 
 .annotate-window .annotate-label-manager {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 0.65rem;
+  grid-template-columns: minmax(0, 1fr) 116px;
+  gap: 0.9rem;
+  align-items: start;
+  height: var(--roi-manager-actions-height, auto);
 }
 
-.annotate-window .annotate-label-list {
+.floating-window .annotate-window .annotate-label-manager .roi-manager-list-item {
+  all: revert;
+  box-sizing: border-box;
+  color: inherit;
   display: flex;
-  flex-direction: column;
-  gap: 0.25rem;
-  min-height: 8rem;
-  max-height: 12rem;
-  overflow: auto;
-  border: 1px solid var(--control-border);
-  border-radius: 8px;
-  padding: 0.35rem;
-  background: var(--control-background-muted);
-}
-
-.annotate-window .annotate-label-item {
-  justify-content: flex-start;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
   text-align: left;
+  font: inherit;
+  line-height: inherit;
+  cursor: pointer;
 }
 
-.annotate-window .annotate-label-item.is-active {
-  border-color: var(--control-border-strong);
-  background: var(--control-background);
+.floating-window .annotate-window .annotate-label-manager .roi-manager-list-item:disabled {
+  cursor: default;
 }
 
-.annotate-window .annotate-label-actions {
-  display: flex;
-  flex-direction: column;
-  gap: 0.35rem;
+.floating-window .annotate-window .annotate-label-manager .roi-manager-list-item.is-active {
+  background: rgba(91, 140, 255, 0.24);
+  color: rgba(255, 255, 255, 0.96);
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.08),
+    0 6px 16px rgba(0, 0, 0, 0.18);
+}
+
+.floating-window .annotate-window .annotate-label-manager .roi-manager-actions button {
+  all: revert;
+  box-sizing: border-box;
+  color: inherit;
+  font: inherit;
+  font-weight: var(--type-weight-label);
+  letter-spacing: var(--type-tracking-ui);
+  line-height: inherit;
+  cursor: pointer;
+}
+
+.floating-window .annotate-window .annotate-label-manager .roi-manager-actions button:disabled {
+  cursor: default;
 }
 
 .annotate-window .annotate-message,
@@ -123,6 +227,7 @@
 
   .annotate-window .annotate-label-actions {
     flex-direction: row;
+    flex-wrap: wrap;
   }
 }
 

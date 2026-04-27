@@ -590,30 +590,6 @@ function ViewerShell({
     saveEditableChannel,
   });
 
-  const annotationStrokeHandlers = useMemo(() => ({
-    enabled: Boolean(annotateController.available && annotateController.activeChannel?.enabled),
-    onStrokeStart: annotateController.beginStroke,
-    onStrokeApply: annotateController.applyStrokeAt,
-    onStrokeEnd: annotateController.endStroke,
-  }), [
-    annotateController.activeChannel?.enabled,
-    annotateController.applyStrokeAt,
-    annotateController.available,
-    annotateController.beginStroke,
-    annotateController.endStroke,
-  ]);
-
-  const volumeViewerWithAnnotation = useMemo(
-    () =>
-      ({
-        ...volumeViewerProps,
-        layers: [...volumeViewerProps.layers, ...annotateController.getEditableViewerLayers()],
-        onRegisterCaptureTarget: registerVolumeCaptureTarget,
-        annotation: annotationStrokeHandlers,
-      }) satisfies ViewerShellProps['volumeViewerProps'],
-    [annotateController, annotationStrokeHandlers, registerVolumeCaptureTarget, volumeViewerProps]
-  );
-
   const {
     isChannelsWindowOpen,
     openChannelsWindow,
@@ -671,6 +647,50 @@ function ViewerShell({
     hasTrackData,
     canShowPlotSettings: selectedTracksPanel.shouldRender
   });
+
+  const isAnnotationInputEnabled = Boolean(
+    annotateController.available &&
+    isAnnotateOpen &&
+    annotateController.activeChannel?.enabled
+  );
+
+  useEffect(() => {
+    if (!isAnnotateOpen) {
+      annotateController.setEnabled(false);
+    }
+  }, [annotateController.setEnabled, isAnnotateOpen]);
+
+  const annotationStrokeHandlers = useMemo(() => ({
+    enabled: isAnnotationInputEnabled,
+    onStrokeStart: annotateController.beginStroke,
+    onStrokeApply: annotateController.applyStrokeAt,
+    onStrokeEnd: annotateController.endStroke,
+  }), [
+    annotateController.applyStrokeAt,
+    annotateController.beginStroke,
+    annotateController.endStroke,
+    isAnnotationInputEnabled,
+  ]);
+
+  const volumeViewerWithAnnotation = useMemo(
+    () =>
+      ({
+        ...volumeViewerProps,
+        layers: [
+          ...volumeViewerProps.layers,
+          ...annotateController.getEditableViewerLayers(channelsPanel.layerSettings),
+        ],
+        onRegisterCaptureTarget: registerVolumeCaptureTarget,
+        annotation: annotationStrokeHandlers,
+      }) satisfies ViewerShellProps['volumeViewerProps'],
+    [
+      annotateController,
+      annotationStrokeHandlers,
+      channelsPanel.layerSettings,
+      registerVolumeCaptureTarget,
+      volumeViewerProps,
+    ]
+  );
 
   const resolvedChannelsPanel = useMemo(() => {
     const editableLayers = annotateController.getEditableLoadedLayers();
@@ -739,6 +759,22 @@ function ViewerShell({
   }, [
     annotateController,
     channelsPanel,
+  ]);
+
+  const selectedAnnotateChannel = useMemo(() => {
+    const channelId = resolvedChannelsPanel.activeChannelId;
+    if (!channelId) {
+      return null;
+    }
+    return {
+      channelId,
+      name: resolvedChannelsPanel.channelNameMap.get(channelId) ?? channelId,
+      editable: Boolean(annotateController.getEditableChannelById(channelId)),
+    };
+  }, [
+    annotateController,
+    resolvedChannelsPanel.activeChannelId,
+    resolvedChannelsPanel.channelNameMap,
   ]);
 
   const exportSources = useMemo<ChannelExportSource[]>(() => {
@@ -2545,6 +2581,7 @@ function ViewerShell({
           controlWindowWidth={controlWindowWidth}
           resetSignal={resetToken}
           controller={annotateController}
+          selectedChannel={selectedAnnotateChannel}
           onClose={closeAnnotate}
         />
       ) : null}

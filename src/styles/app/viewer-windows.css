@@ -825,7 +825,8 @@
   display: grid;
   grid-template-columns: minmax(0, 1fr) 116px;
   gap: 0.9rem;
-  min-height: 240px;
+  align-items: start;
+  height: var(--roi-manager-actions-height, auto);
 }
 
 .roi-manager-list {
@@ -833,6 +834,7 @@
   flex-direction: column;
   gap: 0.4rem;
   min-height: 0;
+  max-height: var(--roi-manager-actions-height, none);
   overflow-y: auto;
   padding-right: 0.2rem;
 }

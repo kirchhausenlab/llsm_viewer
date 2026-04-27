@@ -16,8 +16,9 @@ import {
   type SparseSegmentationLocalVoxel,
 } from '../preprocessedDataset/sparseSegmentation';
 import {
-  DEFAULT_MIP_EARLY_EXIT_THRESHOLD,
-  RENDER_STYLE_MIP,
+  createDefaultLayerSettings,
+  resolveLayerSamplingMode,
+  type LayerSettings,
 } from '../../../state/layerSettings';
 
 export const DEFAULT_ANNOTATION_BRICK_SIZE: SparseSegmentationBrickSize = [32, 32, 32];
@@ -472,12 +473,15 @@ export function createEditableViewerLayer({
   channel,
   visible,
   brickAtlas,
+  settings = createDefaultLayerSettings(),
 }: {
   channel: EditableSegmentationChannel;
   visible: boolean;
   brickAtlas: VolumeBrickAtlas | null;
+  settings?: LayerSettings;
 }): ViewerLayer {
   const layer = createEditableLoadedDatasetLayer(channel);
+  const samplingMode = resolveLayerSamplingMode(settings.renderStyle, settings.samplingMode, true);
   return {
     key: channel.layerKey,
     label: channel.name,
@@ -492,27 +496,27 @@ export function createEditableViewerLayer({
     max: layer.max,
     visible: visible && channel.overlayVisible,
     isHoverTarget: true,
-    sliderRange: 1,
-    minSliderIndex: 0,
-    maxSliderIndex: 0,
-    brightnessSliderIndex: 0,
-    contrastSliderIndex: 0,
-    windowMin: 0,
-    windowMax: 1,
-    color: '#ffffff',
-    offsetX: 0,
-    offsetY: 0,
-    renderStyle: RENDER_STYLE_MIP,
-    blDensityScale: 1,
-    blBackgroundCutoff: 0,
-    blOpacityScale: 1,
-    blEarlyExitAlpha: 0.98,
-    mipEarlyExitThreshold: DEFAULT_MIP_EARLY_EXIT_THRESHOLD,
-    invert: false,
-    samplingMode: 'nearest',
+    sliderRange: settings.sliderRange,
+    minSliderIndex: settings.minSliderIndex,
+    maxSliderIndex: settings.maxSliderIndex,
+    brightnessSliderIndex: settings.brightnessSliderIndex,
+    contrastSliderIndex: settings.contrastSliderIndex,
+    windowMin: settings.windowMin,
+    windowMax: settings.windowMax,
+    color: settings.color,
+    offsetX: settings.xOffset,
+    offsetY: settings.yOffset,
+    renderStyle: settings.renderStyle,
+    blDensityScale: settings.blDensityScale,
+    blBackgroundCutoff: settings.blBackgroundCutoff,
+    blOpacityScale: settings.blOpacityScale,
+    blEarlyExitAlpha: settings.blEarlyExitAlpha,
+    mipEarlyExitThreshold: settings.mipEarlyExitThreshold,
+    invert: settings.invert,
+    samplingMode,
     isSegmentation: true,
-    mode: channel.mode === '2d' ? 'slice' : '3d',
-    sliceIndex: channel.mode === '2d' ? undefined : undefined,
+    mode: undefined,
+    sliceIndex: undefined,
     scaleLevel: 0,
     brickPageTable: brickAtlas?.pageTable ?? null,
     brickAtlas,
