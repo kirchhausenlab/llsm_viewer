@@ -572,8 +572,15 @@ function buildManifest(dataset: BenchmarkDatasetSpec): PreprocessedManifest {
           ]
         }
       ],
-      voxelResolution: { x: 1, y: 1, z: 1, unit: 'μm', correctAnisotropy: false },
-      anisotropyCorrection: null
+      sourceVoxelResolution: { x: 1, y: 1, z: 1, unit: 'μm' },
+      storedVoxelResolution: { x: 1, y: 1, z: 1, unit: 'μm' },
+      voxelResolution: { x: 1, y: 1, z: 1, unit: 'μm' },
+      isotropicResampling: {
+        enabled: false,
+        scale: { x: 1, y: 1, z: 1 },
+        intensityInterpolation: 'linear',
+        segmentationInterpolation: 'nearest'
+      }
     }
   };
 }

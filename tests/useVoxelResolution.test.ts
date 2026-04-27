@@ -13,7 +13,7 @@ console.log('Starting useVoxelResolution tests');
   assert.strictEqual(hook.result.voxelResolutionInput.t, '1.0');
   assert.strictEqual(hook.result.voxelResolutionInput.unit, 'μm');
   assert.strictEqual(hook.result.voxelResolutionInput.timeUnit, 's');
-  assert.deepStrictEqual(hook.result.trackScale, { x: 1, y: 1, z: 1 });
+  assert.strictEqual(hook.result.voxelResolutionInput.correctAnisotropy, false);
 })();
 
 (() => {

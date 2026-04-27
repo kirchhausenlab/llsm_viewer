@@ -116,3 +116,51 @@ test('keyboard movement uses the default translation multiplier and ignores shif
     hook.unmount();
   });
 });
+
+test('camera face views orbit around the current target and preserve distance', () => {
+  withWindowMock(() => {
+    const hook = renderHook(() =>
+      useCameraControls({
+        trackLinesRef: { current: new Map() },
+        roiLinesRef: { current: new Map() },
+        volumeRootGroupRef: { current: null },
+        currentDimensionsRef: { current: null },
+        followTargetActiveRef: { current: false },
+        followTargetOffsetRef: { current: null },
+        setHasMeasured: () => {},
+        projectionMode: 'perspective',
+      }),
+    );
+
+    const camera = new THREE.PerspectiveCamera();
+    const controls = {
+      target: new THREE.Vector3(0, 0, 0),
+      update: () => {},
+    } as any;
+    hook.result.cameraRef.current = camera;
+    hook.result.controlsRef.current = controls;
+
+    camera.position.set(0, 0, 10);
+    assert.equal(hook.result.applyCameraFaceView('yz'), true);
+    assertNearlyEqual(camera.position.x, 10);
+    assertNearlyEqual(camera.position.y, 0);
+    assertNearlyEqual(camera.position.z, 0);
+    assertNearlyEqual(camera.position.distanceTo(controls.target), 10);
+    assertNearlyEqual(controls.target.x, 0);
+    assertNearlyEqual(controls.target.y, 0);
+    assertNearlyEqual(controls.target.z, 0);
+
+    camera.position.set(0, 0, 10);
+    controls.target.set(0, 0, 0);
+    assert.equal(hook.result.applyCameraFaceView('xz'), true);
+    assertNearlyEqual(camera.position.x, 0);
+    assertNearlyEqual(camera.position.y, -10);
+    assertNearlyEqual(camera.position.z, 0);
+    assertNearlyEqual(camera.position.distanceTo(controls.target), 10);
+    assertNearlyEqual(camera.up.x, 0);
+    assertNearlyEqual(camera.up.y, 0);
+    assertNearlyEqual(camera.up.z, 1);
+
+    hook.unmount();
+  });
+});

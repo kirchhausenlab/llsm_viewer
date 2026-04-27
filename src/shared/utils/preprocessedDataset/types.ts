@@ -6,18 +6,19 @@ import type {
 } from '../../../types/voxelResolution';
 import type { CompiledTrackSet, CompiledTrackSetHeader } from '../../../types/tracks';
 
-export const LEGACY_PREPROCESSED_DATASET_FORMAT = 'llsm-viewer-preprocessed-vnext-hes1' as const;
-export const PREPROCESSED_DATASET_FORMAT = 'llsm-viewer-preprocessed-vnext-hes2' as const;
+export const PREPROCESSED_DATASET_FORMAT = 'llsm-viewer-preprocessed-isotropic-v1' as const;
 export const SPARSE_SEGMENTATION_PREPROCESSED_DATASET_FORMAT =
-  'llsm-viewer-preprocessed-vnext-sparse-seg1' as const;
+  'llsm-viewer-preprocessed-isotropic-sparse-v1' as const;
 export type PreprocessedDatasetFormat =
-  | typeof LEGACY_PREPROCESSED_DATASET_FORMAT
   | typeof PREPROCESSED_DATASET_FORMAT
   | typeof SPARSE_SEGMENTATION_PREPROCESSED_DATASET_FORMAT;
 export type StoredIntensityDataType = 'uint8' | 'uint16';
 
-export type AnisotropyCorrectionMetadata = {
+export type IsotropicResamplingMetadata = {
+  enabled: boolean;
   scale: AnisotropyScaleFactors;
+  intensityInterpolation: 'linear';
+  segmentationInterpolation: 'nearest';
 };
 
 export type TrackSetExportMetadata = {
@@ -329,9 +330,11 @@ export type PreprocessedManifest = {
     totalVolumeCount: number;
     channels: PreprocessedChannelManifest[];
     trackSets: PreprocessedTrackSetManifestEntry[];
+    sourceVoxelResolution: VoxelResolutionValues;
+    storedVoxelResolution: VoxelResolutionValues;
     voxelResolution: VoxelResolutionValues;
     temporalResolution: TemporalResolutionMetadata;
-    anisotropyCorrection?: AnisotropyCorrectionMetadata | null;
+    isotropicResampling: IsotropicResamplingMetadata;
     backgroundMask?: PreprocessedBackgroundMaskManifest | null;
   };
 };

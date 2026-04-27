@@ -1,7 +1,6 @@
 import { useCallback, useMemo, useState } from 'react';
 import type { Dispatch, SetStateAction } from 'react';
 
-import { computeAnisotropyScale } from '../shared/utils/anisotropyCorrection';
 import type {
   TemporalResolutionUnit,
   VoxelResolutionAxis,
@@ -9,7 +8,6 @@ import type {
   VoxelResolutionUnit,
   VoxelResolutionValues
 } from '../types/voxelResolution';
-import type { AnisotropyScaleFactors } from '../types/voxelResolution';
 
 const DEFAULT_VOXEL_RESOLUTION: VoxelResolutionInput = {
   x: '1.0',
@@ -21,13 +19,11 @@ const DEFAULT_VOXEL_RESOLUTION: VoxelResolutionInput = {
   correctAnisotropy: false
 };
 
-const SPATIAL_VOXEL_RESOLUTION_AXES: ReadonlyArray<keyof AnisotropyScaleFactors> = ['x', 'y', 'z'];
+const SPATIAL_VOXEL_RESOLUTION_AXES: ReadonlyArray<'x' | 'y' | 'z'> = ['x', 'y', 'z'];
 
 export type VoxelResolutionState = {
   voxelResolutionInput: VoxelResolutionInput;
   voxelResolution: VoxelResolutionValues | null;
-  anisotropyScale: { x: number; y: number; z: number } | null;
-  trackScale: { x: number; y: number; z: number };
 };
 
 export type VoxelResolutionActions = {
@@ -61,14 +57,9 @@ export function useVoxelResolution(initial: VoxelResolutionInput = DEFAULT_VOXEL
       x: parsed.x ?? 0,
       y: parsed.y ?? 0,
       z: parsed.z ?? 0,
-      unit: voxelResolutionInput.unit,
-      correctAnisotropy: voxelResolutionInput.correctAnisotropy
+      unit: voxelResolutionInput.unit
     };
   }, [voxelResolutionInput]);
-
-  const anisotropyScale = useMemo(() => computeAnisotropyScale(voxelResolution), [voxelResolution]);
-
-  const trackScale = useMemo(() => anisotropyScale ?? { x: 1, y: 1, z: 1 }, [anisotropyScale]);
 
   const handleVoxelResolutionAxisChange = useCallback((axis: VoxelResolutionAxis, value: string) => {
     const normalizedValue = value.replace(/,/g, '.');
@@ -110,8 +101,6 @@ export function useVoxelResolution(initial: VoxelResolutionInput = DEFAULT_VOXEL
   return {
     voxelResolutionInput,
     voxelResolution,
-    anisotropyScale,
-    trackScale,
     handleVoxelResolutionAxisChange,
     handleVoxelResolutionUnitChange,
     handleVoxelResolutionTimeUnitChange,

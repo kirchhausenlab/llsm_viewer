@@ -7,7 +7,7 @@ import { buildDefaultViewerPropWorldState } from '../../src/components/viewers/v
 import type { ViewerProp } from '../../src/types/viewerProps.ts';
 
 const TOTAL_TIMEPOINTS = 8;
-const VOXEL_RESOLUTION = { x: 2, y: 2, z: 4, unit: 'μm', correctAnisotropy: false } as const;
+const VOXEL_RESOLUTION = { x: 2, y: 2, z: 4, unit: 'μm' } as const;
 
 function withConfirmMock<T>(impl: (message: string) => boolean, test: () => T): T {
   const previous = (globalThis as typeof globalThis & { confirm?: typeof globalThis.confirm }).confirm;

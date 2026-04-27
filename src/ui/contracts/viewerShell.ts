@@ -48,7 +48,6 @@ type ViewerPanelsLoadingInput = Pick<
 
 type ViewerPanelsTrackInput = Pick<
   ViewerShellProps['volumeViewerProps'],
-  | 'trackScale'
   | 'tracks'
   | 'compiledTrackPayloadByTrackSet'
   | 'onRequireTrackPayloads'

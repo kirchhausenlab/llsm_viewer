@@ -44,7 +44,6 @@ function createTrackHook(options?: {
       trackLineWidthByTrackSet: {},
       trackColorModesByTrackSet: {},
       channelTrackOffsets: {},
-      trackScale: {},
       isFullTrackTrailEnabled: options?.isFullTrackTrailEnabled ?? true,
       trackTrailLength: options?.trackTrailLength ?? 10,
       drawTrackCentroids: options?.drawTrackCentroids ?? false,
@@ -144,7 +143,6 @@ function createTrackHook(options?: {
       trackLineWidthByTrackSet: {},
       trackColorModesByTrackSet: {},
       channelTrackOffsets: {},
-      trackScale: {},
       isFullTrackTrailEnabled: true,
       trackTrailLength: 10,
       drawTrackCentroids: false,
@@ -234,7 +232,6 @@ function createTrackHook(options?: {
   const trackLineWidthByTrackSet = {};
   const trackColorModesByTrackSet = {};
   const channelTrackOffsets = {};
-  const trackScale = {};
   const selectedTrackIds = new Set<string>();
   const containerRef = { current: null } as const;
   const rendererRef = { current: null } as const;
@@ -250,7 +247,6 @@ function createTrackHook(options?: {
       trackLineWidthByTrackSet,
       trackColorModesByTrackSet,
       channelTrackOffsets,
-      trackScale,
       isFullTrackTrailEnabled: false,
       trackTrailLength: 1,
       drawTrackCentroids: false,

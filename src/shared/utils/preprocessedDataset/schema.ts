@@ -28,7 +28,6 @@ import type {
   ZarrArrayShardingPlanArrayKind
 } from './types';
 import {
-  LEGACY_PREPROCESSED_DATASET_FORMAT,
   PREPROCESSED_DATASET_FORMAT,
   SPARSE_SEGMENTATION_PREPROCESSED_DATASET_FORMAT,
   type StoredIntensityDataType
@@ -42,6 +41,8 @@ import {
 import type { VolumeDataType } from '../../../types/volume';
 
 type UnknownRecord = Record<string, unknown>;
+
+const VOXEL_RESOLUTION_EPSILON = 1e-6;
 
 const VOLUME_DATA_TYPES: readonly VolumeDataType[] = [
   'uint8',
@@ -1496,8 +1497,6 @@ function validateIntensityLayer({
         : null;
     if (inferredStoredDataType) {
       storedDataType = inferredStoredDataType;
-    } else if (format === LEGACY_PREPROCESSED_DATASET_FORMAT) {
-      storedDataType = 'uint8';
     } else {
       throw new Error(`Invalid manifest schema at ${path}.storedDataType: expected a value.`);
     }
@@ -1644,13 +1643,11 @@ function validateVoxelResolution(value: unknown, path: string): VoxelResolutionV
   if (!VOXEL_RESOLUTION_UNITS.includes(unit as VoxelResolutionValues['unit'])) {
     throw new Error(`Invalid manifest schema at ${path}.unit: unsupported unit "${unit}".`);
   }
-  const correctAnisotropy = expectBoolean(resolution.correctAnisotropy, `${path}.correctAnisotropy`);
   return {
     x,
     y,
     z,
-    unit: unit as VoxelResolutionValues['unit'],
-    correctAnisotropy
+    unit: unit as VoxelResolutionValues['unit']
   };
 }
 
@@ -1673,27 +1670,117 @@ function validateTemporalResolution(
   };
 }
 
-function validateAnisotropyCorrection(
+function areVoxelResolutionValuesEqual(left: number, right: number): boolean {
+  return Math.abs(left - right) <= VOXEL_RESOLUTION_EPSILON;
+}
+
+function assertMatchingVoxelResolution(
+  actual: VoxelResolutionValues,
+  expected: VoxelResolutionValues,
+  path: string,
+  expectedPath: string
+): void {
+  if (actual.unit !== expected.unit) {
+    throw new Error(`Invalid manifest schema at ${path}.unit: expected unit to match ${expectedPath}.unit.`);
+  }
+  for (const axis of ['x', 'y', 'z'] as const) {
+    if (!areVoxelResolutionValuesEqual(actual[axis], expected[axis])) {
+      throw new Error(`Invalid manifest schema at ${path}.${axis}: expected value to match ${expectedPath}.${axis}.`);
+    }
+  }
+}
+
+function validateIsotropicResampling(
   value: unknown,
   path: string
-): { scale: { x: number; y: number; z: number } } | null | undefined {
-  if (value === undefined) {
-    return undefined;
-  }
-  if (value === null) {
-    return null;
-  }
-  const correction = expectRecord(value, path);
-  const scale = expectRecord(correction.scale, `${path}.scale`);
+): PreprocessedManifest['dataset']['isotropicResampling'] {
+  const resampling = expectRecord(value, path);
+  const enabled = expectBoolean(resampling.enabled, `${path}.enabled`);
+  const scale = expectRecord(resampling.scale, `${path}.scale`);
   const x = expectNumberField(scale.x, `${path}.scale.x`);
   const y = expectNumberField(scale.y, `${path}.scale.y`);
   const z = expectNumberField(scale.z, `${path}.scale.z`);
   if (x <= 0 || y <= 0 || z <= 0) {
-    throw new Error(`Invalid manifest schema at ${path}.scale: anisotropy scale values must be positive.`);
+    throw new Error(`Invalid manifest schema at ${path}.scale: isotropic resampling scale values must be positive.`);
+  }
+  const intensityInterpolation = expectString(
+    resampling.intensityInterpolation,
+    `${path}.intensityInterpolation`
+  );
+  if (intensityInterpolation !== 'linear') {
+    throw new Error(`Invalid manifest schema at ${path}.intensityInterpolation: expected "linear".`);
+  }
+  const segmentationInterpolation = expectString(
+    resampling.segmentationInterpolation,
+    `${path}.segmentationInterpolation`
+  );
+  if (segmentationInterpolation !== 'nearest') {
+    throw new Error(`Invalid manifest schema at ${path}.segmentationInterpolation: expected "nearest".`);
   }
   return {
-    scale: { x, y, z }
+    enabled,
+    scale: { x, y, z },
+    intensityInterpolation: 'linear',
+    segmentationInterpolation: 'nearest'
   };
+}
+
+function validateIsotropicResolutionMetadata({
+  sourceVoxelResolution,
+  storedVoxelResolution,
+  voxelResolution,
+  isotropicResampling
+}: {
+  sourceVoxelResolution: VoxelResolutionValues;
+  storedVoxelResolution: VoxelResolutionValues;
+  voxelResolution: VoxelResolutionValues;
+  isotropicResampling: PreprocessedManifest['dataset']['isotropicResampling'];
+}): void {
+  if (sourceVoxelResolution.unit !== storedVoxelResolution.unit) {
+    throw new Error(
+      'Invalid manifest schema at manifest.dataset.storedVoxelResolution.unit: expected unit to match manifest.dataset.sourceVoxelResolution.unit.'
+    );
+  }
+  assertMatchingVoxelResolution(
+    voxelResolution,
+    storedVoxelResolution,
+    'manifest.dataset.voxelResolution',
+    'manifest.dataset.storedVoxelResolution'
+  );
+  if (
+    isotropicResampling.enabled &&
+    (
+      !areVoxelResolutionValuesEqual(storedVoxelResolution.x, storedVoxelResolution.y) ||
+      !areVoxelResolutionValuesEqual(storedVoxelResolution.y, storedVoxelResolution.z)
+    )
+  ) {
+    throw new Error(
+      'Invalid manifest schema at manifest.dataset.storedVoxelResolution: stored data must be isotropic.'
+    );
+  }
+
+  const expectedScale = {
+    x: sourceVoxelResolution.x / storedVoxelResolution.x,
+    y: sourceVoxelResolution.y / storedVoxelResolution.y,
+    z: sourceVoxelResolution.z / storedVoxelResolution.z
+  };
+  for (const axis of ['x', 'y', 'z'] as const) {
+    if (!areVoxelResolutionValuesEqual(isotropicResampling.scale[axis], expectedScale[axis])) {
+      throw new Error(
+        `Invalid manifest schema at manifest.dataset.isotropicResampling.scale.${axis}: expected source-to-stored voxel scale.`
+      );
+    }
+  }
+
+  const shouldBeEnabled =
+    !areVoxelResolutionValuesEqual(isotropicResampling.scale.x, 1) ||
+    !areVoxelResolutionValuesEqual(isotropicResampling.scale.y, 1) ||
+    !areVoxelResolutionValuesEqual(isotropicResampling.scale.z, 1);
+  if (isotropicResampling.enabled !== shouldBeEnabled) {
+    throw new Error(
+      'Invalid manifest schema at manifest.dataset.isotropicResampling.enabled: expected value to match resampling scale.'
+    );
+  }
 }
 
 function validateChannel({
@@ -1739,7 +1826,6 @@ export function coercePreprocessedManifest(value: unknown): PreprocessedManifest
   const format = expectString(manifest.format, 'manifest.format');
   if (
     format !== PREPROCESSED_DATASET_FORMAT &&
-    format !== LEGACY_PREPROCESSED_DATASET_FORMAT &&
     format !== SPARSE_SEGMENTATION_PREPROCESSED_DATASET_FORMAT
   ) {
     throw new Error('Unsupported preprocessed dataset format.');
@@ -1821,12 +1907,26 @@ export function coercePreprocessedManifest(value: unknown): PreprocessedManifest
     trackSets.push(trackSet);
   }
 
+  const sourceVoxelResolution = validateVoxelResolution(
+    dataset.sourceVoxelResolution,
+    'manifest.dataset.sourceVoxelResolution'
+  );
+  const storedVoxelResolution = validateVoxelResolution(
+    dataset.storedVoxelResolution,
+    'manifest.dataset.storedVoxelResolution'
+  );
   const voxelResolution = validateVoxelResolution(dataset.voxelResolution, 'manifest.dataset.voxelResolution');
   const temporalResolution = validateTemporalResolution(dataset.temporalResolution, 'manifest.dataset.temporalResolution');
-  const anisotropyCorrection = validateAnisotropyCorrection(
-    dataset.anisotropyCorrection,
-    'manifest.dataset.anisotropyCorrection'
+  const isotropicResampling = validateIsotropicResampling(
+    dataset.isotropicResampling,
+    'manifest.dataset.isotropicResampling'
   );
+  validateIsotropicResolutionMetadata({
+    sourceVoxelResolution,
+    storedVoxelResolution,
+    voxelResolution,
+    isotropicResampling
+  });
   const backgroundMask = validateBackgroundMask(dataset.backgroundMask, 'manifest.dataset.backgroundMask');
   if (backgroundMask && !layerKeys.has(backgroundMask.sourceLayerKey)) {
     throw new Error(
@@ -1842,9 +1942,11 @@ export function coercePreprocessedManifest(value: unknown): PreprocessedManifest
       totalVolumeCount,
       channels,
       trackSets,
+      sourceVoxelResolution,
+      storedVoxelResolution,
       voxelResolution,
       temporalResolution,
-      ...(anisotropyCorrection !== undefined ? { anisotropyCorrection } : {}),
+      isotropicResampling,
       backgroundMask: backgroundMask ?? null
     }
   };

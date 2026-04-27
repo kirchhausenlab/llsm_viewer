@@ -169,7 +169,7 @@ async function runCase(entry: BenchmarkCase) {
     layers,
     channels: [{ id: 'channel-seg', name: 'Segmentation' }],
     trackSets: [],
-    voxelResolution: { x: 120, y: 120, z: 300, unit: 'nm', correctAnisotropy: false },
+    voxelResolution: { x: 120, y: 120, z: 300, unit: 'nm' },
     temporalResolution: { interval: 1, unit: 's' },
     movieMode: '3d',
     storage: counted.storage,

@@ -153,7 +153,7 @@ export default function FrontPageContainer({
     const now = new Date();
     const stamp = now.toISOString().replace(/[:.]/g, '-');
     const random = Math.random().toString(16).slice(2, 6);
-    return `llsm-viewer-preprocessed-vnext-hes2-${stamp}-${random}`;
+    return `llsm-viewer-preprocessed-isotropic-v1-${stamp}-${random}`;
   }, []);
 
   const ensureZarrDirectoryName = useCallback((name: string): string => {
@@ -446,6 +446,7 @@ export default function FrontPageContainer({
         channels: channelsMetadata,
         trackSets: trackSetsMetadata,
         voxelResolution: voxelResolutionValue,
+        makeDataIsotropic: voxelResolutionInput.correctAnisotropy,
         temporalResolution: temporalResolutionValue,
         movieMode: '3d',
         inputInterpretation: selectedExperimentType,

@@ -54,3 +54,26 @@ test('@smoke projection mode can switch between perspective and orthographic aft
 
   await expect(page.locator('.volume-viewer canvas')).toBeVisible();
 });
+
+test('@smoke top menu face view shortcuts keep the volume visible', async ({ page }) => {
+  const tiffPaths = createSyntheticVolumeMovieTiffPaths({ seed: 29 });
+
+  await launchViewerFromChannelFixtures(
+    page,
+    [
+      {
+        name: 'Face View Smoke',
+        tiffPaths,
+      }
+    ],
+    { voxelResolution: STANDARD_VOXEL_RESOLUTION }
+  );
+
+  for (const face of ['XY', 'YZ', 'XZ'] as const) {
+    await page.getByRole('button', { name: face, exact: true }).click();
+    await forceViewerRender(page);
+    const metrics = await collectPrimaryCanvasMetrics(page);
+    expect(metrics.nonBlackSamples).toBeGreaterThan(0);
+    expect(metrics.avgLuma).toBeGreaterThan(0);
+  }
+});

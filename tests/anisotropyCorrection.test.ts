@@ -11,8 +11,7 @@ console.log('Starting anisotropy correction tests');
     x: 1,
     y: 1,
     z: 1,
-    unit: 'μm',
-    correctAnisotropy: false
+    unit: 'μm'
   };
   assert.strictEqual(computeAnisotropyScale(isotropic), null);
 
@@ -20,8 +19,7 @@ console.log('Starting anisotropy correction tests');
     x: 5,
     y: 3.6,
     z: 2.1,
-    unit: 'μm',
-    correctAnisotropy: true
+    unit: 'μm'
   };
   const scale = computeAnisotropyScale(anisotropic);
   assert.ok(scale);

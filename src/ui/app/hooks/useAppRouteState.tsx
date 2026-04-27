@@ -218,10 +218,7 @@ export function useAppRouteState(): AppRouteState {
     createChannelSource,
     createVolumeSource
   });
-  const {
-    voxelResolution,
-    trackScale
-  } = voxelResolutionHook;
+  const { voxelResolution } = voxelResolutionHook;
   const {
     datasetError,
     datasetErrorContext,
@@ -251,16 +248,6 @@ export function useAppRouteState(): AppRouteState {
   const is3dViewerAvailable = true;
   const preferBrickResidency = true;
 
-  const effectiveTrackScale = useMemo(() => {
-    if (!preprocessedExperiment) {
-      return trackScale;
-    }
-    const saved = preprocessedExperiment.manifest.dataset.anisotropyCorrection?.scale ?? null;
-    if (!saved) {
-      return { x: 1, y: 1, z: 1 };
-    }
-    return saved;
-  }, [preprocessedExperiment, trackScale]);
   const createLayerDefaultSettings = useCallback(
     (layerKey: string): LayerSettings =>
       createLayerDefaultSettingsFromLayer({
@@ -1541,7 +1528,6 @@ export function useAppRouteState(): AppRouteState {
           expectedVolumes: expectedVolumeCount
         },
         tracks: {
-          trackScale: effectiveTrackScale,
           tracks: renderTracks,
           compiledTrackPayloadByTrackSet: compiledPayloadByTrackSet,
           onRequireTrackPayloads: ensureCompiledPayloadsLoaded,

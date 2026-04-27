@@ -24,7 +24,7 @@ import {
 } from '../../../hooks/useVolumeRenderSetup';
 import { DEFAULT_DESKTOP_RENDER_PIXEL_RATIO_CAP } from '../../../types/renderResolution';
 import type { MovementState, RoiRenderResource, TrackRenderResource } from '../VolumeViewer.types';
-import type { CameraRotation, CameraWindowState } from '../../../types/camera';
+import type { CameraFaceView, CameraRotation, CameraWindowState } from '../../../types/camera';
 import { normalizeSignedAngleDegrees } from '../../../shared/utils/cameraViews';
 
 const MOVEMENT_KEY_MAP: Record<string, keyof MovementState> = {
@@ -42,6 +42,21 @@ const ROLL_KEY_MAP: Record<string, keyof MovementState> = {
 };
 
 const LOOK_KEY_CODES = new Set(['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown']);
+
+const CAMERA_FACE_ORIENTATIONS: Record<CameraFaceView, { direction: THREE.Vector3; up: THREE.Vector3 }> = {
+  xy: {
+    direction: new THREE.Vector3(0, 0, 1),
+    up: new THREE.Vector3(0, 1, 0),
+  },
+  yz: {
+    direction: new THREE.Vector3(1, 0, 0),
+    up: new THREE.Vector3(0, 1, 0),
+  },
+  xz: {
+    direction: new THREE.Vector3(0, -1, 0),
+    up: new THREE.Vector3(0, 0, 1),
+  },
+};
 
 type PointerLookHandlers = {
   beginPointerLook: (event: PointerEvent) => void;
@@ -360,6 +375,41 @@ export function useCameraControls({
       followTargetOffsetRef,
       mapCanonicalToWorld,
       resolveOrientationVectors,
+      resolveTargetDistance,
+    ],
+  );
+
+  const applyCameraFaceView = useCallback(
+    (face: CameraFaceView): boolean => {
+      const camera = cameraRef.current;
+      const controls = controlsRef.current;
+      const orientation = CAMERA_FACE_ORIENTATIONS[face];
+      if (!camera || !controls || !orientation) {
+        return false;
+      }
+
+      const target = controls.target.clone();
+      const distance = resolveTargetDistance(camera, controls);
+      camera.position.copy(target).addScaledVector(orientation.direction, distance);
+      camera.up.copy(orientation.up);
+      controls.target.copy(target);
+      camera.lookAt(target);
+      camera.updateMatrixWorld(true);
+      controls.update();
+      rotationTargetRef.current.copy(target);
+
+      if (followTargetActiveRef.current) {
+        if (!followTargetOffsetRef.current) {
+          followTargetOffsetRef.current = new THREE.Vector3();
+        }
+        followTargetOffsetRef.current.copy(camera.position).sub(target);
+      }
+
+      return true;
+    },
+    [
+      followTargetActiveRef,
+      followTargetOffsetRef,
       resolveTargetDistance,
     ],
   );
@@ -838,6 +888,7 @@ export function useCameraControls({
     applyKeyboardRotation,
     applyKeyboardMovement,
     applyCameraPose,
+    applyCameraFaceView,
     captureCameraWindowState,
     createPointerLookHandlers,
     initializeRenderContext,

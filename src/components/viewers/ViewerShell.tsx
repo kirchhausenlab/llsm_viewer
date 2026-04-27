@@ -39,6 +39,7 @@ import {
 } from '../../state/layerSettings';
 import type {
   CameraCoordinate,
+  CameraFaceView,
   CameraRotation,
   CameraWindowController,
   CameraWindowState,
@@ -1646,6 +1647,29 @@ function ViewerShell({
     }
   }, [is2dViewActive, parsedCameraPosition.value, parsedCameraRotation.value, translationEnabled]);
 
+  const handleCameraFaceViewChange = useCallback((face: CameraFaceView) => {
+    if (is2dViewActive) {
+      return;
+    }
+    const controller = cameraControllerRef.current;
+    if (!controller) {
+      return;
+    }
+
+    const applied = controller.applyCameraFaceView(face);
+    if (applied) {
+      const nextState = controller.captureCameraState();
+      if (nextState) {
+        setCameraPositionDraft(coordinateToDraft(nextState.cameraPosition, {
+          decimalPlaces: 2,
+          fixed: true,
+        }));
+        setCameraRotationDraft(rotationToDraft(nextState.cameraRotation));
+      }
+      setIsCameraDraftDirty(false);
+    }
+  }, [is2dViewActive]);
+
   const handleVoxelFollowChange = useCallback((axis: keyof CoordinateDraft, value: string) => {
     setVoxelFollowDraft((current) => ({ ...current, [axis]: value }));
   }, []);
@@ -2116,6 +2140,10 @@ function ViewerShell({
       onToggle2dView: handleToggle2dView,
       twoDViewButtonDisabled,
       twoDViewButtonTitle,
+      isVrActive: modeToggle.isVrActive,
+      projectionMode: modeToggle.projectionMode,
+      onProjectionModeChange: modeToggle.onProjectionModeChange,
+      onCameraFaceViewChange: handleCameraFaceViewChange,
       onVrButtonClick: modeToggle.onVrButtonClick,
       vrButtonDisabled,
       vrButtonTitle,
@@ -2168,6 +2196,7 @@ function ViewerShell({
       openDrawRoiWindow,
       handleOpenSetMeasurementsWindow,
       handleToggle2dView,
+      handleCameraFaceViewChange,
       openRecordWindow,
       openRoiManagerWindow,
       openPropsWindow,

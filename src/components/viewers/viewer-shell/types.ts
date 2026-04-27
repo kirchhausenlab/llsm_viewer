@@ -15,6 +15,7 @@ import type { PreprocessedStorageHandle } from '../../../shared/storage/preproce
 import type { PreprocessedManifest } from '../../../shared/utils/preprocessedDataset/types';
 import type { LayerSettings, RenderStyle, SamplingMode } from '../../../state/layerSettings';
 import type { TrackSetState } from '../../../types/channelTracks';
+import type { CameraFaceView } from '../../../types/camera';
 import type { FollowedVoxelTarget } from '../../../types/follow';
 import type { HoveredVoxelInfo, HoverSettings, HoverType } from '../../../types/hover';
 import type { NumericRange, TrackColorMode, TrackPoint, TrackSummary } from '../../../types/tracks';
@@ -109,6 +110,10 @@ export type TopMenuProps = TopMenuChromeProps &
     onToggle2dView?: () => void;
     twoDViewButtonDisabled?: boolean;
     twoDViewButtonTitle?: string;
+    isVrActive?: boolean;
+    projectionMode?: ModeControlsProps['projectionMode'];
+    onProjectionModeChange?: ModeControlsProps['onProjectionModeChange'];
+    onCameraFaceViewChange?: (face: CameraFaceView) => void;
   };
 
 export type ModeControlsProps = {

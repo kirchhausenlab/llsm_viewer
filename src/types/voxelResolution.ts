@@ -22,7 +22,6 @@ export type VoxelResolutionValues = {
   y: number;
   z: number;
   unit: VoxelResolutionUnit;
-  correctAnisotropy: boolean;
 };
 
 export type TemporalResolutionMetadata = {

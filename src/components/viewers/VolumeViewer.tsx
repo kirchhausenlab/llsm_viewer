@@ -408,7 +408,6 @@ function VolumeViewer({
   onRegisterCameraWindowController,
   onRegisterReset,
   onRegisterCaptureTarget,
-  trackScale,
   tracks,
   compiledTrackPayloadByTrackSet,
   onRequireTrackPayloads,
@@ -589,6 +588,7 @@ function VolumeViewer({
     applyKeyboardRotation,
     applyKeyboardMovement,
     applyCameraPose,
+    applyCameraFaceView,
     captureCameraWindowState,
     createPointerLookHandlers,
     initializeRenderContext,
@@ -610,15 +610,15 @@ function VolumeViewer({
   useEffect(() => {
     onRegisterCameraWindowController?.({
       applyCameraPose,
+      applyCameraFaceView,
       captureCameraState: captureCameraWindowState,
     });
     return () => {
       onRegisterCameraWindowController?.(null);
     };
-  }, [applyCameraPose, captureCameraWindowState, onRegisterCameraWindowController]);
+  }, [applyCameraFaceView, applyCameraPose, captureCameraWindowState, onRegisterCameraWindowController]);
   const isDevMode = Boolean(import.meta.env?.DEV);
   const { resolvedAnisotropyScale, anisotropyStepRatio } = useVolumeViewerAnisotropy({
-    trackScale,
     volumeAnisotropyScaleRef,
     volumeStepScaleBaseRef,
     volumeStepScaleRatioRef,
@@ -811,7 +811,6 @@ function VolumeViewer({
     trackTrailLength,
     drawTrackCentroids,
     drawTrackStartingPoints,
-    trackScale,
     selectedTrackIds,
     followedTrackId,
     clampedTimeIndex,

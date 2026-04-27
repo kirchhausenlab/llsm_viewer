@@ -262,7 +262,7 @@ test('top menu renders the requested dropdown order and items', () => {
   });
 });
 
-test('top menu renders and toggles the 2D view button state', () => {
+test('top menu renders and toggles the 2D/3D segmented control state', () => {
   withEnvironmentMocks(() => {
     let toggleCalls = 0;
     const renderer = renderTopMenu({
@@ -272,11 +272,20 @@ test('top menu renders and toggles the 2D view button state', () => {
       }
     });
 
-    const twoDButton = renderer.root.findAll(
-      (node) => node.type === 'button' && extractText(node) === '2D view'
+    const dimensionControl = renderer.root.findAll(
+      (node) => node.type === 'div' && node.props['aria-label'] === 'View dimensionality'
+    )[0];
+    assert.ok(dimensionControl);
+    const twoDButton = dimensionControl.findAll(
+      (node) => node.type === 'button' && extractText(node) === '2D'
+    )[0];
+    const threeDButton = dimensionControl.findAll(
+      (node) => node.type === 'button' && extractText(node) === '3D'
     )[0];
     assert.ok(twoDButton);
+    assert.ok(threeDButton);
     assert.equal(twoDButton.props['aria-pressed'], false);
+    assert.equal(threeDButton.props['aria-pressed'], true);
 
     act(() => {
       twoDButton.props.onClick();
@@ -296,11 +305,94 @@ test('top menu renders and toggles the 2D view button state', () => {
       </UiThemeProvider>
     );
 
-    const threeDButton = renderer.root.findAll(
-      (node) => node.type === 'button' && extractText(node) === '3D view'
+    const updatedDimensionControl = renderer.root.findAll(
+      (node) => node.type === 'div' && node.props['aria-label'] === 'View dimensionality'
     )[0];
-    assert.ok(threeDButton);
-    assert.equal(threeDButton.props['aria-pressed'], true);
+    const updatedTwoDButton = updatedDimensionControl.findAll(
+      (node) => node.type === 'button' && extractText(node) === '2D'
+    )[0];
+    const updatedThreeDButton = updatedDimensionControl.findAll(
+      (node) => node.type === 'button' && extractText(node) === '3D'
+    )[0];
+    assert.ok(updatedTwoDButton);
+    assert.ok(updatedThreeDButton);
+    assert.equal(updatedTwoDButton.props['aria-pressed'], true);
+    assert.equal(updatedThreeDButton.props['aria-pressed'], false);
+
+    renderer.unmount();
+  });
+});
+
+test('top menu projection and face view controls call viewer handlers', () => {
+  withEnvironmentMocks(() => {
+    const projectionCalls: string[] = [];
+    const faceCalls: string[] = [];
+    const renderer = renderTopMenu({
+      is3dModeAvailable: true,
+      projectionMode: 'perspective',
+      onProjectionModeChange: (mode) => {
+        projectionCalls.push(mode);
+      },
+      onCameraFaceViewChange: (face) => {
+        faceCalls.push(face);
+      }
+    });
+
+    const projectionControl = renderer.root.findAll(
+      (node) => node.type === 'div' && node.props['aria-label'] === 'Projection mode'
+    )[0];
+    assert.ok(projectionControl);
+    const perspectiveButton = projectionControl.findAll(
+      (node) => node.type === 'button' && node.props['aria-label'] === 'Perspective'
+    )[0];
+    const isometricButton = projectionControl.findAll(
+      (node) => node.type === 'button' && node.props['aria-label'] === 'Isometric'
+    )[0];
+    assert.equal(perspectiveButton.props['aria-pressed'], true);
+    assert.equal(isometricButton.props['aria-pressed'], false);
+
+    act(() => {
+      isometricButton.props.onClick();
+    });
+
+    const faceControl = renderer.root.findAll(
+      (node) => node.type === 'div' && node.props['aria-label'] === 'Camera face views'
+    )[0];
+    const yzButton = faceControl.findAll(
+      (node) => node.type === 'button' && extractText(node) === 'YZ'
+    )[0];
+
+    act(() => {
+      yzButton.props.onClick();
+    });
+
+    assert.deepEqual(projectionCalls, ['orthographic']);
+    assert.deepEqual(faceCalls, ['yz']);
+
+    renderer.unmount();
+  });
+});
+
+test('top menu disables projection and face view controls in 2D view', () => {
+  withEnvironmentMocks(() => {
+    const renderer = renderTopMenu({
+      is3dModeAvailable: true,
+      is2dViewActive: true,
+      twoDViewButtonDisabled: false,
+      projectionMode: 'orthographic',
+      onProjectionModeChange: () => {},
+      onCameraFaceViewChange: () => {}
+    });
+
+    const projectionButtons = renderer.root
+      .findAll((node) => node.type === 'div' && node.props['aria-label'] === 'Projection mode')[0]
+      .findAll((node) => node.type === 'button');
+    const faceButtons = renderer.root
+      .findAll((node) => node.type === 'div' && node.props['aria-label'] === 'Camera face views')[0]
+      .findAll((node) => node.type === 'button');
+
+    assert.ok(projectionButtons.every((button) => button.props.disabled === true));
+    assert.ok(faceButtons.every((button) => button.props.disabled === true));
 
     renderer.unmount();
   });
@@ -814,6 +906,12 @@ test('top menu places scale and actions in the top-right cell and hover plus fol
       }
     });
 
+    const topSecondColumn = renderer.root.findAll(
+      (node) =>
+        node.type === 'div' &&
+        hasClassName(node, 'viewer-top-menu-cell--top') &&
+        hasClassName(node, 'viewer-top-menu-cell--column-2')
+    )[0];
     const topThirdColumn = renderer.root.findAll(
       (node) =>
         node.type === 'div' &&
@@ -866,8 +964,14 @@ test('top menu places scale and actions in the top-right cell and hover plus fol
       1
     );
     assert.equal(
-      topFourthColumn.findAll((node) => node.type === 'button' && extractText(node) === '2D view').length,
+      topSecondColumn.findAll(
+        (node) => node.type === 'div' && hasClassName(node, 'viewer-top-menu-view-controls')
+      ).length,
       1
+    );
+    assert.equal(
+      topFourthColumn.findAll((node) => node.type === 'button' && extractText(node) === '2D').length,
+      0
     );
     assert.ok(
       bottomThirdColumn.findAll((node) => node.props.role === 'tab' && node.props.id === 'top-menu-track-tab-set-a').length > 0

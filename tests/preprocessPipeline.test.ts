@@ -104,6 +104,9 @@ function decodeUint32ArrayLE(bytes: Uint8Array): Uint32Array {
   return decoded;
 }
 
+const ANISOTROPIC_TEST_VOXEL_RESOLUTION = { x: 120, y: 120, z: 300, unit: 'nm' } as const;
+const ISOTROPIC_TEST_VOXEL_RESOLUTION = { x: 120, y: 120, z: 120, unit: 'nm' } as const;
+
 test('preprocessDatasetToStorage writes loadable manifest and chunk data for mixed channels', async () => {
   const channels: ChannelExportMetadata[] = [
     {
@@ -202,7 +205,8 @@ test('preprocessDatasetToStorage writes loadable manifest and chunk data for mix
     layers,
     channels,
     trackSets,
-    voxelResolution: { x: 120, y: 120, z: 300, unit: 'nm', correctAnisotropy: true },
+    voxelResolution: ANISOTROPIC_TEST_VOXEL_RESOLUTION,
+    makeDataIsotropic: true,
     temporalResolution: { interval: 2.3, unit: 'ms' },
     movieMode: '3d',
     storage: storageHandle.storage,
@@ -221,6 +225,15 @@ test('preprocessDatasetToStorage writes loadable manifest and chunk data for mix
   assert.deepEqual(result.manifest.dataset.temporalResolution, {
     interval: 2.3,
     unit: 'ms'
+  });
+  assert.deepEqual(result.manifest.dataset.sourceVoxelResolution, ANISOTROPIC_TEST_VOXEL_RESOLUTION);
+  assert.deepEqual(result.manifest.dataset.storedVoxelResolution, ISOTROPIC_TEST_VOXEL_RESOLUTION);
+  assert.deepEqual(result.manifest.dataset.voxelResolution, ISOTROPIC_TEST_VOXEL_RESOLUTION);
+  assert.deepEqual(result.manifest.dataset.isotropicResampling, {
+    enabled: true,
+    scale: { x: 1, y: 1, z: 2.5 },
+    intensityInterpolation: 'linear',
+    segmentationInterpolation: 'nearest'
   });
 
   const finalizeIndex = progressEvents.findIndex((event) => event.stage === 'finalize-manifest');
@@ -277,7 +290,7 @@ test('preprocessDatasetToStorage writes loadable manifest and chunk data for mix
   const histogram = decodeUint32ArrayLE(intensityHistogramChunk);
   assert.equal(histogram.length, 256);
   const histogramTotal = histogram.reduce((sum, value) => sum + value, 0);
-  assert.equal(histogramTotal, 4);
+  assert.equal(histogramTotal, 12);
 
   const segmentationScale = segmentationLayer.sparse.scales[0];
   assert.ok(segmentationScale);
@@ -291,6 +304,58 @@ test('preprocessDatasetToStorage writes loadable manifest and chunk data for mix
     );
     assert.ok(shardBytes.byteLength > 0);
   }
+});
+
+test('preprocessDatasetToStorage preserves native anisotropic storage when isotropic resampling is disabled', async () => {
+  const channels: ChannelExportMetadata[] = [{ id: 'channel-a', name: 'Channel A' }];
+  const intensityFile = new File(['intensity-0'], 'intensity-t0.tif', { type: 'image/tiff' });
+  const volumeByFileName = new Map<string, VolumePayload>([
+    [
+      intensityFile.name,
+      createSyntheticVolumePayload({
+        width: 2,
+        height: 2,
+        depth: 1,
+        channels: 1,
+        values: [0, 64, 128, 255]
+      })
+    ]
+  ]);
+
+  const storageHandle = createInMemoryPreprocessedStorage({ datasetId: 'preprocess-native-anisotropic' });
+  const result = await preprocessDatasetToStorage({
+    layers: [
+      {
+        channelId: 'channel-a',
+        channelLabel: 'Channel A',
+        key: 'intensity',
+        label: 'Intensity',
+        files: [intensityFile],
+        isSegmentation: false
+      }
+    ],
+    channels,
+    trackSets: [],
+    voxelResolution: ANISOTROPIC_TEST_VOXEL_RESOLUTION,
+    temporalResolution: { interval: 2.3, unit: 'ms' },
+    movieMode: '3d',
+    storage: storageHandle.storage,
+    volumeLoader: createLoaderByFileName(volumeByFileName),
+    storageStrategy: { sharding: { enabled: false } }
+  });
+
+  const layer = result.manifest.dataset.channels[0]?.layers[0];
+  assert.ok(layer);
+  assert.equal(layer.depth, 1);
+  assert.deepEqual(result.manifest.dataset.sourceVoxelResolution, ANISOTROPIC_TEST_VOXEL_RESOLUTION);
+  assert.deepEqual(result.manifest.dataset.storedVoxelResolution, ANISOTROPIC_TEST_VOXEL_RESOLUTION);
+  assert.deepEqual(result.manifest.dataset.voxelResolution, ANISOTROPIC_TEST_VOXEL_RESOLUTION);
+  assert.deepEqual(result.manifest.dataset.isotropicResampling, {
+    enabled: false,
+    scale: { x: 1, y: 1, z: 1 },
+    intensityInterpolation: 'linear',
+    segmentationInterpolation: 'nearest'
+  });
 });
 
 test('preprocessDatasetToStorage splits regular multichannel sources into independent single-channel outputs', async () => {
@@ -339,7 +404,7 @@ test('preprocessDatasetToStorage splits regular multichannel sources into indepe
     layers,
     channels,
     trackSets: [],
-    voxelResolution: { x: 120, y: 120, z: 300, unit: 'nm', correctAnisotropy: false },
+    voxelResolution: ISOTROPIC_TEST_VOXEL_RESOLUTION,
     temporalResolution: { interval: 1, unit: 'ms' },
     movieMode: '3d',
     storage: storageHandle.storage,
@@ -407,7 +472,7 @@ test('preprocessDatasetToStorage emits valid skip metadata for sparse segmentati
     ],
     channels,
     trackSets: [],
-    voxelResolution: { x: 120, y: 120, z: 300, unit: 'nm', correctAnisotropy: true },
+    voxelResolution: ISOTROPIC_TEST_VOXEL_RESOLUTION,
     temporalResolution: { interval: 1, unit: 'ms' },
     movieMode: '3d',
     storage: storageHandle.storage,
@@ -500,7 +565,7 @@ test('preprocessDatasetToStorage rejects multiple volumes assigned to one channe
         layers,
         channels,
         trackSets: [],
-        voxelResolution: { x: 120, y: 120, z: 300, unit: 'nm', correctAnisotropy: false },
+        voxelResolution: ISOTROPIC_TEST_VOXEL_RESOLUTION,
         temporalResolution: { interval: 2.3, unit: 'ms' },
         movieMode: '3d',
         storage: storageHandle.storage,
@@ -541,7 +606,7 @@ test('preprocessDatasetToStorage maps single 3D TIFF to 2D movie timepoints', as
     layers,
     channels,
     trackSets: [],
-    voxelResolution: { x: 120, y: 120, z: 300, unit: 'nm', correctAnisotropy: false },
+    voxelResolution: ISOTROPIC_TEST_VOXEL_RESOLUTION,
     temporalResolution: { interval: 2.3, unit: 'ms' },
     movieMode: '3d',
     inputInterpretation: '2d-movie',
@@ -590,7 +655,7 @@ test('preprocessDatasetToStorage writes sharded chunks that volume provider read
     layers,
     channels,
     trackSets: [],
-    voxelResolution: { x: 120, y: 120, z: 300, unit: 'nm', correctAnisotropy: false },
+    voxelResolution: ISOTROPIC_TEST_VOXEL_RESOLUTION,
     temporalResolution: { interval: 2.3, unit: 'ms' },
     movieMode: '3d',
     storage: storageHandle.storage,
@@ -695,7 +760,7 @@ test('preprocessDatasetToStorage applies array-specific sharding policies', asyn
     layers,
     channels,
     trackSets: [],
-    voxelResolution: { x: 120, y: 120, z: 300, unit: 'nm', correctAnisotropy: false },
+    voxelResolution: ISOTROPIC_TEST_VOXEL_RESOLUTION,
     temporalResolution: { interval: 2.3, unit: 'ms' },
     movieMode: '3d',
     storage: storageHandle.storage,
@@ -757,7 +822,7 @@ test('preprocessDatasetToStorage writes playback atlas sidecars that volumeProvi
     layers,
     channels,
     trackSets: [],
-    voxelResolution: { x: 120, y: 120, z: 300, unit: 'nm', correctAnisotropy: false },
+    voxelResolution: ISOTROPIC_TEST_VOXEL_RESOLUTION,
     temporalResolution: { interval: 2.3, unit: 'ms' },
     movieMode: '3d',
     storage: storageHandle.storage,
@@ -856,7 +921,7 @@ test('preprocessDatasetToStorage can shard background masks across the first spa
     layers,
     channels,
     trackSets: [],
-    voxelResolution: { x: 120, y: 120, z: 300, unit: 'nm', correctAnisotropy: false },
+    voxelResolution: ISOTROPIC_TEST_VOXEL_RESOLUTION,
     temporalResolution: { interval: 2.3, unit: 'ms' },
     movieMode: '3d',
     backgroundMask: { values: [0] },
@@ -918,7 +983,7 @@ test('preprocessDatasetToStorage writes streaming subcell payloads that page tab
     layers,
     channels,
     trackSets: [],
-    voxelResolution: { x: 120, y: 120, z: 300, unit: 'nm', correctAnisotropy: false },
+    voxelResolution: ISOTROPIC_TEST_VOXEL_RESOLUTION,
     temporalResolution: { interval: 2.3, unit: 'ms' },
     movieMode: '3d',
     storage: storageHandle.storage,
@@ -1005,7 +1070,7 @@ test('preprocessDatasetToStorage stacks 2D TIFF sequence into one single-3D volu
     layers,
     channels,
     trackSets: [],
-    voxelResolution: { x: 120, y: 120, z: 300, unit: 'nm', correctAnisotropy: false },
+    voxelResolution: ISOTROPIC_TEST_VOXEL_RESOLUTION,
     temporalResolution: { interval: 2.3, unit: 'ms' },
     movieMode: '3d',
     inputInterpretation: 'single-3d-volume',
@@ -1066,7 +1131,7 @@ test('preprocessDatasetToStorage rejects multiple 3D files in 2D movie mode', as
         layers,
         channels,
         trackSets: [],
-        voxelResolution: { x: 120, y: 120, z: 300, unit: 'nm', correctAnisotropy: false },
+        voxelResolution: ISOTROPIC_TEST_VOXEL_RESOLUTION,
         temporalResolution: { interval: 2.3, unit: 'ms' },
         movieMode: '3d',
         inputInterpretation: '2d-movie',
@@ -1123,7 +1188,7 @@ test('preprocessDatasetToStorage validates consistent 2D slice shape in single-3
         layers,
         channels,
         trackSets: [],
-        voxelResolution: { x: 120, y: 120, z: 300, unit: 'nm', correctAnisotropy: false },
+        voxelResolution: ISOTROPIC_TEST_VOXEL_RESOLUTION,
         temporalResolution: { interval: 2.3, unit: 'ms' },
         movieMode: '3d',
         inputInterpretation: 'single-3d-volume',
@@ -1165,7 +1230,7 @@ test('preprocessDatasetToStorage writes and serves a shared background mask', as
     layers,
     channels,
     trackSets: [],
-    voxelResolution: { x: 120, y: 120, z: 300, unit: 'nm', correctAnisotropy: false },
+    voxelResolution: ISOTROPIC_TEST_VOXEL_RESOLUTION,
     temporalResolution: { interval: 2.3, unit: 'ms' },
     movieMode: '3d',
     backgroundMask: { values: [5] },

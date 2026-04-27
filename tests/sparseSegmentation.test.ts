@@ -337,7 +337,7 @@ test('preprocessing and provider keep sparse segmentation uint32 labels exact wi
     layers,
     channels: [{ id: 'channel-seg', name: 'Segmentation' }],
     trackSets: [],
-    voxelResolution: { x: 1000, y: 1000, z: 1000, unit: 'nm', correctAnisotropy: false },
+    voxelResolution: { x: 1000, y: 1000, z: 1000, unit: 'nm' },
     temporalResolution: { interval: 1, unit: 's' },
     movieMode: '3d',
     storage: storageHandle.storage,

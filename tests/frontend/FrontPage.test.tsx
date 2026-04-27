@@ -254,7 +254,7 @@ test('front page preprocessed mode renders launch action', () => {
           totalVolumeCount: 5,
           manifest: {
             dataset: {
-              voxelResolution: { x: 0.2, y: 0.2, z: 0.8, unit: 'μm', correctAnisotropy: false },
+              voxelResolution: { x: 0.2, y: 0.2, z: 0.8, unit: 'μm' },
               temporalResolution: { interval: 2, unit: 's' }
             }
           },

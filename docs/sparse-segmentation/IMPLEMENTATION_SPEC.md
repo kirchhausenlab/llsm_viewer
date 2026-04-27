@@ -128,7 +128,7 @@ Background masks, if present, are derived from non-segmentation layers as today.
 
 ### 4.1 Root format
 
-New preprocessed outputs use `llsm-viewer-preprocessed-vnext-sparse-seg1`.
+New preprocessed outputs use `llsm-viewer-preprocessed-isotropic-sparse-v1`.
 
 The reader accepts older/current formats only if no segmentation layer is present.
 

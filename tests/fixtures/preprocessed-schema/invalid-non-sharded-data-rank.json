@@ -1,5 +1,5 @@
 {
-  "format": "llsm-viewer-preprocessed-vnext-hes1",
+  "format": "llsm-viewer-preprocessed-isotropic-v1",
   "generatedAt": "2026-02-13T00:00:00.000Z",
   "dataset": {
     "movieMode": "3d",
@@ -195,14 +195,34 @@
     "voxelResolution": {
       "x": 120,
       "y": 120,
-      "z": 300,
-      "unit": "nm",
-      "correctAnisotropy": false
+      "z": 120,
+      "unit": "nm"
     },
     "temporalResolution": {
       "interval": 2.3,
       "unit": "ms"
     },
-    "anisotropyCorrection": null
+    "sourceVoxelResolution": {
+      "x": 120,
+      "y": 120,
+      "z": 300,
+      "unit": "nm"
+    },
+    "storedVoxelResolution": {
+      "x": 120,
+      "y": 120,
+      "z": 120,
+      "unit": "nm"
+    },
+    "isotropicResampling": {
+      "enabled": true,
+      "scale": {
+        "x": 1,
+        "y": 1,
+        "z": 2.5
+      },
+      "intensityInterpolation": "linear",
+      "segmentationInterpolation": "nearest"
+    }
   }
 }

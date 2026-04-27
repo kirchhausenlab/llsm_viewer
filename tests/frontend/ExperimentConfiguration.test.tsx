@@ -65,8 +65,9 @@ test('experiment configuration renders renamed masking and force 8bit controls',
 
   const labels = renderer.root.findAllByType('strong').map((node: ReactTestInstance) => node.children.join(''));
   assert.ok(labels.includes('Mask voxels by intensity'));
-  assert.ok(labels.includes('Force 8bit render (performance)'));
   assert.ok(labels.includes('Make data isotropic'));
+  assert.ok(labels.includes('Force 8bit render (performance)'));
+  assert.equal(findCheckboxByLabel(renderer.root, 'Make data isotropic')?.props.checked, false);
   assert.equal(findCheckboxByLabel(renderer.root, 'Force 8bit render (performance)')?.props.checked, false);
 
   findCheckboxByLabel(renderer.root, 'Force 8bit render (performance)')?.props.onChange({

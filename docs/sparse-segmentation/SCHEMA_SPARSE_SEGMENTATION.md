@@ -10,20 +10,20 @@ Target root manifest format for newly preprocessed datasets:
 
 ```ts
 export const SPARSE_SEGMENTATION_PREPROCESSED_DATASET_FORMAT =
-  'llsm-viewer-preprocessed-vnext-sparse-seg1' as const;
+  'llsm-viewer-preprocessed-isotropic-sparse-v1' as const;
 ```
 
 Reader behavior:
 
-- `llsm-viewer-preprocessed-vnext-hes1` and `llsm-viewer-preprocessed-vnext-hes2` remain accepted only when every layer is intensity-only.
-- `llsm-viewer-preprocessed-vnext-sparse-seg1` is required for any manifest containing sparse segmentation.
+- `llsm-viewer-preprocessed-isotropic-v1` is required for dense intensity manifests.
+- `llsm-viewer-preprocessed-isotropic-sparse-v1` is required for any manifest containing sparse segmentation.
+- Earlier manifest formats are rejected and must be reprocessed.
 - Any manifest with a segmentation layer but without `representation: 'sparse-label-bricks-v1'` fails validation.
 
 ## Root manifest shape
 
 ```ts
 export type PreprocessedDatasetFormat =
-  | typeof LEGACY_PREPROCESSED_DATASET_FORMAT
   | typeof PREPROCESSED_DATASET_FORMAT
   | typeof SPARSE_SEGMENTATION_PREPROCESSED_DATASET_FORMAT;
 
@@ -35,9 +35,11 @@ export type PreprocessedManifest = {
     totalVolumeCount: number;
     channels: PreprocessedChannelManifest[];
     trackSets: PreprocessedTrackSetManifestEntry[];
+    sourceVoxelResolution: VoxelResolutionValues;
+    storedVoxelResolution: VoxelResolutionValues;
     voxelResolution: VoxelResolutionValues;
     temporalResolution: TemporalResolutionMetadata;
-    anisotropyCorrection?: AnisotropyCorrectionMetadata | null;
+    isotropicResampling: IsotropicResamplingMetadata;
     backgroundMask?: PreprocessedBackgroundMaskManifest | null;
   };
 };
@@ -231,7 +233,7 @@ This is intentionally small but schema-valid.
 
 ```json
 {
-  "format": "llsm-viewer-preprocessed-vnext-sparse-seg1",
+  "format": "llsm-viewer-preprocessed-isotropic-sparse-v1",
   "generatedAt": "2026-04-25T00:00:00.000Z",
   "dataset": {
     "movieMode": "3d",
@@ -326,12 +328,29 @@ This is intentionally small but schema-valid.
       }
     ],
     "trackSets": [],
+    "sourceVoxelResolution": {
+      "x": 1,
+      "y": 1,
+      "z": 1,
+      "unit": "um"
+    },
+    "storedVoxelResolution": {
+      "x": 1,
+      "y": 1,
+      "z": 1,
+      "unit": "um"
+    },
     "voxelResolution": {
       "x": 1,
       "y": 1,
       "z": 1,
-      "unit": "um",
-      "correctAnisotropy": false
+      "unit": "um"
+    },
+    "isotropicResampling": {
+      "enabled": false,
+      "scale": { "x": 1, "y": 1, "z": 1 },
+      "intensityInterpolation": "linear",
+      "segmentationInterpolation": "nearest"
     },
     "temporalResolution": {
       "value": 1,
@@ -348,7 +367,7 @@ This must fail, even if the dense zarr descriptor is otherwise valid.
 
 ```json
 {
-  "format": "llsm-viewer-preprocessed-vnext-hes2",
+  "format": "llsm-viewer-preprocessed-isotropic-v1",
   "dataset": {
     "channels": [
       {
@@ -429,7 +448,7 @@ Reject a sparse segmentation manifest under an old root format:
 
 ```json
 {
-  "format": "llsm-viewer-preprocessed-vnext-hes2",
+  "format": "llsm-viewer-preprocessed-isotropic-v1",
   "dataset": {
     "channels": [
       {
@@ -463,4 +482,3 @@ Validation must run in this order:
 7. Validate cross-layer totals and track bindings.
 
 Do not read any binary payload before manifest validation finishes.
-

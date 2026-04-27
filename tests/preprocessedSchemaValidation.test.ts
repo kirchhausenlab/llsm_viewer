@@ -154,3 +154,44 @@ test('openPreprocessedDatasetFromZarrStorage rejects fixtures missing temporal r
     /manifest\.dataset\.temporalResolution: expected object/
   );
 });
+
+test('openPreprocessedDatasetFromZarrStorage rejects manifests with anisotropic stored resolution', async () => {
+  const manifest = readFixture('valid-non-sharded.json') as {
+    dataset: {
+      storedVoxelResolution: { z: number };
+      voxelResolution: { z: number };
+      isotropicResampling: { scale: { z: number } };
+    };
+  };
+  manifest.dataset.storedVoxelResolution.z = 300;
+  manifest.dataset.voxelResolution.z = 300;
+  manifest.dataset.isotropicResampling.scale.z = 1;
+
+  await assert.rejects(
+    () => openDatasetFromManifest(manifest),
+    /manifest\.dataset\.storedVoxelResolution: stored data must be isotropic/
+  );
+});
+
+test('openPreprocessedDatasetFromZarrStorage accepts native anisotropic storage when resampling is disabled', async () => {
+  const manifest = readFixture('valid-non-sharded.json') as {
+    dataset: {
+      sourceVoxelResolution: { x: number; y: number; z: number; unit: 'nm' };
+      storedVoxelResolution: { x: number; y: number; z: number; unit: 'nm' };
+      voxelResolution: { x: number; y: number; z: number; unit: 'nm' };
+      isotropicResampling: { enabled: boolean; scale: { x: number; y: number; z: number } };
+    };
+  };
+  const nativeResolution = { x: 120, y: 120, z: 300, unit: 'nm' as const };
+  manifest.dataset.sourceVoxelResolution = nativeResolution;
+  manifest.dataset.storedVoxelResolution = nativeResolution;
+  manifest.dataset.voxelResolution = nativeResolution;
+  manifest.dataset.isotropicResampling = {
+    ...manifest.dataset.isotropicResampling,
+    enabled: false,
+    scale: { x: 1, y: 1, z: 1 }
+  };
+
+  const opened = await openDatasetFromManifest(manifest);
+  assert.deepEqual(opened.manifest.dataset.voxelResolution, nativeResolution);
+});

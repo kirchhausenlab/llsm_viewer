@@ -254,7 +254,6 @@ export type VolumeViewerProps = {
       | (() => VolumeViewerCaptureTarget | HTMLCanvasElement | null)
       | null,
   ) => void;
-  trackScale: { x: number; y: number; z: number };
   tracks: CompiledTrackSummary[];
   compiledTrackPayloadByTrackSet: ReadonlyMap<string, CompiledTrackSetPayload>;
   onRequireTrackPayloads?: (trackSetIds: Iterable<string>) => void;

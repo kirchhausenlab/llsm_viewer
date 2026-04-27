@@ -6,6 +6,7 @@ import {
   useState,
   type CSSProperties,
   type KeyboardEvent as ReactKeyboardEvent,
+  type ReactNode,
   type RefObject
 } from 'react';
 
@@ -26,11 +27,108 @@ type DropdownMenuItem = {
   onSelect?: () => void;
 };
 
+type ProjectionMode = 'perspective' | 'orthographic';
+type DimensionMode = '2d' | '3d';
+type CameraFaceView = 'xy' | 'yz' | 'xz';
+type OverlayStyleMode = 'axes' | 'glass';
+
+type TopMenuSegmentedOption<T extends string> = {
+  value: T;
+  content: ReactNode;
+  ariaLabel?: string;
+  title?: string;
+  disabled?: boolean;
+};
+
 const DROPDOWN_MENU_ORDER: DropdownMenuId[] = ['file', 'view', 'edit', 'tracks', 'help'];
+const CAMERA_FACE_LABELS: Array<{ value: CameraFaceView; label: string }> = [
+  { value: 'xy', label: 'XY' },
+  { value: 'yz', label: 'YZ' },
+  { value: 'xz', label: 'XZ' }
+];
 
 const clampRangeValue = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
 const HOVER_INTENSITY_MIN_DURATION_SECONDS = 8;
 const HOVER_INTENSITY_PIXELS_PER_SECOND = 18;
+
+const classNames = (...classes: Array<string | false | null | undefined>) => classes.filter(Boolean).join(' ');
+
+function ProjectionModeIcon({ mode }: { mode: ProjectionMode }) {
+  if (mode === 'orthographic') {
+    return (
+      <svg
+        className="viewer-top-menu-projection-icon"
+        viewBox="0 0 24 24"
+        role="img"
+        aria-hidden="true"
+        focusable="false"
+      >
+        <path d="M12 3.8 19 7.7v8.6l-7 3.9-7-3.9V7.7l7-3.9Z" />
+        <path d="m5 7.7 7 3.9 7-3.9M12 11.6v8.6" />
+      </svg>
+    );
+  }
+
+  return (
+    <svg
+      className="viewer-top-menu-projection-icon"
+      viewBox="0 0 24 24"
+      role="img"
+      aria-hidden="true"
+      focusable="false"
+    >
+      <path d="M4.8 7.2h8.4v9.6H4.8V7.2Z" />
+      <path d="m13.2 7.2 6-2.6v14.8l-6-2.6M4.8 7.2l6-2.6h8.4M4.8 16.8l6 2.6h8.4" />
+    </svg>
+  );
+}
+
+function TopMenuSegmentedControl<T extends string>({
+  ariaLabel,
+  value,
+  options,
+  onChange,
+  className,
+  buttonClassName
+}: {
+  ariaLabel: string;
+  value: T;
+  options: Array<TopMenuSegmentedOption<T>>;
+  onChange: (value: T) => void;
+  className?: string;
+  buttonClassName?: string;
+}) {
+  return (
+    <div
+      className={classNames('viewer-top-menu-segmented-control', className)}
+      role="group"
+      aria-label={ariaLabel}
+      style={{ '--viewer-top-menu-segment-count': options.length } as CSSProperties}
+    >
+      {options.map((option) => {
+        const selected = option.value === value;
+        return (
+          <button
+            key={option.value}
+            type="button"
+            className={classNames(
+              'viewer-top-menu-segment-button',
+              buttonClassName,
+              selected && 'is-active'
+            )}
+            aria-label={option.ariaLabel}
+            aria-pressed={selected}
+            title={option.title}
+            disabled={option.disabled}
+            onClick={() => onChange(option.value)}
+          >
+            {option.content}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
 
 const formatFollowCoordinate = (value: number): string => {
   if (!Number.isFinite(value)) {
@@ -97,6 +195,10 @@ export default function TopMenu(props: TopMenuProps) {
     onToggle2dView,
     twoDViewButtonDisabled = true,
     twoDViewButtonTitle,
+    isVrActive = false,
+    projectionMode = 'perspective',
+    onProjectionModeChange,
+    onCameraFaceViewChange,
     loadedChannelIds,
     channelNameMap,
     channelVisibility,
@@ -123,6 +225,7 @@ export default function TopMenu(props: TopMenuProps) {
   } = props;
   const [openMenu, setOpenMenu] = useState<DropdownMenuId | null>(null);
   const [hoverIntensityOverflow, setHoverIntensityOverflow] = useState(0);
+  const [overlayStyleMode, setOverlayStyleMode] = useState<OverlayStyleMode>('axes');
   const topMenuRowRef = useRef<HTMLDivElement | null>(null);
   const topMenuHeightRef = useRef(0);
   const hoverIntensityViewportRef = useRef<HTMLSpanElement | null>(null);
@@ -389,6 +492,28 @@ export default function TopMenu(props: TopMenuProps) {
     triggerRefs.current[menuId]?.focus();
   };
 
+  const handleDimensionModeChange = (nextMode: DimensionMode) => {
+    const currentMode: DimensionMode = is2dViewActive ? '2d' : '3d';
+    if (nextMode === currentMode) {
+      return;
+    }
+    onToggle2dView?.();
+  };
+
+  const handleProjectionModeChange = (nextMode: ProjectionMode) => {
+    if (nextMode === projectionMode || is2dViewActive) {
+      return;
+    }
+    onProjectionModeChange?.(nextMode);
+  };
+
+  const handleCameraFaceViewChange = (face: CameraFaceView) => {
+    if (is2dViewActive) {
+      return;
+    }
+    onCameraFaceViewChange?.(face);
+  };
+
   const intensityComponents = useMemo(
     () =>
       hoveredVoxel && hoveredVoxel.components.length > 0
@@ -460,6 +585,30 @@ export default function TopMenu(props: TopMenuProps) {
         )}s`
       } as CSSProperties)
     : undefined;
+  const resolvedProjectionMode: ProjectionMode =
+    projectionMode === 'orthographic' ? 'orthographic' : 'perspective';
+  const dimensionMode: DimensionMode = is2dViewActive ? '2d' : '3d';
+  const projectionLockTitle = is2dViewActive
+    ? 'Projection mode is locked while 2D view is active.'
+    : undefined;
+  const isometricDisabled = is2dViewActive || isVrActive || !is3dModeAvailable || !onProjectionModeChange;
+  const isometricTitle = projectionLockTitle
+    ?? (isVrActive
+      ? 'Isometric view is unavailable while VR is active.'
+      : !is3dModeAvailable || !onProjectionModeChange
+        ? 'Projection mode is unavailable until the viewer is ready.'
+        : undefined);
+  const perspectiveDisabled = is2dViewActive || !is3dModeAvailable || !onProjectionModeChange;
+  const perspectiveTitle = projectionLockTitle
+    ?? (!is3dModeAvailable || !onProjectionModeChange
+      ? 'Projection mode is unavailable until the viewer is ready.'
+      : undefined);
+  const faceViewDisabled = is2dViewActive || !onCameraFaceViewChange;
+  const faceViewTitle = is2dViewActive
+    ? 'Face view shortcuts are unavailable while 2D view is active.'
+    : !onCameraFaceViewChange
+      ? 'Face view shortcuts are unavailable until the viewer is ready.'
+      : undefined;
 
   useLayoutEffect(() => {
     if (typeof window === 'undefined') {
@@ -569,7 +718,77 @@ export default function TopMenu(props: TopMenuProps) {
         </div>
 
         <div className="viewer-top-menu-cell viewer-top-menu-cell--top viewer-top-menu-cell--column-2">
-          <div className="viewer-top-menu-cell-content" />
+          <div className="viewer-top-menu-cell-content viewer-top-menu-cell-content--start">
+            <div className="viewer-top-menu-view-controls">
+              <TopMenuSegmentedControl<DimensionMode>
+                ariaLabel="View dimensionality"
+                value={dimensionMode}
+                onChange={handleDimensionModeChange}
+                className="viewer-top-menu-segmented-control--dimension"
+                options={[
+                  {
+                    value: '2d',
+                    content: '2D',
+                    title: twoDViewButtonTitle,
+                    disabled: twoDViewButtonDisabled
+                  },
+                  {
+                    value: '3d',
+                    content: '3D',
+                    title: twoDViewButtonTitle,
+                    disabled: twoDViewButtonDisabled
+                  }
+                ]}
+              />
+              <TopMenuSegmentedControl<ProjectionMode>
+                ariaLabel="Projection mode"
+                value={resolvedProjectionMode}
+                onChange={handleProjectionModeChange}
+                className="viewer-top-menu-segmented-control--projection"
+                buttonClassName="viewer-top-menu-segment-button--icon"
+                options={[
+                  {
+                    value: 'perspective',
+                    content: <ProjectionModeIcon mode="perspective" />,
+                    ariaLabel: 'Perspective',
+                    title: perspectiveTitle,
+                    disabled: perspectiveDisabled
+                  },
+                  {
+                    value: 'orthographic',
+                    content: <ProjectionModeIcon mode="orthographic" />,
+                    ariaLabel: 'Isometric',
+                    title: isometricTitle,
+                    disabled: isometricDisabled
+                  }
+                ]}
+              />
+              <div className="viewer-top-menu-face-buttons" role="group" aria-label="Camera face views">
+                {CAMERA_FACE_LABELS.map(({ value, label }) => (
+                  <button
+                    key={value}
+                    type="button"
+                    className="viewer-top-menu-button viewer-top-menu-face-button"
+                    disabled={faceViewDisabled}
+                    title={faceViewTitle}
+                    onClick={() => handleCameraFaceViewChange(value)}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+              <TopMenuSegmentedControl<OverlayStyleMode>
+                ariaLabel="Volume guide style"
+                value={overlayStyleMode}
+                onChange={setOverlayStyleMode}
+                className="viewer-top-menu-segmented-control--overlay"
+                options={[
+                  { value: 'axes', content: 'Axes' },
+                  { value: 'glass', content: 'Glass' }
+                ]}
+              />
+            </div>
+          </div>
         </div>
 
         <div className="viewer-top-menu-cell viewer-top-menu-cell--top viewer-top-menu-cell--column-3">
@@ -597,16 +816,6 @@ export default function TopMenu(props: TopMenuProps) {
               </div>
             </div>
             <div className="viewer-top-menu-cell-group viewer-top-menu-cell-group--end viewer-top-menu-primary-actions">
-              <button
-                type="button"
-                className="viewer-top-menu-button"
-                onClick={() => onToggle2dView?.()}
-                disabled={twoDViewButtonDisabled}
-                title={twoDViewButtonTitle}
-                aria-pressed={is2dViewActive}
-              >
-                {is2dViewActive ? '3D view' : '2D view'}
-              </button>
               <button
                 type="button"
                 className="viewer-top-menu-button"

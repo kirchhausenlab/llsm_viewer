@@ -277,7 +277,8 @@ async function run(): Promise<void> {
     const result = await preprocessDatasetToStorage({
       layers,
       channels,
-      voxelResolution: { x: 120, y: 120, z: 300, unit: 'nm', correctAnisotropy: true },
+      voxelResolution: { x: 120, y: 120, z: 300, unit: 'nm' },
+      makeDataIsotropic: true,
       movieMode: '3d',
       storage: storageHandle.storage,
       volumeLoader,

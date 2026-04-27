@@ -50,7 +50,7 @@ test('viewer props state seeds scalebar defaults from voxel resolution metadata'
     useViewerPropsState({
       volumeDimensions: { width: 120, height: 80, depth: 32 },
       totalTimepoints: 7,
-      voxelResolution: { x: 10, y: 12, z: 20, unit: 'nm', correctAnisotropy: false },
+      voxelResolution: { x: 10, y: 12, z: 20, unit: 'nm' },
     })
   );
 

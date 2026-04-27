@@ -465,7 +465,6 @@ export type UseTrackRenderingParams = {
   trackLineWidthByTrackSet: Record<string, number>;
   trackColorModesByTrackSet: Record<string, TrackColorMode>;
   channelTrackOffsets: Record<string, { x: number; y: number }>;
-  trackScale: { x?: number; y?: number; z?: number };
   isFullTrackTrailEnabled: boolean;
   trackTrailLength: number;
   drawTrackCentroids: boolean;
@@ -491,7 +490,6 @@ export function useTrackRendering({
   trackLineWidthByTrackSet,
   trackColorModesByTrackSet,
   channelTrackOffsets,
-  trackScale: _trackScale,
   isFullTrackTrailEnabled,
   trackTrailLength,
   drawTrackCentroids,

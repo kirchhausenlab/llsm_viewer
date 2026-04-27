@@ -7,32 +7,14 @@ export type VolumeAnisotropyScale = {
   z: number;
 };
 
-type TrackScaleLike = {
-  x?: unknown;
-  y?: unknown;
-  z?: unknown;
-} | null | undefined;
-
 type UseVolumeViewerAnisotropyParams = {
-  trackScale: TrackScaleLike;
   volumeAnisotropyScaleRef: MutableRefObject<VolumeAnisotropyScale>;
   volumeStepScaleBaseRef: MutableRefObject<number>;
   volumeStepScaleRatioRef: MutableRefObject<number>;
   volumeStepScaleRef: MutableRefObject<number>;
 };
 
-export function resolveAnisotropyAxis(value: unknown): number {
-  const numeric = typeof value === 'number' ? value : Number.NaN;
-  return Number.isFinite(numeric) && numeric > 0 ? numeric : 1;
-}
-
-export function resolveVolumeAnisotropyScale(trackScale: TrackScaleLike): VolumeAnisotropyScale {
-  return {
-    x: resolveAnisotropyAxis(trackScale?.x),
-    y: resolveAnisotropyAxis(trackScale?.y),
-    z: resolveAnisotropyAxis(trackScale?.z),
-  };
-}
+const IDENTITY_VOLUME_ANISOTROPY_SCALE: VolumeAnisotropyScale = { x: 1, y: 1, z: 1 };
 
 export function computeAnisotropyStepRatio(scale: VolumeAnisotropyScale): number {
   const values = [scale.x, scale.y, scale.z];
@@ -45,15 +27,14 @@ export function computeAnisotropyStepRatio(scale: VolumeAnisotropyScale): number
 }
 
 export function useVolumeViewerAnisotropy({
-  trackScale,
   volumeAnisotropyScaleRef,
   volumeStepScaleBaseRef,
   volumeStepScaleRatioRef,
   volumeStepScaleRef,
 }: UseVolumeViewerAnisotropyParams) {
   const resolvedAnisotropyScale = useMemo(
-    () => resolveVolumeAnisotropyScale(trackScale),
-    [trackScale?.x, trackScale?.y, trackScale?.z],
+    () => IDENTITY_VOLUME_ANISOTROPY_SCALE,
+    [],
   );
 
   const anisotropyStepRatio = useMemo(

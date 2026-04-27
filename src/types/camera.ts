@@ -10,6 +10,8 @@ export type CameraRotation = {
   roll: number;
 };
 
+export type CameraFaceView = 'xy' | 'yz' | 'xz';
+
 export type CameraWindowState = {
   cameraPosition: CameraCoordinate;
   cameraRotation: CameraRotation;
@@ -51,5 +53,6 @@ export type CameraWindowController = {
     cameraPosition?: CameraCoordinate | null;
     cameraRotation: CameraRotation;
   }) => boolean;
+  applyCameraFaceView: (face: CameraFaceView) => boolean;
   captureCameraState: () => CameraWindowState | null;
 };
