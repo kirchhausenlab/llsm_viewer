@@ -55,6 +55,10 @@ function createProps(isOpen: boolean) {
   };
 }
 
+function findHostById(renderer: TestRenderer.ReactTestRenderer, id: string) {
+  return renderer.root.findAll((node) => typeof node.type === 'string' && node.props.id === id)[0];
+}
+
 test('hover settings window renders nothing while closed', () => {
   const renderer = TestRenderer.create(
     <HoverSettingsWindow {...(createProps(false) as any)} />
@@ -70,10 +74,10 @@ test('hover settings window renders the expected controls', () => {
   );
   const title = renderer.root.findAllByType('h2')[0];
 
-  const toggleButton = renderer.root.findByProps({ id: 'hover-enabled-toggle' });
-  const typeSelect = renderer.root.findByProps({ id: 'hover-type-select' });
-  const strengthSlider = renderer.root.findByProps({ id: 'hover-strength-slider' });
-  const radiusSlider = renderer.root.findByProps({ id: 'hover-radius-slider' });
+  const toggleButton = findHostById(renderer, 'hover-enabled-toggle');
+  const typeSelect = findHostById(renderer, 'hover-type-select');
+  const strengthSlider = findHostById(renderer, 'hover-strength-slider');
+  const radiusSlider = findHostById(renderer, 'hover-radius-slider');
 
   assert.equal(title?.children.join(''), 'Hover settings');
   assert.equal(toggleButton.props['aria-pressed'], true);
@@ -91,10 +95,10 @@ test('hover settings window forwards toggle, dropdown, and slider changes', () =
     <HoverSettingsWindow {...(props as any)} />
   );
 
-  const toggleButton = renderer.root.findByProps({ id: 'hover-enabled-toggle' });
-  const typeSelect = renderer.root.findByProps({ id: 'hover-type-select' });
-  const strengthSlider = renderer.root.findByProps({ id: 'hover-strength-slider' });
-  const radiusSlider = renderer.root.findByProps({ id: 'hover-radius-slider' });
+  const toggleButton = findHostById(renderer, 'hover-enabled-toggle');
+  const typeSelect = findHostById(renderer, 'hover-type-select');
+  const strengthSlider = findHostById(renderer, 'hover-strength-slider');
+  const radiusSlider = findHostById(renderer, 'hover-radius-slider');
 
   act(() => {
     toggleButton.props.onClick();

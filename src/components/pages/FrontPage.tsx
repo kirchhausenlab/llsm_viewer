@@ -10,7 +10,7 @@ import type {
 } from '../../types/voxelResolution';
 import ThemeModeToggle from '../app/ThemeModeToggle';
 import FrontPageHeader from './FrontPageHeader';
-import ExperimentConfiguration from './ExperimentConfiguration';
+import ExperimentConfiguration, { type SkewAngleUnit, type SkewDirection } from './ExperimentConfiguration';
 import PreprocessedLoader, { type PreprocessedLoaderProps } from './PreprocessedLoader';
 import PublicExperimentLoader, { type PublicExperimentLoaderProps } from './PublicExperimentLoader';
 import ChannelListPanel, { type ChannelListPanelProps } from './ChannelListPanel';
@@ -73,8 +73,18 @@ export type ExperimentConfigurationState = {
   backgroundMaskError: string | null;
   onBackgroundMaskToggle: (value: boolean) => void;
   onBackgroundMaskValuesInputChange: (value: string) => void;
-  renderIn16Bit: boolean;
-  onRenderIn16BitToggle: (value: boolean) => void;
+  force8BitRender: boolean;
+  onForce8BitRenderToggle: (value: boolean) => void;
+  deSkewModeEnabled: boolean;
+  skewAngleInput: string;
+  skewAngleUnit: SkewAngleUnit;
+  skewDirection: SkewDirection;
+  deSkewMaskVoxels: boolean;
+  onDeSkewModeToggle: (value: boolean) => void;
+  onSkewAngleInputChange: (value: string) => void;
+  onSkewAngleUnitChange: (value: SkewAngleUnit) => void;
+  onSkewDirectionChange: (value: SkewDirection) => void;
+  onDeSkewMaskVoxelsToggle: (value: boolean) => void;
 };
 
 export type PreprocessedSummaryProps = {
@@ -310,8 +320,18 @@ export default function FrontPage({
               backgroundMaskError={experimentConfiguration.backgroundMaskError}
               onBackgroundMaskToggle={experimentConfiguration.onBackgroundMaskToggle}
               onBackgroundMaskValuesInputChange={experimentConfiguration.onBackgroundMaskValuesInputChange}
-              renderIn16Bit={experimentConfiguration.renderIn16Bit}
-              onRenderIn16BitToggle={experimentConfiguration.onRenderIn16BitToggle}
+              force8BitRender={experimentConfiguration.force8BitRender}
+              onForce8BitRenderToggle={experimentConfiguration.onForce8BitRenderToggle}
+              deSkewModeEnabled={experimentConfiguration.deSkewModeEnabled}
+              skewAngleInput={experimentConfiguration.skewAngleInput}
+              skewAngleUnit={experimentConfiguration.skewAngleUnit}
+              skewDirection={experimentConfiguration.skewDirection}
+              deSkewMaskVoxels={experimentConfiguration.deSkewMaskVoxels}
+              onDeSkewModeToggle={experimentConfiguration.onDeSkewModeToggle}
+              onSkewAngleInputChange={experimentConfiguration.onSkewAngleInputChange}
+              onSkewAngleUnitChange={experimentConfiguration.onSkewAngleUnitChange}
+              onSkewDirectionChange={experimentConfiguration.onSkewDirectionChange}
+              onDeSkewMaskVoxelsToggle={experimentConfiguration.onDeSkewMaskVoxelsToggle}
               isFrontPageLocked={isFrontPageLocked}
             />
           ) : null}

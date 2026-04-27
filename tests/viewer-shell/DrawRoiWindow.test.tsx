@@ -51,7 +51,10 @@ function createProps(overrides: Partial<React.ComponentProps<typeof DrawRoiWindo
 }
 
 function findNodeByClassName(renderer: TestRenderer.ReactTestRenderer, className: string) {
-  return renderer.root.findAll((node) => node.props.className === className)[0] ?? null;
+  return renderer.root.findAll((node) => {
+    const nodeClassName = node.props.className;
+    return typeof nodeClassName === 'string' && nodeClassName.split(/\s+/).includes(className);
+  })[0] ?? null;
 }
 
 (() => {
@@ -59,10 +62,13 @@ function findNodeByClassName(renderer: TestRenderer.ReactTestRenderer, className
     <DrawRoiWindow {...createProps()} />,
   );
 
-  const toolbar = findNodeByClassName(renderer, 'control-row draw-roi-toolbar');
+  const toolbar = findNodeByClassName(renderer, 'draw-roi-toolbar');
   assert.ok(toolbar);
   assert.equal(
-    toolbar.findAll((node) => node.props.className?.includes?.('draw-roi-segmented-control')).length,
+    toolbar.findAll((node) => (
+      typeof node.type === 'string' &&
+      node.props.className?.includes?.('draw-roi-segmented-control')
+    )).length,
     2,
   );
   const nameRow = findNodeByClassName(renderer, 'draw-roi-name-row');
@@ -78,16 +84,23 @@ function findNodeByClassName(renderer: TestRenderer.ReactTestRenderer, className
   assert.deepEqual(toolButtons.map((button) => button.props.title), ['Line', 'Rectangle', 'Ellipse']);
   assert.ok(toolButtons.every((button) => button.props.disabled === true));
 
-  const sliderRows = renderer.root.findAll((node) => node.props.className === 'control-row draw-roi-slider-row');
+  const sliderRows = renderer.root.findAll((node) => {
+    const className = node.props.className;
+    return (
+      typeof node.type === 'string' &&
+      typeof className === 'string' &&
+      className.split(/\s+/).includes('draw-roi-slider-row')
+    );
+  });
   assert.equal(sliderRows.length, 3);
   sliderRows.forEach((row) => {
-    const sliderGroups = row.findAll(
-      (node) => typeof node.props.className === 'string' && node.props.className.includes('draw-roi-slider-group'),
+    const sliders = row.findAll(
+      (node) => node.type === 'input' && node.props.type === 'range',
     );
-    assert.equal(sliderGroups.length, 2);
+    assert.equal(sliders.length, 2);
   });
 
-  const colorPickerTrigger = findNodeByClassName(renderer, 'color-picker-trigger draw-roi-color-picker');
+  const colorPickerTrigger = findNodeByClassName(renderer, 'draw-roi-color-picker');
   assert.ok(colorPickerTrigger);
   assert.ok(colorPickerTrigger.findByProps({ className: 'color-picker-indicator' }));
 
@@ -110,7 +123,11 @@ function findNodeByClassName(renderer: TestRenderer.ReactTestRenderer, className
   );
 
   const actionButton = renderer.root.findAll(
-    (node) => node.type === 'button' && node.props.className === 'draw-roi-action-button'
+    (node) => (
+      node.type === 'button' &&
+      typeof node.props.className === 'string' &&
+      node.props.className.split(/\s+/).includes('draw-roi-action-button')
+    )
   )[0];
   const startZSlider = renderer.root.findByProps({ id: 'draw-roi-start-z-slider' });
   const currentZToggle = renderer.root.findByProps({ id: 'draw-roi-current-z-toggle' });

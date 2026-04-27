@@ -117,6 +117,12 @@ function findButtonByText(renderer: TestRenderer.ReactTestRenderer, text: string
   return renderer.root.findAllByType('button').find((button) => button.props.children === text);
 }
 
+function findNodesByClass(renderer: TestRenderer.ReactTestRenderer, className: string) {
+  return renderer.root.findAll(
+    (node) => typeof node.props.className === 'string' && node.props.className.split(/\s+/).includes(className),
+  );
+}
+
 (() => {
   let deleteChannelCalls = 0;
   let clearCalls = 0;
@@ -163,7 +169,8 @@ function findButtonByText(renderer: TestRenderer.ReactTestRenderer, text: string
   assert.equal(deleteButton.props.disabled, false);
   assert.equal(renderer.root.findByProps({ className: 'annotate-body' }).props['aria-disabled'], false);
 
-  const currentLabel = renderer.root.findByProps({ className: 'annotate-current-label' });
+  const currentLabel = findNodesByClass(renderer, 'annotate-current-label')[0];
+  assert.ok(currentLabel);
   assert.equal(currentLabel.props.children, '2 - Nucleus');
   assert.match(currentLabel.props.style.color, /^rgb\(/);
 
@@ -195,9 +202,11 @@ function findButtonByText(renderer: TestRenderer.ReactTestRenderer, text: string
   assert.equal(undoCalls, 1);
   assert.equal(redoCalls, 1);
 
-  const labelTexts = renderer.root.findAllByProps({ className: 'roi-manager-list-item-label' });
+  const labelTexts = findNodesByClass(renderer, 'roi-manager-list-item-label');
   assert.equal(labelTexts[0]?.props.children, '1');
-  const activeLabelButton = renderer.root.findAllByProps({ role: 'option' })[1];
+  const activeLabelButton = renderer.root.findAll(
+    (node) => node.type === 'button' && node.props.role === 'option',
+  )[1];
   assert.ok(activeLabelButton?.props.className.includes('roi-manager-list-item'));
   assert.ok(activeLabelButton?.props.className.includes('is-active'));
 

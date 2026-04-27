@@ -5,8 +5,28 @@ import type { AnnotateBrushMode, AnnotateDimensionMode } from '../../../types/an
 import type { AnnotateController } from '../../../hooks/annotation/useAnnotate';
 import { createSegmentationSeed } from '../../../shared/utils/appHelpers';
 import { hashSparseSegmentationLabelColor } from '../../../shared/utils/preprocessedDataset/sparseSegmentation';
-import { useActionColumnHeightCssVar } from './hooks/useActionColumnHeightCssVar';
+import { useViewerWindowActionColumnHeight } from './hooks/useViewerWindowActionColumnHeight';
 import type { LayoutProps } from './types';
+import {
+  ViewerWindowButton,
+  ViewerWindowDivider,
+  ViewerWindowEmptyState,
+  ViewerWindowFieldRow,
+  ViewerWindowForm,
+  ViewerWindowIconButton,
+  ViewerWindowManager,
+  ViewerWindowManagerActions,
+  ViewerWindowManagerItem,
+  ViewerWindowManagerItemLabel,
+  ViewerWindowManagerList,
+  ViewerWindowMessage,
+  ViewerWindowRow,
+  ViewerWindowSegmentedControl,
+  ViewerWindowSelect,
+  ViewerWindowSlider,
+  ViewerWindowStack,
+  ViewerWindowValue,
+} from './window-ui';
 
 type SelectedAnnotateChannel = {
   channelId: string;
@@ -116,7 +136,7 @@ export default function AnnotateWindow({
   const [draftName, setDraftName] = useState(controller.creationName);
   const [draftSourceId, setDraftSourceId] = useState(controller.selectedSourceId);
   const [createMessage, setCreateMessage] = useState<string | null>(null);
-  const { actionsRef: labelActionsRef, managerStyle: labelManagerStyle } = useActionColumnHeightCssVar();
+  const { actionsRef: labelActionsRef, managerStyle: labelManagerStyle } = useViewerWindowActionColumnHeight();
   const resolveAvailableSourceId = useCallback(
     (candidate: string) => (
       controller.sourceOptions.some((option) => option.id === candidate)
@@ -191,92 +211,66 @@ export default function AnnotateWindow({
         resetSignal={resetSignal}
         onClose={handleClose}
       >
-        <div className="global-controls annotate-window">
-          <div className="control-row annotate-top-row">
-            <button type="button" onClick={handleOpenCreateDialog} disabled={createButtonDisabled || createDialogOpen}>
+        <ViewerWindowStack className="annotate-window">
+          <ViewerWindowRow className="annotate-top-row" wrap>
+            <ViewerWindowButton
+              type="button"
+              expand
+              onClick={handleOpenCreateDialog}
+              disabled={createButtonDisabled || createDialogOpen}
+            >
               New channel
-            </button>
-            <button type="button" onClick={controller.deleteActiveChannel} disabled={deleteButtonDisabled}>
+            </ViewerWindowButton>
+            <ViewerWindowButton
+              type="button"
+              expand
+              onClick={controller.deleteActiveChannel}
+              disabled={deleteButtonDisabled}
+            >
               Delete channel
-            </button>
-          </div>
+            </ViewerWindowButton>
+          </ViewerWindowRow>
 
-          <div className="annotate-divider" />
+          <ViewerWindowDivider />
 
           <div className={bodyDisabled ? 'annotate-body is-disabled' : 'annotate-body'} aria-disabled={bodyDisabled}>
-            <div className="control-row annotate-info-row">
-              <span className="annotate-info-label">Channel:</span>
-              <span className="annotate-info-value">{channelLabel}</span>
-            </div>
+            <ViewerWindowFieldRow label="Channel:" className="annotate-info-row">
+              <ViewerWindowValue className="annotate-info-value">{channelLabel}</ViewerWindowValue>
+            </ViewerWindowFieldRow>
 
-            <div className="control-row annotate-info-row">
-              <span className="annotate-info-label">Label:</span>
-              <span className="annotate-current-label" style={selectedLabelStyle}>
+            <ViewerWindowFieldRow label="Label:" className="annotate-info-row">
+              <ViewerWindowValue className="annotate-current-label" style={selectedLabelStyle}>
                 {selectedLabelText}
-              </span>
-            </div>
+              </ViewerWindowValue>
+            </ViewerWindowFieldRow>
 
-            <div className="control-row annotate-tool-row">
-              <div
-                className="draw-roi-segmented-control annotate-tool-segmented-control"
-                role="group"
-                aria-label="Annotation tool"
-              >
-                <button
-                  type="button"
-                  className={activeTool === 'hand' ? 'draw-roi-segment-button is-active' : 'draw-roi-segment-button'}
-                  aria-label="Hand"
-                  aria-pressed={activeTool === 'hand'}
-                  title="Hand"
-                  onClick={() => handleToolChange('hand')}
-                  disabled={!canEditSelectedChannel}
-                >
-                  <HandIcon />
-                </button>
-                <button
-                  type="button"
-                  className={activeTool === 'brush' ? 'draw-roi-segment-button is-active' : 'draw-roi-segment-button'}
-                  aria-label="Brush"
-                  aria-pressed={activeTool === 'brush'}
-                  title="Brush"
-                  onClick={() => handleToolChange('brush')}
-                  disabled={!canEditSelectedChannel}
-                >
-                  <BrushIcon />
-                </button>
-                <button
-                  type="button"
-                  className={activeTool === 'eraser' ? 'draw-roi-segment-button is-active' : 'draw-roi-segment-button'}
-                  aria-label="Eraser"
-                  aria-pressed={activeTool === 'eraser'}
-                  title="Eraser"
-                  onClick={() => handleToolChange('eraser')}
-                  disabled={!canEditSelectedChannel}
-                >
-                  <EraserIcon />
-                </button>
-              </div>
-            </div>
+            <ViewerWindowRow className="annotate-tool-row" wrap>
+              <ViewerWindowSegmentedControl
+                className="annotate-tool-segmented-control"
+                ariaLabel="Annotation tool"
+                value={activeTool}
+                onChange={handleToolChange}
+                disabled={!canEditSelectedChannel}
+                options={[
+                  { value: 'hand', ariaLabel: 'Hand', title: 'Hand', content: <HandIcon /> },
+                  { value: 'brush', ariaLabel: 'Brush', title: 'Brush', content: <BrushIcon /> },
+                  { value: 'eraser', ariaLabel: 'Eraser', title: 'Eraser', content: <EraserIcon /> },
+                ]}
+              />
+            </ViewerWindowRow>
 
-            <div className="control-row annotate-mode-history-row">
-              <div className="draw-roi-segmented-control draw-roi-segmented-control--mode" role="group" aria-label="Annotation dimension">
-                {MODE_OPTIONS.map((option) => {
-                  const isSelected = mode === option;
-                  return (
-                    <button
-                      key={option}
-                      type="button"
-                      className={isSelected ? 'draw-roi-segment-button is-active' : 'draw-roi-segment-button'}
-                      aria-pressed={isSelected}
-                      onClick={() => controller.setMode(option)}
-                      disabled={!canEditSelectedChannel}
-                    >
-                      {option.toUpperCase()}
-                    </button>
-                  );
-                })}
-              </div>
-              <button
+            <ViewerWindowRow className="annotate-mode-history-row" align="stretch" wrap>
+              <ViewerWindowSegmentedControl
+                ariaLabel="Annotation dimension"
+                value={mode}
+                onChange={controller.setMode}
+                disabled={!canEditSelectedChannel}
+                options={MODE_OPTIONS.map((option) => ({
+                  value: option,
+                  content: option.toUpperCase(),
+                }))}
+              />
+              <ViewerWindowIconButton
                 type="button"
                 className="annotate-icon-button"
                 onClick={controller.undo}
@@ -285,8 +279,8 @@ export default function AnnotateWindow({
                 title="Undo"
               >
                 <UndoIcon />
-              </button>
-              <button
+              </ViewerWindowIconButton>
+              <ViewerWindowIconButton
                 type="button"
                 className="annotate-icon-button"
                 onClick={controller.redo}
@@ -295,32 +289,28 @@ export default function AnnotateWindow({
                 title="Redo"
               >
                 <RedoIcon />
-              </button>
-            </div>
+              </ViewerWindowIconButton>
+            </ViewerWindowRow>
 
-            <div className="control-row annotate-radius-row">
-              <div className="control-group control-group--slider annotate-slider-group">
-                <label htmlFor="annotate-radius-slider">
-                  Radius <span>{radius}</span>
-                </label>
-                <input
-                  id="annotate-radius-slider"
-                  type="range"
-                  min={1}
-                  max={10}
-                  step={1}
-                  value={radius}
-                  onChange={(event) => controller.setRadius(Number(event.target.value))}
-                  disabled={!canEditSelectedChannel}
-                />
-              </div>
-            </div>
+            <ViewerWindowRow className="annotate-radius-row">
+              <ViewerWindowSlider
+                id="annotate-radius-slider"
+                className="annotate-slider-group"
+                label="Radius"
+                valueLabel={radius}
+                min={1}
+                max={10}
+                step={1}
+                value={radius}
+                onChange={(event) => controller.setRadius(Number(event.target.value))}
+                disabled={!canEditSelectedChannel}
+              />
+            </ViewerWindowRow>
 
-            <div className="annotate-divider" />
+            <ViewerWindowDivider />
 
-            <div className="annotate-label-manager" style={labelManagerStyle}>
-              <div
-                className="roi-manager-list"
+            <ViewerWindowManager className="annotate-label-manager" style={labelManagerStyle}>
+              <ViewerWindowManagerList
                 role="listbox"
                 aria-label="Labels"
                 tabIndex={0}
@@ -329,56 +319,52 @@ export default function AnnotateWindow({
                   active?.labels.map((label, index) => {
                     const selected = active.activeLabelIndex === index;
                     return (
-                      <button
+                      <ViewerWindowManagerItem
                         key={index}
                         type="button"
                         role="option"
-                        aria-selected={selected}
-                        className={[
-                          'roi-manager-list-item',
-                          selected ? 'is-active' : '',
-                        ]
-                          .filter(Boolean)
-                          .join(' ')}
+                        className="roi-manager-list-item"
+                        selected={selected}
+                        active={selected}
                         onClick={() => controller.setActiveLabelIndex(index)}
                         disabled={!canEditSelectedChannel}
                       >
-                        <span className="roi-manager-list-item-label">
+                        <ViewerWindowManagerItemLabel className="roi-manager-list-item-label">
                           {formatLabelRow(index, label.name)}
-                        </span>
-                      </button>
+                        </ViewerWindowManagerItemLabel>
+                      </ViewerWindowManagerItem>
                     );
                   })
                 ) : (
-                  <p className="roi-manager-empty-state">No labels.</p>
+                  <ViewerWindowEmptyState>No labels.</ViewerWindowEmptyState>
                 )}
-              </div>
-              <div className="roi-manager-actions annotate-label-actions" ref={labelActionsRef}>
-                <button type="button" onClick={controller.addLabel} disabled={!canEditSelectedChannel}>
+              </ViewerWindowManagerList>
+              <ViewerWindowManagerActions className="annotate-label-actions" ref={labelActionsRef}>
+                <ViewerWindowButton type="button" onClick={controller.addLabel} disabled={!canEditSelectedChannel}>
                   Add
-                </button>
-                <button type="button" onClick={controller.deleteActiveLabel} disabled={!canEditSelectedChannel}>
+                </ViewerWindowButton>
+                <ViewerWindowButton type="button" onClick={controller.deleteActiveLabel} disabled={!canEditSelectedChannel}>
                   Delete
-                </button>
-                <button type="button" onClick={controller.renameActiveLabel} disabled={!canEditSelectedChannel}>
+                </ViewerWindowButton>
+                <ViewerWindowButton type="button" onClick={controller.renameActiveLabel} disabled={!canEditSelectedChannel}>
                   Rename
-                </button>
-                <button type="button" onClick={() => void controller.saveActiveChannel()} disabled={!canEditSelectedChannel || controller.busy}>
+                </ViewerWindowButton>
+                <ViewerWindowButton type="button" onClick={() => void controller.saveActiveChannel()} disabled={!canEditSelectedChannel || controller.busy}>
                   Save
-                </button>
-                <button type="button" onClick={controller.clearActiveChannel} disabled={!canEditSelectedChannel}>
+                </ViewerWindowButton>
+                <ViewerWindowButton type="button" onClick={controller.clearActiveChannel} disabled={!canEditSelectedChannel}>
                   Clear
-                </button>
-              </div>
-            </div>
+                </ViewerWindowButton>
+              </ViewerWindowManagerActions>
+            </ViewerWindowManager>
 
             {controller.message || controller.unavailableReason ? (
-              <div className="annotate-message" role="status" aria-live="polite">
+              <ViewerWindowMessage className="annotate-message" role="status" aria-live="polite">
                 {controller.message ?? controller.unavailableReason}
-              </div>
+              </ViewerWindowMessage>
             ) : null}
           </div>
-        </div>
+        </ViewerWindowStack>
       </FloatingWindow>
 
       {createDialogOpen ? (
@@ -390,14 +376,14 @@ export default function AnnotateWindow({
           resetSignal={resetSignal}
           onClose={handleCancelCreate}
         >
-          <form
-            className="global-controls annotate-create-window"
+          <ViewerWindowForm
+            className="annotate-create-window"
             onSubmit={(event) => {
               event.preventDefault();
               void handleCreateChannel();
             }}
           >
-            <div className="control-row annotate-create-form-row">
+            <ViewerWindowRow className="annotate-create-form-row" align="center">
               <label htmlFor="annotate-create-channel-name">Name:</label>
               <input
                 id="annotate-create-channel-name"
@@ -406,39 +392,40 @@ export default function AnnotateWindow({
                 onChange={(event) => setDraftName(event.target.value)}
                 disabled={controller.busy}
               />
-            </div>
+            </ViewerWindowRow>
 
-            <div className="control-row annotate-create-form-row">
+            <ViewerWindowRow className="annotate-create-form-row" align="center">
               <label htmlFor="annotate-create-source-select">Source:</label>
-              <select
+              <ViewerWindowSelect
                 id="annotate-create-source-select"
                 value={createSourceId}
                 onChange={(event) => setDraftSourceId(event.target.value)}
                 disabled={controller.busy}
+                expand
               >
                 {controller.sourceOptions.map((option) => (
                   <option key={option.id} value={option.id}>
                     {option.label}
                   </option>
                 ))}
-              </select>
-            </div>
+              </ViewerWindowSelect>
+            </ViewerWindowRow>
 
-            <div className="control-row annotate-create-actions">
-              <button type="submit" disabled={!controller.available || controller.busy}>
+            <ViewerWindowRow className="annotate-create-actions" justify="center">
+              <ViewerWindowButton type="submit" disabled={!controller.available || controller.busy}>
                 Create
-              </button>
-              <button type="button" onClick={handleCancelCreate} disabled={controller.busy}>
+              </ViewerWindowButton>
+              <ViewerWindowButton type="button" onClick={handleCancelCreate} disabled={controller.busy}>
                 Cancel
-              </button>
-            </div>
+              </ViewerWindowButton>
+            </ViewerWindowRow>
 
             {createMessage ? (
-              <div className="annotate-create-message annotate-create-message--error" role="alert">
+              <ViewerWindowMessage className="annotate-create-message annotate-create-message--error" role="alert">
                 {createMessage}
-              </div>
+              </ViewerWindowMessage>
             ) : null}
-          </form>
+          </ViewerWindowForm>
         </FloatingWindow>
       ) : null}
     </>

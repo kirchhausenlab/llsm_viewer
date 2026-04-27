@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 
-const ACTION_HEIGHT_CSS_VAR = '--roi-manager-actions-height';
+const ACTION_HEIGHT_CSS_VAR = '--viewer-window-manager-actions-height';
 
-export function useActionColumnHeightCssVar() {
+export function useViewerWindowActionColumnHeight() {
   const actionsRef = useRef<HTMLDivElement | null>(null);
   const [height, setHeight] = useState<number | null>(null);
 
@@ -51,7 +51,7 @@ export function useActionColumnHeightCssVar() {
 
   const managerStyle = useMemo<CSSProperties | undefined>(
     () => (height ? ({ [ACTION_HEIGHT_CSS_VAR]: `${height}px` } as CSSProperties) : undefined),
-    [height]
+    [height],
   );
 
   return { actionsRef, managerStyle };

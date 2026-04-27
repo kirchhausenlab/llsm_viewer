@@ -429,11 +429,7 @@
 .voxel-resolution-main-row,
 .voxel-resolution-anisotropy-row,
 .voxel-resolution-temporal-group,
-.channel-controls .slider-control label,
-.track-controls .slider-control label,
-.track-length-controls label,
-.track-color-control-header,
-.selected-tracks-slider__label {
+.track-color-control-header {
   font-size: var(--type-size-title);
   font-weight: var(--type-weight-label);
   letter-spacing: 0;
@@ -468,11 +464,7 @@
 .voxel-resolution-main-row,
 .voxel-resolution-anisotropy-row,
 .voxel-resolution-temporal-group,
-.channel-controls .slider-control label,
-.track-controls .slider-control label,
-.track-length-controls label,
 .track-color-control-header,
-.selected-tracks-slider__label,
 .track-list-summary,
 .global-controls .control-label,
 .global-controls label:not(.control-label),
@@ -495,7 +487,6 @@
 .hint,
 .track-empty-hint,
 .viewer-following-label,
-.selected-tracks-slider__value,
 .selected-tracks-empty,
 .selected-tracks-legend-value,
 .preprocessed-loader-error,
@@ -647,20 +638,7 @@
 .channel-add-button,
 .preprocessed-dropbox-config-save,
 .preprocessed-dropbox-config-cancel,
-.preprocessed-dropbox-config-clear,
-.global-controls button,
-.viewer-mode-button,
-.viewer-stop-tracking,
-.sidebar-launcher-button,
-.playback-button,
-.channel-controls .channel-action-button,
-.channel-controls .channel-render-mode-select,
-.track-length-apply,
-.track-controls .track-order-toggle,
-.track-controls .track-follow-button,
-.track-color-mode-button,
-.selected-tracks-button,
-.warning-window-action-button {
+.preprocessed-dropbox-config-clear {
   border: 1px solid var(--control-border);
   border-radius: var(--radius-sm);
   background: var(--control-background);
@@ -677,20 +655,7 @@
 .channel-add-button:hover:not(:disabled),
 .preprocessed-dropbox-config-save:hover:not(:disabled),
 .preprocessed-dropbox-config-cancel:hover:not(:disabled),
-.preprocessed-dropbox-config-clear:hover:not(:disabled),
-.global-controls button:not(:disabled):hover,
-.viewer-mode-button:hover:not(:disabled),
-.viewer-stop-tracking:hover:not(:disabled),
-.sidebar-launcher-button:hover:not(:disabled),
-.playback-button:hover:not(:disabled),
-.channel-controls .channel-action-button:not(:disabled):hover,
-.channel-controls .channel-render-mode-select:not(:disabled):hover,
-.track-length-apply:hover:not(:disabled),
-.track-controls .track-order-toggle:hover:not(:disabled),
-.track-controls .track-follow-button:hover:not(:disabled),
-.track-color-mode-button:hover:not(:disabled),
-.selected-tracks-button:hover:not(:disabled),
-.warning-window-action-button:hover:not(:disabled) {
+.preprocessed-dropbox-config-clear:hover:not(:disabled) {
   border-color: var(--control-border-strong);
   background: var(--control-hover-background);
   color: var(--text-primary);
@@ -705,31 +670,13 @@
 .channel-tracks-button:disabled,
 .preprocessed-dropbox-config-save:disabled,
 .preprocessed-dropbox-config-cancel:disabled,
-.preprocessed-dropbox-config-clear:disabled,
-.global-controls button:disabled,
-.viewer-mode-button:disabled,
-.viewer-stop-tracking:disabled,
-.sidebar-launcher-button:disabled,
-.playback-button:disabled,
-.channel-controls .channel-action-button:disabled,
-.channel-controls .channel-render-mode-select:disabled,
-.track-length-apply:disabled,
-.track-controls .track-order-toggle:disabled,
-.track-controls .track-follow-button:disabled,
-.track-color-mode-button:disabled,
-.selected-tracks-button:disabled {
+.preprocessed-dropbox-config-clear:disabled {
   opacity: 0.52;
   background: var(--control-background-muted);
   border-color: var(--panel-border);
   box-shadow: none;
 }
 
-.viewer-mode-button.is-active,
-.channel-controls .channel-action-button[aria-pressed='true'],
-.track-controls .track-order-toggle.is-active,
-.track-color-mode-button.is-active,
-.track-controls .track-follow-button.is-active,
-.selected-tracks-button,
 .playback-toggle,
 .channel-return-button {
   border-color: var(--accent-border);
@@ -737,11 +684,6 @@
   color: var(--text-primary);
 }
 
-.viewer-mode-button.is-active:hover,
-.track-controls .track-order-toggle.is-active:hover,
-.track-color-mode-button.is-active:hover,
-.track-controls .track-follow-button.is-active:hover,
-.selected-tracks-button:hover,
 .playback-toggle:hover {
   background: var(--accent-soft-strong);
 }
@@ -821,7 +763,6 @@
 .front-page-card input:not([type='range']):not([type='checkbox']):not([type='radio']):not([type='file']):not([type='color']),
 .floating-window input:not([type='range']):not([type='checkbox']):not([type='radio']):not([type='file']):not([type='color']),
 .front-page-card select,
-.floating-window select,
 .front-page-card textarea,
 .floating-window textarea {
   border: 1px solid var(--control-border);
@@ -834,8 +775,7 @@
   box-shadow: var(--control-shadow-inset);
 }
 
-.floating-window input:not([type='range']):not([type='checkbox']):not([type='radio']):not([type='file']):not([type='color']),
-.floating-window select {
+.floating-window input:not([type='range']):not([type='checkbox']):not([type='radio']):not([type='file']):not([type='color']) {
   box-sizing: border-box;
   min-height: var(--floating-window-control-size);
   padding-block: 0;
@@ -844,7 +784,6 @@
 }
 
 .floating-window .control-group > input:not([type='range']):not([type='checkbox']):not([type='radio']):not([type='file']):not([type='color']),
-.floating-window .control-group > select,
 .floating-window .control-group > textarea {
   width: 100%;
 }
@@ -859,7 +798,6 @@
 .front-page-card input:focus,
 .floating-window input:focus,
 .front-page-card select:focus,
-.floating-window select:focus,
 .front-page-card textarea:focus,
 .floating-window textarea:focus,
 .channel-tab-name-input:focus,
@@ -924,7 +862,6 @@
 .selected-tracks-legend-track,
 .selected-tracks-legend-channel,
 .selected-tracks-axis-caption,
-.selected-tracks-slider__label,
 .viewer-top-menu-dropdown-item-label,
 .controls-help-window__title {
   color: var(--text-primary);
@@ -1303,16 +1240,14 @@
   text-decoration: none;
 }
 
-.viewer-top-menu-button--danger,
-.viewer-stop-tracking.is-active {
+.viewer-top-menu-button--danger {
   border-color: var(--danger-border);
   background: var(--danger-background);
   color: var(--danger-text);
   box-shadow: none;
 }
 
-.viewer-top-menu-button--danger:hover,
-.viewer-stop-tracking.is-active:hover {
+.viewer-top-menu-button--danger:hover {
   background: var(--danger-background);
   filter: brightness(1.05);
 }
@@ -1814,22 +1749,8 @@
   background: var(--panel-background);
 }
 
-.floating-window .global-controls button,
-.floating-window .viewer-mode-button,
-.floating-window .viewer-stop-tracking,
-.floating-window .sidebar-launcher-button,
-.floating-window .playback-button,
 .floating-window .channel-controls .channel-tab,
 .floating-window .channel-tabs--header .channel-tab,
-.floating-window .channel-controls .channel-action-button,
-.floating-window .track-length-apply,
-.floating-window .track-controls .track-order-toggle,
-.floating-window .track-controls .track-follow-button,
-.floating-window .track-color-mode-button,
-.floating-window .track-color-randomizer,
-.floating-window .selected-tracks-button,
-.floating-window .warning-window-action-button,
-.floating-window .controls-help-window__tab,
 .floating-window .track-tab {
   box-sizing: border-box;
   display: inline-flex;
@@ -1863,23 +1784,6 @@
 
 .floating-window .track-controls .track-follow-placeholder {
   height: var(--floating-window-control-size);
-}
-
-.floating-window .double-range-input {
-  display: flex;
-  align-items: center;
-  gap: 0.45rem;
-}
-
-.floating-window .double-range-input > input[type='range'] {
-  flex: 1 1 auto;
-  min-width: 0;
-}
-
-.floating-window .double-range-input > input:not([type='range']) {
-  flex: 0 0 4.5rem;
-  width: 4.5rem;
-  text-align: right;
 }
 
 .floating-window .color-swatch-row,
@@ -2100,10 +2004,7 @@
 }
 
 .playback-slider,
-.global-controls input[type='range'].playback-slider,
-.channel-controls .slider-control input[type='range'],
-.track-controls .slider-control input[type='range'],
-.track-length-row input[type='range'] {
+.global-controls input[type='range'].playback-slider {
   accent-color: var(--accent);
 }
 
@@ -2135,35 +2036,6 @@
 .selected-tracks-chart-axis-labels text,
 .selected-tracks-hover text {
   font-family: var(--font-mono);
-}
-
-.selected-tracks-slider__track {
-  background: linear-gradient(90deg, var(--panel-background-subtle), var(--panel-background-muted));
-  box-shadow: inset 0 0 0 1px var(--panel-border);
-}
-
-.selected-tracks-slider__fill {
-  background: linear-gradient(90deg, var(--accent), var(--accent-strong));
-  box-shadow: none;
-}
-
-.selected-tracks-slider__handle::-webkit-slider-thumb,
-.selected-tracks-slider__handle::-moz-range-thumb {
-  background: var(--accent);
-  border-color: var(--panel-background-strong);
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.16);
-}
-
-.selected-tracks-slider__handle:focus-visible::-webkit-slider-thumb,
-.selected-tracks-slider__handle:active::-webkit-slider-thumb,
-.selected-tracks-slider__handle:focus-visible::-moz-range-thumb,
-.selected-tracks-slider__handle:active::-moz-range-thumb {
-  box-shadow: 0 0 0 4px var(--focus-ring);
-}
-
-.selected-tracks-button {
-  background: var(--control-background);
-  border-color: var(--control-border);
 }
 
 :root[data-theme='light'] .selected-tracks-chart-series path {

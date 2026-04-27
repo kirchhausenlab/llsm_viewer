@@ -51,29 +51,6 @@
   text-align: center;
 }
 
-.global-controls button {
-  border: 1px solid rgba(255, 255, 255, 0.25);
-  border-radius: 0.5rem;
-  padding: 0.45rem 0.85rem;
-  background: rgba(12, 16, 24, 0.8);
-  color: inherit;
-  font-size: var(--overlay-button-font-size);
-  cursor: pointer;
-  transition: border-color 0.2s ease, background-color 0.2s ease, transform 0.2s ease;
-  text-align: left;
-}
-
-.global-controls button:not(:disabled):hover {
-  border-color: rgba(91, 140, 255, 0.7);
-  background: rgba(91, 140, 255, 0.15);
-  transform: translateY(-1px);
-}
-
-.global-controls button:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
 .global-controls label:not(.control-label) {
   font-size: 0.85rem;
   font-weight: 600;
@@ -82,11 +59,6 @@
   align-items: center;
   gap: 0.5rem;
   color: rgba(255, 255, 255, 0.8);
-}
-
-.global-controls input[type='range'] {
-  width: 100%;
-  accent-color: #5b8cff;
 }
 
 .global-controls .render-settings-section {

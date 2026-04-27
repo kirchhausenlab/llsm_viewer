@@ -1,4 +1,9 @@
 import FloatingWindow from '../../widgets/FloatingWindow';
+import {
+  ViewerWindowSegmentedControl,
+  ViewerWindowSlider,
+  ViewerWindowStack,
+} from './window-ui';
 import type { LayoutProps } from './types';
 import type { ModeToggleState } from './hooks/useViewerModeControls';
 
@@ -53,62 +58,52 @@ export default function CameraSettingsWindow({
       onClose={onClose}
     >
       <div className="sidebar sidebar-right">
-        <div className="global-controls">
-          <div className="control-group control-group--slider">
-            <label htmlFor="camera-settings-translation-speed">
-              Translation speed <span>{formatMultiplier(translationSpeedMultiplier)}</span>
-            </label>
-            <input
-              id="camera-settings-translation-speed"
-              type="range"
-              min={0.1}
-              max={3}
-              step={0.1}
-              value={translationSpeedMultiplier}
-              onChange={(event) => onTranslationSpeedMultiplierChange(Number(event.target.value))}
-            />
-          </div>
+        <ViewerWindowStack className="camera-settings-window">
+          <ViewerWindowSlider
+            id="camera-settings-translation-speed"
+            label="Translation speed"
+            valueLabel={formatMultiplier(translationSpeedMultiplier)}
+            min={0.1}
+            max={3}
+            step={0.1}
+            value={translationSpeedMultiplier}
+            onChange={(event) => onTranslationSpeedMultiplierChange(Number(event.target.value))}
+          />
 
-          <div className="control-group control-group--slider">
-            <label htmlFor="camera-settings-rotation-speed">
-              Rotation speed <span>{formatMultiplier(rotationSpeedMultiplier)}</span>
-            </label>
-            <input
-              id="camera-settings-rotation-speed"
-              type="range"
-              min={0.1}
-              max={3}
-              step={0.1}
-              value={rotationSpeedMultiplier}
-              onChange={(event) => onRotationSpeedMultiplierChange(Number(event.target.value))}
-            />
-          </div>
+          <ViewerWindowSlider
+            id="camera-settings-rotation-speed"
+            label="Rotation speed"
+            valueLabel={formatMultiplier(rotationSpeedMultiplier)}
+            min={0.1}
+            max={3}
+            step={0.1}
+            value={rotationSpeedMultiplier}
+            onChange={(event) => onRotationSpeedMultiplierChange(Number(event.target.value))}
+          />
 
           {is3dModeAvailable ? (
             <div className="control-group">
               <span className="control-label control-label--compact">Projection mode</span>
-              <div className="viewer-mode-row">
-                <button
-                  type="button"
-                  className="viewer-mode-button"
-                  onClick={() => onProjectionModeChange('perspective')}
-                  disabled={projectionLocked}
-                  title={projectionLockTitle}
-                  aria-pressed={projectionMode === 'perspective'}
-                >
-                  Perspective
-                </button>
-                <button
-                  type="button"
-                  className="viewer-mode-button"
-                  onClick={() => onProjectionModeChange('orthographic')}
-                  disabled={isometricDisabled}
-                  title={isometricTitle}
-                  aria-pressed={projectionMode === 'orthographic'}
-                >
-                  Isometric
-                </button>
-              </div>
+              <ViewerWindowSegmentedControl
+                className="viewer-mode-row"
+                ariaLabel="Projection mode"
+                value={projectionMode}
+                onChange={onProjectionModeChange}
+                options={[
+                  {
+                    value: 'perspective',
+                    content: 'Perspective',
+                    disabled: projectionLocked,
+                    title: projectionLockTitle,
+                  },
+                  {
+                    value: 'orthographic',
+                    content: 'Isometric',
+                    disabled: isometricDisabled,
+                    title: isometricTitle,
+                  },
+                ]}
+              />
               {projectionLocked ? (
                 <div className="control-hint">Projection mode is locked while 2D view is active.</div>
               ) : modeToggle.isVrActive ? (
@@ -116,7 +111,7 @@ export default function CameraSettingsWindow({
               ) : null}
             </div>
           ) : null}
-        </div>
+        </ViewerWindowStack>
       </div>
     </FloatingWindow>
   );

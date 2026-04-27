@@ -130,6 +130,10 @@ function createProps(
   };
 }
 
+function findHostById(renderer: TestRenderer.ReactTestRenderer, id: string) {
+  return renderer.root.findAll((node) => typeof node.type === 'string' && node.props.id === id)[0];
+}
+
 test('backgrounds window renders nothing while closed', () => {
   withEnvironmentMocks(() => {
     const renderer = TestRenderer.create(
@@ -153,12 +157,12 @@ test('backgrounds window renders the expected controls', () => {
     );
 
     const title = renderer.root.findAllByType('h2')[0];
-    const resetButton = renderer.root.findByProps({ id: 'viewer-background-reset' });
-    const defaultModeButton = renderer.root.findByProps({ id: 'viewer-background-mode-default' });
-    const customModeButton = renderer.root.findByProps({ id: 'viewer-background-mode-custom' });
-    const backgroundColorInput = renderer.root.findByProps({ id: 'viewer-background-color' });
-    const floorCheckbox = renderer.root.findByProps({ id: 'viewer-background-floor-enabled' });
-    const floorColorInput = renderer.root.findByProps({ id: 'viewer-background-floor-color' });
+    const resetButton = findHostById(renderer, 'viewer-background-reset');
+    const defaultModeButton = findHostById(renderer, 'viewer-background-mode-default');
+    const customModeButton = findHostById(renderer, 'viewer-background-mode-custom');
+    const backgroundColorInput = findHostById(renderer, 'viewer-background-color');
+    const floorCheckbox = findHostById(renderer, 'viewer-background-floor-enabled');
+    const floorColorInput = findHostById(renderer, 'viewer-background-floor-color');
 
     assert.equal(title?.children.join(''), 'Backgrounds');
     assert.equal(resetButton.children.join(''), 'Reset to Default');
@@ -185,12 +189,12 @@ test('backgrounds window forwards selection and color changes', () => {
       <BackgroundsWindow {...(props as any)} />
     );
 
-    const resetButton = renderer.root.findByProps({ id: 'viewer-background-reset' });
-    const defaultModeButton = renderer.root.findByProps({ id: 'viewer-background-mode-default' });
-    const customModeButton = renderer.root.findByProps({ id: 'viewer-background-mode-custom' });
-    const backgroundColorInput = renderer.root.findByProps({ id: 'viewer-background-color' });
-    const floorCheckbox = renderer.root.findByProps({ id: 'viewer-background-floor-enabled' });
-    const floorColorInput = renderer.root.findByProps({ id: 'viewer-background-floor-color' });
+    const resetButton = findHostById(renderer, 'viewer-background-reset');
+    const defaultModeButton = findHostById(renderer, 'viewer-background-mode-default');
+    const customModeButton = findHostById(renderer, 'viewer-background-mode-custom');
+    const backgroundColorInput = findHostById(renderer, 'viewer-background-color');
+    const floorCheckbox = findHostById(renderer, 'viewer-background-floor-enabled');
+    const floorColorInput = findHostById(renderer, 'viewer-background-floor-color');
 
     act(() => {
       resetButton.props.onClick();
@@ -232,8 +236,8 @@ test('backgrounds window disables floor controls while orthographic mode is acti
       }) as any)} />
     );
 
-    const floorCheckbox = renderer.root.findByProps({ id: 'viewer-background-floor-enabled' });
-    const floorColorInput = renderer.root.findByProps({ id: 'viewer-background-floor-color' });
+    const floorCheckbox = findHostById(renderer, 'viewer-background-floor-enabled');
+    const floorColorInput = findHostById(renderer, 'viewer-background-floor-color');
 
     assert.equal(floorCheckbox.props.disabled, true);
     assert.equal(floorColorInput.props.disabled, true);

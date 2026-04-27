@@ -6,6 +6,12 @@ import RoiManagerWindow from '../../src/components/viewers/viewer-shell/RoiManag
 
 console.log('Starting RoiManagerWindow tests');
 
+function findByClass(renderer: TestRenderer.ReactTestRenderer, className: string) {
+  return renderer.root.findAll(
+    (node) => typeof node.props.className === 'string' && node.props.className.split(/\s+/).includes(className),
+  );
+}
+
 (() => {
   const selectCalls: Array<{ roiId: string; additive: boolean | undefined }> = [];
   const renderer = TestRenderer.create(
@@ -74,8 +80,10 @@ console.log('Starting RoiManagerWindow tests');
   assert.equal(roiButtons[1]!.props.className.includes('is-active'), true);
   assert.equal(roiButtons[2]!.props.className.includes('is-selected'), true);
 
-  const badges = renderer.root.findAllByProps({ className: 'roi-manager-selection-badge' });
-  const activeBadges = renderer.root.findAllByProps({ className: 'roi-manager-selection-badge is-active' });
+  const badges = findByClass(renderer, 'roi-manager-selection-badge')
+    .filter((node) => node.type === 'span' && !node.props.className.includes('is-active'));
+  const activeBadges = findByClass(renderer, 'roi-manager-selection-badge')
+    .filter((node) => node.type === 'span' && node.props.className.includes('is-active'));
   assert.deepEqual(activeBadges.map((badge) => badge.children.join('')), ['1']);
   assert.deepEqual(badges.map((badge) => badge.children.join('')), ['2']);
   assert.equal(

@@ -1,5 +1,11 @@
 import FloatingWindow from '../../widgets/FloatingWindow';
 import type { LayoutProps, PlaybackControlsProps } from './types';
+import {
+  ViewerWindowButton,
+  ViewerWindowRow,
+  ViewerWindowSlider,
+  ViewerWindowStack,
+} from './window-ui';
 
 export type RecordWindowProps = {
   layout: Pick<LayoutProps, 'windowMargin' | 'controlWindowWidth' | 'recordWindowInitialPosition' | 'resetToken'>;
@@ -82,38 +88,39 @@ export default function RecordWindow({
       onClose={onClose}
     >
       <div className="sidebar sidebar-right">
-        <div className="global-controls">
+        <ViewerWindowStack className="record-window">
           <div className="control-group viewer-recording-row viewer-recording-row--single">
-            <button
+            <ViewerWindowButton
               type="button"
               className="playback-button viewer-recording-screenshot"
               onClick={onTakeScreenshot}
               disabled={!canTakeScreenshot}
             >
               Screenshot
-            </button>
+            </ViewerWindowButton>
           </div>
 
           <div className="control-group viewer-recording-row">
-            <div className="viewer-mode-row">
-              <button
+            <ViewerWindowRow className="viewer-mode-row" align="stretch">
+              <ViewerWindowButton
                 type="button"
                 className={primaryButtonClassName}
+                active={isRecording}
                 onClick={onRecordingPrimaryAction}
                 disabled={!canRecord}
                 aria-pressed={isRecording}
               >
                 {primaryButtonLabel}
-              </button>
-              <button
+              </ViewerWindowButton>
+              <ViewerWindowButton
                 type="button"
                 className="playback-button"
                 onClick={onStopRecording}
                 disabled={!isStopEnabled}
               >
                 Stop
-              </button>
-            </div>
+              </ViewerWindowButton>
+            </ViewerWindowRow>
           </div>
 
           {typeof countdownSeconds === 'number' && onCountdownSecondsChange ? (
@@ -135,23 +142,19 @@ export default function RecordWindow({
           ) : null}
 
           {typeof recordingBitrateMbps === 'number' && onRecordingBitrateMbpsChange ? (
-            <div className="control-group control-group--slider">
-              <label htmlFor="recording-bitrate-slider">
-                Recording bitrate (Mbps) <span>{recordingBitrateMbps}</span>
-              </label>
-              <input
-                id="recording-bitrate-slider"
-                type="range"
-                min={1}
-                max={100}
-                step={1}
-                value={recordingBitrateMbps}
-                onChange={(event) => onRecordingBitrateMbpsChange(Number(event.target.value))}
-                disabled={recordingStatus !== 'idle'}
-              />
-            </div>
+            <ViewerWindowSlider
+              id="recording-bitrate-slider"
+              label="Recording bitrate (Mbps)"
+              valueLabel={recordingBitrateMbps}
+              min={1}
+              max={100}
+              step={1}
+              value={recordingBitrateMbps}
+              onChange={(event) => onRecordingBitrateMbpsChange(Number(event.target.value))}
+              disabled={recordingStatus !== 'idle'}
+            />
           ) : null}
-        </div>
+        </ViewerWindowStack>
       </div>
     </FloatingWindow>
   );

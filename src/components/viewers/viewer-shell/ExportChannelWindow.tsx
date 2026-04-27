@@ -1,6 +1,13 @@
 import type { ChannelExportSource } from '../../../shared/utils/channelExport';
 import FloatingWindow from '../../widgets/FloatingWindow';
 import type { LayoutProps } from './types';
+import {
+  ViewerWindowButton,
+  ViewerWindowMessage,
+  ViewerWindowRow,
+  ViewerWindowSelect,
+  ViewerWindowStack,
+} from './window-ui';
 
 type ExportChannelWindowProps = {
   initialPosition: LayoutProps['exportChannelWindowInitialPosition'];
@@ -47,31 +54,32 @@ export default function ExportChannelWindow({
       resetSignal={resetSignal}
       onClose={onClose}
     >
-      <div className="global-controls export-channel-window">
-        <div className="control-row export-channel-row">
+      <ViewerWindowStack className="export-channel-window">
+        <ViewerWindowRow className="export-channel-row" align="center">
           <label htmlFor="export-channel-select">Channel</label>
-          <select
+          <ViewerWindowSelect
             id="export-channel-select"
             value={selectedSourceId}
             onChange={(event) => onSourceChange(event.target.value)}
             disabled={busy || sources.length === 0}
+            expand
           >
             {sources.map((source) => (
               <option key={getSourceId(source)} value={getSourceId(source)}>
                 {source.name}
               </option>
             ))}
-          </select>
-        </div>
+          </ViewerWindowSelect>
+        </ViewerWindowRow>
 
-        <div className="control-row export-channel-row">
+        <ViewerWindowRow className="export-channel-row" align="center">
           <label htmlFor="export-channel-format">Format</label>
-          <select id="export-channel-format" value="tif" disabled>
+          <ViewerWindowSelect id="export-channel-format" value="tif" disabled expand>
             <option value="tif">.tif</option>
-          </select>
-        </div>
+          </ViewerWindowSelect>
+        </ViewerWindowRow>
 
-        <div className="control-row export-channel-row">
+        <ViewerWindowRow className="export-channel-row" align="center">
           <label htmlFor="export-channel-file-name">File name</label>
           <input
             id="export-channel-file-name"
@@ -80,20 +88,20 @@ export default function ExportChannelWindow({
             onChange={(event) => onFileNameChange(event.target.value)}
             disabled={busy}
           />
-        </div>
+        </ViewerWindowRow>
 
-        <div className="control-row export-channel-actions">
-          <button type="button" onClick={onExport} disabled={!canExport}>
+        <ViewerWindowRow className="export-channel-actions" justify="end" wrap>
+          <ViewerWindowButton type="button" onClick={onExport} disabled={!canExport}>
             Export
-          </button>
-        </div>
+          </ViewerWindowButton>
+        </ViewerWindowRow>
 
         {message ? (
-          <div className="export-channel-message" role="status" aria-live="polite">
+          <ViewerWindowMessage className="export-channel-message" role="status" aria-live="polite">
             {message}
-          </div>
+          </ViewerWindowMessage>
         ) : null}
-      </div>
+      </ViewerWindowStack>
     </FloatingWindow>
   );
 }

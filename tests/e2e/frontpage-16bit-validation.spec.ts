@@ -29,7 +29,7 @@ async function configureSingleChannel(page: import('@playwright/test').Page, nam
   await channelRow.locator('input[type="file"][accept*=".tif"]').setInputFiles([tiffPath]);
 }
 
-test('front page blocks 16-bit preprocessing when all non-segmentation inputs are 8-bit', async ({ page }) => {
+test('front page defaults to non-forced 8-bit rendering and preprocesses 8-bit inputs', async ({ page }) => {
   const uint8Path = createCustomVolumeTiffPath({
     width: 4,
     height: 4,
@@ -40,14 +40,14 @@ test('front page blocks 16-bit preprocessing when all non-segmentation inputs ar
   });
 
   await configureSingleChannel(page, '8-bit only', uint8Path);
-  await page.getByRole('checkbox', { name: 'Render in 16bit' }).check();
+  await expect(page.getByRole('checkbox', { name: 'Force 8bit render (performance)' })).not.toBeChecked();
   await page.getByRole('button', { name: 'Preprocess experiment' }).click();
 
-  await expect(page.getByText('Render in 16bit is only useful', { exact: false })).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Launch viewer' })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Launch viewer' })).toBeVisible({ timeout: 240_000 });
+  await expect(page.locator('.warning-window-message')).toHaveCount(0);
 });
 
-test('front page allows 16-bit preprocessing when a non-segmentation input is higher precision', async ({ page }) => {
+test('front page allows forced 8-bit preprocessing when a non-segmentation input is higher precision', async ({ page }) => {
   const uint16Path = createCustomVolumeTiffPath({
     width: 4,
     height: 4,
@@ -58,7 +58,7 @@ test('front page allows 16-bit preprocessing when a non-segmentation input is hi
   });
 
   await configureSingleChannel(page, '16-bit input', uint16Path);
-  await page.getByRole('checkbox', { name: 'Render in 16bit' }).check();
+  await page.getByRole('checkbox', { name: 'Force 8bit render (performance)' }).check();
   await page.getByRole('button', { name: 'Preprocess experiment' }).click();
 
   await expect(page.getByRole('button', { name: 'Launch viewer' })).toBeVisible({ timeout: 240_000 });

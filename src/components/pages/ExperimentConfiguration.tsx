@@ -8,6 +8,12 @@ import type {
 } from '../../types/voxelResolution';
 import { TEMPORAL_RESOLUTION_UNITS, VOXEL_RESOLUTION_UNITS } from '../../types/voxelResolution';
 
+type SkewAngleUnit = 'degrees' | 'radians';
+type SkewDirection = 'X' | 'Y';
+
+const SKEW_ANGLE_UNITS: readonly SkewAngleUnit[] = ['degrees', 'radians'];
+const SKEW_DIRECTIONS: readonly SkewDirection[] = ['X', 'Y'];
+
 const SPATIAL_VOXEL_RESOLUTION_AXES_BY_EXPERIMENT_TYPE: Readonly<Record<ExperimentType, ReadonlyArray<{ axis: VoxelResolutionAxis; label: string }>>> = {
   'single-3d-volume': [
     { axis: 'x', label: 'X' },
@@ -37,8 +43,18 @@ type ExperimentConfigurationProps = {
   backgroundMaskError: string | null;
   onBackgroundMaskToggle: (value: boolean) => void;
   onBackgroundMaskValuesInputChange: (value: string) => void;
-  renderIn16Bit: boolean;
-  onRenderIn16BitToggle: (value: boolean) => void;
+  force8BitRender: boolean;
+  onForce8BitRenderToggle: (value: boolean) => void;
+  deSkewModeEnabled: boolean;
+  skewAngleInput: string;
+  skewAngleUnit: SkewAngleUnit;
+  skewDirection: SkewDirection;
+  deSkewMaskVoxels: boolean;
+  onDeSkewModeToggle: (value: boolean) => void;
+  onSkewAngleInputChange: (value: string) => void;
+  onSkewAngleUnitChange: (value: SkewAngleUnit) => void;
+  onSkewDirectionChange: (value: SkewDirection) => void;
+  onDeSkewMaskVoxelsToggle: (value: boolean) => void;
   isFrontPageLocked: boolean;
 };
 
@@ -54,8 +70,18 @@ const ExperimentConfiguration: FC<ExperimentConfigurationProps> = ({
   backgroundMaskError,
   onBackgroundMaskToggle,
   onBackgroundMaskValuesInputChange,
-  renderIn16Bit,
-  onRenderIn16BitToggle,
+  force8BitRender,
+  onForce8BitRenderToggle,
+  deSkewModeEnabled,
+  skewAngleInput,
+  skewAngleUnit,
+  skewDirection,
+  deSkewMaskVoxels,
+  onDeSkewModeToggle,
+  onSkewAngleInputChange,
+  onSkewAngleUnitChange,
+  onSkewDirectionChange,
+  onDeSkewMaskVoxelsToggle,
   isFrontPageLocked
 }) => {
   const spatialResolutionAxes = SPATIAL_VOXEL_RESOLUTION_AXES_BY_EXPERIMENT_TYPE[experimentType];
@@ -124,9 +150,7 @@ const ExperimentConfiguration: FC<ExperimentConfigurationProps> = ({
               </label>
             </div>
           ) : null}
-        </div>
-        <div className="voxel-resolution-anisotropy-row">
-          <label className="voxel-resolution-anisotropy">
+          <label className="voxel-resolution-anisotropy voxel-resolution-main-toggle">
             <input
               type="checkbox"
               checked={voxelResolution.correctAnisotropy}
@@ -135,6 +159,8 @@ const ExperimentConfiguration: FC<ExperimentConfigurationProps> = ({
             />
             <strong>Make data isotropic</strong>
           </label>
+        </div>
+        <div className="voxel-resolution-anisotropy-row">
           <label className="voxel-resolution-anisotropy voxel-resolution-background-mask">
             <input
               type="checkbox"
@@ -142,7 +168,7 @@ const ExperimentConfiguration: FC<ExperimentConfigurationProps> = ({
               onChange={(event) => onBackgroundMaskToggle(event.target.checked)}
               disabled={isFrontPageLocked}
             />
-            <strong>Background mask</strong>
+            <strong>Mask voxels by intensity</strong>
           </label>
           {backgroundMaskEnabled ? (
             <label className="voxel-resolution-background-mask-values">
@@ -153,21 +179,83 @@ const ExperimentConfiguration: FC<ExperimentConfigurationProps> = ({
                 onChange={(event) => onBackgroundMaskValuesInputChange(event.target.value)}
                 placeholder="0; 65535; -1"
                 disabled={isFrontPageLocked}
-                aria-label="Background mask values"
+                aria-label="Mask voxels by intensity values"
               />
             </label>
           ) : null}
-        </div>
-        <div className="voxel-resolution-anisotropy-row">
           <label className="voxel-resolution-anisotropy">
             <input
               type="checkbox"
-              checked={renderIn16Bit}
-              onChange={(event) => onRenderIn16BitToggle(event.target.checked)}
+              checked={force8BitRender}
+              onChange={(event) => onForce8BitRenderToggle(event.target.checked)}
               disabled={isFrontPageLocked}
             />
-            <strong>Render in 16bit</strong>
+            <strong>Force 8bit render (performance)</strong>
           </label>
+        </div>
+        <div className="voxel-resolution-anisotropy-row voxel-resolution-skew-row">
+          <label className="voxel-resolution-anisotropy">
+            <input
+              type="checkbox"
+              checked={deSkewModeEnabled}
+              onChange={(event) => onDeSkewModeToggle(event.target.checked)}
+              disabled={isFrontPageLocked}
+            />
+            <strong>De-skew mode</strong>
+          </label>
+          {deSkewModeEnabled ? (
+            <>
+              <label className="voxel-resolution-field voxel-resolution-skew-angle-field">
+                <span className="voxel-resolution-field-label">Skew angle:</span>
+                <input
+                  type="number"
+                  inputMode="decimal"
+                  step="any"
+                  value={skewAngleInput}
+                  onChange={(event) => onSkewAngleInputChange(event.target.value)}
+                  disabled={isFrontPageLocked}
+                />
+              </label>
+              <label className="voxel-resolution-unit voxel-resolution-skew-unit">
+                <select
+                  aria-label="Skew angle unit"
+                  value={skewAngleUnit}
+                  onChange={(event) => onSkewAngleUnitChange(event.target.value as SkewAngleUnit)}
+                  disabled={isFrontPageLocked}
+                >
+                  {SKEW_ANGLE_UNITS.map((unit: SkewAngleUnit) => (
+                    <option key={unit} value={unit}>
+                      {unit}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="voxel-resolution-unit voxel-resolution-skew-direction">
+                <span className="voxel-resolution-field-label">Skew direction:</span>
+                <select
+                  aria-label="Skew direction"
+                  value={skewDirection}
+                  onChange={(event) => onSkewDirectionChange(event.target.value as SkewDirection)}
+                  disabled={isFrontPageLocked}
+                >
+                  {SKEW_DIRECTIONS.map((direction: SkewDirection) => (
+                    <option key={direction} value={direction}>
+                      {direction}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="voxel-resolution-anisotropy">
+                <input
+                  type="checkbox"
+                  checked={deSkewMaskVoxels}
+                  onChange={(event) => onDeSkewMaskVoxelsToggle(event.target.checked)}
+                  disabled={isFrontPageLocked}
+                />
+                <strong>Mask voxels</strong>
+              </label>
+            </>
+          ) : null}
         </div>
         {backgroundMaskEnabled && backgroundMaskError ? (
           <div className="voxel-resolution-background-mask-error">{backgroundMaskError}</div>
@@ -178,4 +266,4 @@ const ExperimentConfiguration: FC<ExperimentConfigurationProps> = ({
 };
 
 export default ExperimentConfiguration;
-export type { ExperimentConfigurationProps };
+export type { ExperimentConfigurationProps, SkewAngleUnit, SkewDirection };

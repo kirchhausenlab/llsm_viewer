@@ -1,6 +1,16 @@
 import FloatingWindow from '../../widgets/FloatingWindow';
-import { useActionColumnHeightCssVar } from './hooks/useActionColumnHeightCssVar';
+import { useViewerWindowActionColumnHeight } from './hooks/useViewerWindowActionColumnHeight';
 import type { LayoutProps } from './types';
+import {
+  ViewerWindowButton,
+  ViewerWindowEmptyState,
+  ViewerWindowManager,
+  ViewerWindowManagerActions,
+  ViewerWindowManagerBadge,
+  ViewerWindowManagerItem,
+  ViewerWindowManagerItemLabel,
+  ViewerWindowManagerList,
+} from './window-ui';
 import type { SavedRoi } from '../../../types/roi';
 
 type RoiManagerWindowProps = {
@@ -55,7 +65,7 @@ export default function RoiManagerWindow({
   onClose,
 }: RoiManagerWindowProps) {
   const hasActiveRoi = activeSavedRoiId !== null;
-  const { actionsRef, managerStyle } = useActionColumnHeightCssVar();
+  const { actionsRef, managerStyle } = useViewerWindowActionColumnHeight();
 
   return (
     <FloatingWindow
@@ -66,76 +76,73 @@ export default function RoiManagerWindow({
       className="floating-window--roi-manager"
       onClose={onClose}
     >
-      <div className="roi-manager-window" style={managerStyle}>
-        <div className="roi-manager-list" role="listbox" aria-label="Saved ROIs" aria-multiselectable="true">
+      <ViewerWindowManager className="roi-manager-window" style={managerStyle}>
+        <ViewerWindowManagerList className="roi-manager-list" aria-label="Saved ROIs" multiselectable>
           {savedRois.length > 0 ? (
             savedRois.map((roi) => {
               const selectionIndex = selectedSavedRoiIds.indexOf(roi.id);
               const isSelected = selectionIndex !== -1;
               const isActive = roi.id === activeSavedRoiId;
               return (
-                <button
+                <ViewerWindowManagerItem
                   key={roi.id}
                   type="button"
-                  className={[
-                    'roi-manager-list-item',
-                    isSelected ? 'is-selected' : '',
-                    isActive ? 'is-active' : '',
-                  ]
-                    .filter(Boolean)
-                    .join(' ')}
-                  aria-selected={isSelected}
+                  className="roi-manager-list-item"
+                  selected={isSelected}
+                  active={isActive}
                   onClick={(event) => onSelectRoi(roi.id, event.shiftKey)}
                 >
-                  <span className="roi-manager-list-item-label">{roi.name}</span>
+                  <ViewerWindowManagerItemLabel className="roi-manager-list-item-label">
+                    {roi.name}
+                  </ViewerWindowManagerItemLabel>
                   {isSelected ? (
-                    <span
+                    <ViewerWindowManagerBadge
                       className={isActive ? 'roi-manager-selection-badge is-active' : 'roi-manager-selection-badge'}
                       aria-hidden="true"
                     >
                       {selectionIndex + 1}
-                    </span>
+                    </ViewerWindowManagerBadge>
                   ) : null}
-                </button>
+                </ViewerWindowManagerItem>
               );
             })
           ) : (
-            <p className="roi-manager-empty-state">No saved ROIs.</p>
+            <ViewerWindowEmptyState>No saved ROIs.</ViewerWindowEmptyState>
           )}
-        </div>
+        </ViewerWindowManagerList>
 
-        <div className="roi-manager-actions" ref={actionsRef}>
-          <button type="button" onClick={onAdd} disabled={!canAdd}>
+        <ViewerWindowManagerActions className="roi-manager-actions" ref={actionsRef}>
+          <ViewerWindowButton type="button" onClick={onAdd} disabled={!canAdd}>
             Add
-          </button>
-          <button type="button" onClick={onDelete} disabled={!hasActiveRoi}>
+          </ViewerWindowButton>
+          <ViewerWindowButton type="button" onClick={onDelete} disabled={!hasActiveRoi}>
             Delete
-          </button>
-          <button type="button" onClick={onRename} disabled={!hasActiveRoi}>
+          </ViewerWindowButton>
+          <ViewerWindowButton type="button" onClick={onRename} disabled={!hasActiveRoi}>
             Rename
-          </button>
-          <button type="button" onClick={onUpdate} disabled={!canUpdate}>
+          </ViewerWindowButton>
+          <ViewerWindowButton type="button" onClick={onUpdate} disabled={!canUpdate}>
             Update
-          </button>
-          <button type="button" onClick={onMeasure} disabled={!canMeasure}>
+          </ViewerWindowButton>
+          <ViewerWindowButton type="button" onClick={onMeasure} disabled={!canMeasure}>
             Measure
-          </button>
-          <button type="button" onClick={onSave} disabled={!canSave}>
+          </ViewerWindowButton>
+          <ViewerWindowButton type="button" onClick={onSave} disabled={!canSave}>
             Save
-          </button>
-          <button type="button" onClick={onLoad} disabled={!canLoad}>
+          </ViewerWindowButton>
+          <ViewerWindowButton type="button" onClick={onLoad} disabled={!canLoad}>
             Load
-          </button>
-          <button
+          </ViewerWindowButton>
+          <ViewerWindowButton
             type="button"
-            className={showAllSavedRois ? 'roi-manager-toggle is-active' : 'roi-manager-toggle'}
+            active={showAllSavedRois}
             aria-pressed={showAllSavedRois}
             onClick={() => onShowAllChange(!showAllSavedRois)}
           >
             Show all
-          </button>
-        </div>
-      </div>
+          </ViewerWindowButton>
+        </ViewerWindowManagerActions>
+      </ViewerWindowManager>
     </FloatingWindow>
   );
 }

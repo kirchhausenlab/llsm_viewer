@@ -1,4 +1,12 @@
 import FloatingWindow from '../../widgets/FloatingWindow';
+import {
+  ViewerWindowButton,
+  ViewerWindowDivider,
+  ViewerWindowRow,
+  ViewerWindowSegmentedControl,
+  ViewerWindowSlider,
+  ViewerWindowStack,
+} from './window-ui';
 import type { LayoutProps } from './types';
 import type { RoiDefinition, RoiDimensionMode, RoiTool } from '../../../types/roi';
 import { ROI_COLOR_SWATCHES } from '../../../types/roi';
@@ -136,97 +144,62 @@ export default function DrawRoiWindow({
       className="floating-window--draw-roi"
       onClose={onClose}
     >
-      <div className="global-controls draw-roi-window">
-        <div className="control-row draw-roi-toolbar">
-          <div
+      <ViewerWindowStack className="draw-roi-window">
+        <ViewerWindowRow className="draw-roi-toolbar" wrap>
+          <ViewerWindowSegmentedControl
             className="draw-roi-segmented-control draw-roi-segmented-control--mode"
-            role="group"
-            aria-label="ROI dimension"
-          >
-            {(['2d', '3d'] as const).map((mode) => {
-              const isSelected = effectiveDimensionMode === mode;
-              return (
-                <button
-                  key={mode}
-                  type="button"
-                  className={isSelected ? 'draw-roi-segment-button is-active' : 'draw-roi-segment-button'}
-                  aria-pressed={isSelected}
-                  disabled={hasAttachedRoi}
-                  onClick={() => onDimensionModeChange(mode)}
-                >
-                  {mode.toUpperCase()}
-                </button>
-              );
-            })}
-          </div>
+            buttonClassName="draw-roi-segment-button"
+            ariaLabel="ROI dimension"
+            value={effectiveDimensionMode}
+            onChange={onDimensionModeChange}
+            disabled={hasAttachedRoi}
+            options={(['2d', '3d'] as const).map((mode) => ({
+              value: mode,
+              content: mode.toUpperCase(),
+            }))}
+          />
 
-          <div
+          <ViewerWindowSegmentedControl
             className="draw-roi-segmented-control draw-roi-segmented-control--shape"
-            role="group"
-            aria-label="ROI drawing tool"
-          >
-            <button
-              type="button"
-              className={
-                effectiveTool === 'line'
-                  ? 'draw-roi-segment-button draw-roi-tool-button is-active'
-                  : 'draw-roi-segment-button draw-roi-tool-button'
-              }
-              aria-pressed={effectiveTool === 'line'}
-              aria-label="Line"
-              disabled={hasAttachedRoi}
-              onClick={() => onToolChange('line')}
-              title="Line"
-            >
-              <LineIcon />
-            </button>
-            <button
-              type="button"
-              className={
-                effectiveTool === 'rectangle'
-                  ? 'draw-roi-segment-button draw-roi-tool-button is-active'
-                  : 'draw-roi-segment-button draw-roi-tool-button'
-              }
-              aria-pressed={effectiveTool === 'rectangle'}
-              aria-label="Rectangle"
-              disabled={hasAttachedRoi}
-              onClick={() => onToolChange('rectangle')}
-              title="Rectangle"
-            >
-              <RectangleIcon />
-            </button>
-            <button
-              type="button"
-              className={
-                effectiveTool === 'ellipse'
-                  ? 'draw-roi-segment-button draw-roi-tool-button is-active'
-                  : 'draw-roi-segment-button draw-roi-tool-button'
-              }
-              aria-pressed={effectiveTool === 'ellipse'}
-              aria-label="Ellipse"
-              disabled={hasAttachedRoi}
-              onClick={() => onToolChange('ellipse')}
-              title="Ellipse"
-            >
-              <EllipseIcon />
-            </button>
-          </div>
-        </div>
+            buttonClassName="draw-roi-segment-button"
+            ariaLabel="ROI drawing tool"
+            value={effectiveTool}
+            onChange={onToolChange}
+            disabled={hasAttachedRoi}
+            options={[
+              { value: 'line', ariaLabel: 'Line', title: 'Line', className: 'draw-roi-tool-button', content: <LineIcon /> },
+              {
+                value: 'rectangle',
+                ariaLabel: 'Rectangle',
+                title: 'Rectangle',
+                className: 'draw-roi-tool-button',
+                content: <RectangleIcon />,
+              },
+              {
+                value: 'ellipse',
+                ariaLabel: 'Ellipse',
+                title: 'Ellipse',
+                className: 'draw-roi-tool-button',
+                content: <EllipseIcon />,
+              },
+            ]}
+          />
+        </ViewerWindowRow>
 
         <div className="draw-roi-sliders" role="group" aria-label="ROI coordinates">
           <div className="draw-roi-name-row">
             <span>{currentRoiName}</span>
-            <button
+            <ViewerWindowButton
               type="button"
               className="draw-roi-action-button"
               disabled={actionButtonDisabled}
               onClick={onClearOrDetach}
             >
               {actionButtonLabel}
-            </button>
+            </ViewerWindowButton>
           </div>
           {(['x', 'y', 'z'] as const).map((axis) => (
-            <div key={axis} className="control-row draw-roi-slider-row">
+            <ViewerWindowRow key={axis} className="draw-roi-slider-row">
               {(['start', 'end'] as const).map((pointKey) => {
                 if (axis === 'z' && pointKey === 'end' && isTwoDMode) {
                   return (
@@ -270,28 +243,28 @@ export default function DrawRoiWindow({
                 })();
 
                 return (
-                  <div key={`${pointKey}-${axis}`} className="control-group control-group--slider draw-roi-slider-group">
-                    <label htmlFor={`draw-roi-${pointKey}-${axis}-slider`}>
-                      {axis.toUpperCase()} {pointKey === 'start' ? 'Start' : 'End'} <span>{toUserFacingVoxelIndex(value)}</span>
-                    </label>
-                    <input
-                      id={`draw-roi-${pointKey}-${axis}-slider`}
-                      type="range"
-                      min={1}
-                      max={max + 1}
-                      step={1}
-                      value={toUserFacingVoxelIndex(value)}
-                      disabled={disabled}
-                      onChange={(event) =>
-                        handlePointCoordinateChange(pointKey, axis, fromUserFacingVoxelIndex(Number(event.target.value)))
-                      }
-                    />
-                  </div>
+                  <ViewerWindowSlider
+                    key={`${pointKey}-${axis}`}
+                    id={`draw-roi-${pointKey}-${axis}-slider`}
+                    className="draw-roi-slider-group"
+                    label={`${axis.toUpperCase()} ${pointKey === 'start' ? 'Start' : 'End'}`}
+                    valueLabel={toUserFacingVoxelIndex(value)}
+                    min={1}
+                    max={max + 1}
+                    step={1}
+                    value={toUserFacingVoxelIndex(value)}
+                    disabled={disabled}
+                    onChange={(event) =>
+                      handlePointCoordinateChange(pointKey, axis, fromUserFacingVoxelIndex(Number(event.target.value)))
+                    }
+                  />
                 );
               })}
-            </div>
+            </ViewerWindowRow>
           ))}
         </div>
+
+        <ViewerWindowDivider />
 
         <div className="draw-roi-color-section">
           <div className="draw-roi-color-header">
@@ -332,7 +305,7 @@ export default function DrawRoiWindow({
             </div>
           </div>
         </div>
-      </div>
+      </ViewerWindowStack>
     </FloatingWindow>
   );
 }

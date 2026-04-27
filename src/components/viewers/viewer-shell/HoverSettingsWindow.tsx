@@ -1,6 +1,12 @@
 import FloatingWindow from '../../widgets/FloatingWindow';
 import type { Position } from './types';
 import {
+  ViewerWindowButton,
+  ViewerWindowSelectField,
+  ViewerWindowSlider,
+  ViewerWindowStack,
+} from './window-ui';
+import {
   HOVER_SLIDER_MAX,
   HOVER_SLIDER_MIN,
 } from '../../../shared/utils/hoverSettings';
@@ -52,64 +58,55 @@ export default function HoverSettingsWindow({
       onClose={onClose}
     >
       <div className="sidebar sidebar-right">
-        <div className="global-controls">
+        <ViewerWindowStack className="hover-settings-window">
           <div className="control-group">
             <span className="control-label control-label--compact">Hover effect</span>
             <div className="viewer-mode-row">
-              <button
+              <ViewerWindowButton
                 id="hover-enabled-toggle"
                 type="button"
-                className={settings.enabled ? 'viewer-mode-button is-active' : 'viewer-mode-button'}
+                className="viewer-mode-button"
+                active={settings.enabled}
                 onClick={() => onEnabledChange(!settings.enabled)}
                 aria-pressed={settings.enabled}
               >
                 {settings.enabled ? 'Enabled' : 'Disabled'}
-              </button>
+              </ViewerWindowButton>
             </div>
           </div>
 
-          <div className="control-group">
-            <label htmlFor="hover-type-select">Type</label>
-            <select
-              id="hover-type-select"
-              value={settings.type}
-              onChange={(event) => onTypeChange(event.target.value === 'crosshair' ? 'crosshair' : 'default')}
-            >
-              <option value="default">Default</option>
-              <option value="crosshair">Crosshair</option>
-            </select>
-          </div>
+          <ViewerWindowSelectField
+            id="hover-type-select"
+            label="Type"
+            value={settings.type}
+            onChange={(event) => onTypeChange(event.target.value === 'crosshair' ? 'crosshair' : 'default')}
+          >
+            <option value="default">Default</option>
+            <option value="crosshair">Crosshair</option>
+          </ViewerWindowSelectField>
 
-          <div className="control-group control-group--slider">
-            <label htmlFor="hover-strength-slider">
-              Strength <span>{settings.strength}</span>
-            </label>
-            <input
-              id="hover-strength-slider"
-              type="range"
-              min={HOVER_SLIDER_MIN}
-              max={HOVER_SLIDER_MAX}
-              step={1}
-              value={settings.strength}
-              onChange={(event) => onStrengthChange(Number(event.target.value))}
-            />
-          </div>
+          <ViewerWindowSlider
+            id="hover-strength-slider"
+            label="Strength"
+            valueLabel={settings.strength}
+            min={HOVER_SLIDER_MIN}
+            max={HOVER_SLIDER_MAX}
+            step={1}
+            value={settings.strength}
+            onChange={(event) => onStrengthChange(Number(event.target.value))}
+          />
 
-          <div className="control-group control-group--slider">
-            <label htmlFor="hover-radius-slider">
-              Radius <span>{settings.radius}</span>
-            </label>
-            <input
-              id="hover-radius-slider"
-              type="range"
-              min={HOVER_SLIDER_MIN}
-              max={HOVER_SLIDER_MAX}
-              step={1}
-              value={settings.radius}
-              onChange={(event) => onRadiusChange(Number(event.target.value))}
-            />
-          </div>
-        </div>
+          <ViewerWindowSlider
+            id="hover-radius-slider"
+            label="Radius"
+            valueLabel={settings.radius}
+            min={HOVER_SLIDER_MIN}
+            max={HOVER_SLIDER_MAX}
+            step={1}
+            value={settings.radius}
+            onChange={(event) => onRadiusChange(Number(event.target.value))}
+          />
+        </ViewerWindowStack>
       </div>
     </FloatingWindow>
   );

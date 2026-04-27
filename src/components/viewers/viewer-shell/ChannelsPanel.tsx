@@ -12,6 +12,12 @@ import { DEFAULT_LAYER_COLOR, GRAYSCALE_COLOR_SWATCHES, normalizeHexColor } from
 import BrightnessContrastHistogram from '../BrightnessContrastHistogram';
 import FloatingWindow from '../../widgets/FloatingWindow';
 import type { ChannelsPanelProps, ChannelPanelStyle, LayoutProps } from './types';
+import {
+  ViewerWindowButton,
+  ViewerWindowRow,
+  ViewerWindowSelect,
+  ViewerWindowSlider,
+} from './window-ui';
 
 const formatNormalizedIntensity = (value: number): string => {
   const fixed = value.toFixed(3);
@@ -78,7 +84,7 @@ export default function ChannelsPanel({
             {activeChannelLabel ? (
               <div className="channel-current-row">
                 <span className="channel-current-title">{activeChannelLabel}</span>
-                <button
+                <ViewerWindowButton
                   type="button"
                   className="channel-action-button channel-current-visibility-button"
                   onClick={() => {
@@ -90,7 +96,7 @@ export default function ChannelsPanel({
                   title={activeChannelVisible ? 'Hide current channel' : 'Show current channel'}
                 >
                   {activeChannelVisible ? 'Hide' : 'Show'}
-                </button>
+                </ViewerWindowButton>
               </div>
             ) : null}
             {loadedChannelIds.map((channelId) => {
@@ -143,10 +149,10 @@ export default function ChannelsPanel({
                       {selectedLayer ? (
                         <>
                           <div className="channel-primary-actions">
-                            <div className="channel-primary-actions-row" role="group" aria-label="Render style">
+                            <ViewerWindowRow className="channel-primary-actions-row" role="group" aria-label="Render style">
                               {selectedLayer.isSegmentation ? (
                                 <>
-                                  <button
+                                  <ViewerWindowButton
                                     type="button"
                                     className="channel-action-button"
                                     onClick={() => onLayerRenderStyleChange(selectedLayer.key, RENDER_STYLE_MIP)}
@@ -155,8 +161,8 @@ export default function ChannelsPanel({
                                     aria-pressed={segmentation3dActive}
                                   >
                                     3D
-                                  </button>
-                                  <button
+                                  </ViewerWindowButton>
+                                  <ViewerWindowButton
                                     type="button"
                                     className="channel-action-button"
                                     onClick={() => onLayerRenderStyleChange(selectedLayer.key, RENDER_STYLE_SLICE)}
@@ -165,13 +171,12 @@ export default function ChannelsPanel({
                                     aria-pressed={settings.renderStyle === RENDER_STYLE_SLICE}
                                   >
                                     Slice
-                                  </button>
+                                  </ViewerWindowButton>
                                 </>
                               ) : (
                                 <div className="channel-render-mode-control">
-                                  <select
+                                  <ViewerWindowSelect
                                     id={`layer-render-mode-${selectedLayer.key}`}
-                                    className="channel-render-mode-select"
                                     value={intensityRenderMode ?? 'mip'}
                                     onChange={(event) => {
                                       const nextMode = event.target.value as IntensityRenderModeValue;
@@ -191,22 +196,22 @@ export default function ChannelsPanel({
                                     <option value="iso">Isosurfaces (ISO)</option>
                                     <option value="bl">Beer-Lambert (BL)</option>
                                     <option value="slice">2D Slices (XY)</option>
-                                  </select>
+                                  </ViewerWindowSelect>
                                 </div>
                               )}
-                            </div>
+                            </ViewerWindowRow>
                           </div>
                           <div className="channel-primary-actions">
-                            <div className="channel-primary-actions-row">
-                              <button
+                            <ViewerWindowRow className="channel-primary-actions-row">
+                              <ViewerWindowButton
                                 type="button"
                                 className="channel-action-button"
                                 onClick={() => onChannelReset(channelId)}
                                 disabled={channelLayers.length === 0}
                               >
                                 Reset
-                              </button>
-                              <button
+                              </ViewerWindowButton>
+                              <ViewerWindowButton
                                 type="button"
                                 className="channel-action-button"
                                 onClick={() => onLayerInvertToggle(selectedLayer.key)}
@@ -215,16 +220,16 @@ export default function ChannelsPanel({
                                 title={invertTitle}
                               >
                                 Invert
-                              </button>
-                              <button
+                              </ViewerWindowButton>
+                              <ViewerWindowButton
                                 type="button"
                                 className="channel-action-button"
                                 onClick={() => onLayerAutoContrast(selectedLayer.key)}
                                 disabled={sliderDisabled}
                               >
                                 Auto
-                              </button>
-                            </div>
+                              </ViewerWindowButton>
+                            </ViewerWindowRow>
                           </div>
                           <BrightnessContrastHistogram
                             className="channel-histogram"
@@ -239,64 +244,58 @@ export default function ChannelsPanel({
                             tintColor={channelTint}
                           />
                       <div className="slider-control slider-control--pair">
-                        <div className="slider-control slider-control--inline">
-                          <label htmlFor={`layer-window-min-${selectedLayer.key}`}>
-                            Minimum <span>{formatNormalizedIntensity(settings.windowMin)}</span>
-                          </label>
-                          <input
-                            id={`layer-window-min-${selectedLayer.key}`}
-                            type="range"
-                            min={DEFAULT_WINDOW_MIN}
-                            max={DEFAULT_WINDOW_MAX}
-                            step={0.001}
-                            value={settings.windowMin}
-                            onChange={(event) => onLayerWindowMinChange(selectedLayer.key, Number(event.target.value))}
-                            disabled={sliderDisabled}
-                          />
-                        </div>
-                        <div className="slider-control slider-control--inline">
-                          <label htmlFor={`layer-window-max-${selectedLayer.key}`}>
-                            Maximum <span>{formatNormalizedIntensity(settings.windowMax)}</span>
-                          </label>
-                          <input
-                            id={`layer-window-max-${selectedLayer.key}`}
-                            type="range"
-                            min={DEFAULT_WINDOW_MIN}
-                            max={DEFAULT_WINDOW_MAX}
-                            step={0.001}
-                            value={settings.windowMax}
-                            onChange={(event) => onLayerWindowMaxChange(selectedLayer.key, Number(event.target.value))}
-                            disabled={sliderDisabled}
-                          />
-                        </div>
+                        <ViewerWindowSlider
+                          id={`layer-window-min-${selectedLayer.key}`}
+                          className="slider-control--inline"
+                          label="Minimum"
+                          valueLabel={formatNormalizedIntensity(settings.windowMin)}
+                          accentColor={channelTint}
+                          min={DEFAULT_WINDOW_MIN}
+                          max={DEFAULT_WINDOW_MAX}
+                          step={0.001}
+                          value={settings.windowMin}
+                          onChange={(event) => onLayerWindowMinChange(selectedLayer.key, Number(event.target.value))}
+                          disabled={sliderDisabled}
+                        />
+                        <ViewerWindowSlider
+                          id={`layer-window-max-${selectedLayer.key}`}
+                          className="slider-control--inline"
+                          label="Maximum"
+                          valueLabel={formatNormalizedIntensity(settings.windowMax)}
+                          accentColor={channelTint}
+                          min={DEFAULT_WINDOW_MIN}
+                          max={DEFAULT_WINDOW_MAX}
+                          step={0.001}
+                          value={settings.windowMax}
+                          onChange={(event) => onLayerWindowMaxChange(selectedLayer.key, Number(event.target.value))}
+                          disabled={sliderDisabled}
+                        />
                       </div>
                       <div className="slider-control slider-control--pair">
-                        <div className="slider-control slider-control--inline">
-                          <label htmlFor={`layer-brightness-${selectedLayer.key}`}>Brightness</label>
-                          <input
-                            id={`layer-brightness-${selectedLayer.key}`}
-                            type="range"
-                            min={0}
-                            max={settings.sliderRange}
-                            step={1}
-                            value={settings.brightnessSliderIndex}
-                            onChange={(event) => onLayerBrightnessChange(selectedLayer.key, Number.parseInt(event.target.value, 10))}
-                            disabled={sliderDisabled}
-                          />
-                        </div>
-                        <div className="slider-control slider-control--inline">
-                          <label htmlFor={`layer-contrast-${selectedLayer.key}`}>Contrast</label>
-                          <input
-                            id={`layer-contrast-${selectedLayer.key}`}
-                            type="range"
-                            min={0}
-                            max={settings.sliderRange}
-                            step={1}
-                            value={settings.contrastSliderIndex}
-                            onChange={(event) => onLayerContrastChange(selectedLayer.key, Number.parseInt(event.target.value, 10))}
-                            disabled={sliderDisabled}
-                          />
-                        </div>
+                        <ViewerWindowSlider
+                          id={`layer-brightness-${selectedLayer.key}`}
+                          className="slider-control--inline"
+                          label="Brightness"
+                          accentColor={channelTint}
+                          min={0}
+                          max={settings.sliderRange}
+                          step={1}
+                          value={settings.brightnessSliderIndex}
+                          onChange={(event) => onLayerBrightnessChange(selectedLayer.key, Number.parseInt(event.target.value, 10))}
+                          disabled={sliderDisabled}
+                        />
+                        <ViewerWindowSlider
+                          id={`layer-contrast-${selectedLayer.key}`}
+                          className="slider-control--inline"
+                          label="Contrast"
+                          accentColor={channelTint}
+                          min={0}
+                          max={settings.sliderRange}
+                          step={1}
+                          value={settings.contrastSliderIndex}
+                          onChange={(event) => onLayerContrastChange(selectedLayer.key, Number.parseInt(event.target.value, 10))}
+                          disabled={sliderDisabled}
+                        />
                       </div>
                       {isGrayscale ? (
                         <div className="color-control">
@@ -350,36 +349,32 @@ export default function ChannelsPanel({
                         </div>
                       ) : null}
                       <div className="slider-control slider-control--pair">
-                        <div className="slider-control slider-control--inline">
-                          <label htmlFor={`layer-offset-x-${selectedLayer.key}`}>
-                            X shift <span>{settings.xOffset >= 0 ? '+' : ''}{settings.xOffset.toFixed(2)} px</span>
-                          </label>
-                          <input
-                            id={`layer-offset-x-${selectedLayer.key}`}
-                            type="range"
-                            min={-10}
-                            max={10}
-                            step={0.1}
-                            value={settings.xOffset}
-                            onChange={(event) => onLayerOffsetChange(selectedLayer.key, 'x', Number(event.target.value))}
-                            disabled={offsetDisabled}
-                          />
-                        </div>
-                        <div className="slider-control slider-control--inline">
-                          <label htmlFor={`layer-offset-y-${selectedLayer.key}`}>
-                            Y shift <span>{settings.yOffset >= 0 ? '+' : ''}{settings.yOffset.toFixed(2)} px</span>
-                          </label>
-                          <input
-                            id={`layer-offset-y-${selectedLayer.key}`}
-                            type="range"
-                            min={-10}
-                            max={10}
-                            step={0.1}
-                            value={settings.yOffset}
-                            onChange={(event) => onLayerOffsetChange(selectedLayer.key, 'y', Number(event.target.value))}
-                            disabled={offsetDisabled}
-                          />
-                        </div>
+                        <ViewerWindowSlider
+                          id={`layer-offset-x-${selectedLayer.key}`}
+                          className="slider-control--inline"
+                          label="X shift"
+                          valueLabel={`${settings.xOffset >= 0 ? '+' : ''}${settings.xOffset.toFixed(2)} px`}
+                          accentColor={channelTint}
+                          min={-10}
+                          max={10}
+                          step={0.1}
+                          value={settings.xOffset}
+                          onChange={(event) => onLayerOffsetChange(selectedLayer.key, 'x', Number(event.target.value))}
+                          disabled={offsetDisabled}
+                        />
+                        <ViewerWindowSlider
+                          id={`layer-offset-y-${selectedLayer.key}`}
+                          className="slider-control--inline"
+                          label="Y shift"
+                          valueLabel={`${settings.yOffset >= 0 ? '+' : ''}${settings.yOffset.toFixed(2)} px`}
+                          accentColor={channelTint}
+                          min={-10}
+                          max={10}
+                          step={0.1}
+                          value={settings.yOffset}
+                          onChange={(event) => onLayerOffsetChange(selectedLayer.key, 'y', Number(event.target.value))}
+                          disabled={offsetDisabled}
+                        />
                       </div>
                         </>
                       ) : null}

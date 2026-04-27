@@ -4,6 +4,14 @@ import FloatingWindow from '../../widgets/FloatingWindow';
 import { PROPS_WINDOW_WIDTH } from '../../../shared/utils/windowLayout';
 import type { LayoutProps } from './types';
 import {
+  ViewerWindowButton,
+  ViewerWindowIconButton,
+  ViewerWindowRow,
+  ViewerWindowSelect,
+  ViewerWindowSlider,
+  ViewerWindowStack,
+} from './window-ui';
+import {
   VIEWER_PROP_TYPEFACES,
   type ViewerProp,
   type ViewerPropVolumeDimensions,
@@ -536,32 +544,32 @@ function PropsWindow({
       onClose={onClose}
     >
       <div className="sidebar sidebar-right">
-        <div className="global-controls props-window-controls">
-          <div className="control-row props-window-action-row">
-            <button type="button" onClick={onCreateProp}>
+        <ViewerWindowStack className="props-window-controls">
+          <ViewerWindowRow className="props-window-action-row" align="center" wrap>
+            <ViewerWindowButton type="button" onClick={onCreateProp}>
               Add new prop
-            </button>
+            </ViewerWindowButton>
             <div className="props-window-action-spacer" />
-            <button
+            <ViewerWindowButton
               type="button"
               onClick={() => onSetAllVisible(!allPropsVisible)}
               disabled={props.length === 0}
             >
               {allPropsVisible ? 'Hide all' : 'Show all'}
-            </button>
-            <button
+            </ViewerWindowButton>
+            <ViewerWindowButton
               type="button"
               className="viewer-top-menu-button viewer-top-menu-button--danger"
               onClick={handleClearProps}
               disabled={props.length === 0}
             >
               Clear all
-            </button>
-          </div>
+            </ViewerWindowButton>
+          </ViewerWindowRow>
 
-          <div className="control-row props-window-select-row">
+          <ViewerWindowRow className="props-window-select-row" align="center">
             <div className="props-window-select">
-              <select
+              <ViewerWindowSelect
                 id="props-selected-prop"
                 aria-label="Props list"
                 value={selectedPropId ?? ''}
@@ -581,28 +589,29 @@ function PropsWindow({
                     </option>
                   ))
                 )}
-              </select>
+              </ViewerWindowSelect>
             </div>
-            <button
+            <ViewerWindowButton
               type="button"
               className="viewer-top-menu-button viewer-top-menu-button--danger"
               onClick={handleDeleteProp}
               disabled={!selectedProp}
             >
               Delete
-            </button>
-            <button
+            </ViewerWindowButton>
+            <ViewerWindowButton
               type="button"
               onClick={() =>
                 updateSelectedProp((current) => ({ ...current, visible: !current.visible }))
               }
+              active={selectedProp?.visible ?? false}
               aria-pressed={selectedProp?.visible ?? false}
               title={selectedProp?.visible ? 'Hide prop' : 'Show prop'}
               disabled={!selectedProp}
             >
               {selectedProp?.visible ? 'Hide' : 'Show'}
-            </button>
-          </div>
+            </ViewerWindowButton>
+          </ViewerWindowRow>
 
           <div className="props-editor-card">
             {selectedProp ? (
@@ -620,7 +629,7 @@ function PropsWindow({
                 </div>
 
                 <div className="control-group props-editor-group">
-                  <select
+                  <ViewerWindowSelect
                     id="props-type-select"
                     aria-label="Prop type"
                     value={selectedProp.type}
@@ -668,21 +677,21 @@ function PropsWindow({
                     <option value="text">Text</option>
                     <option value="timestamp">Timestamp</option>
                     <option value="scalebar">Scalebar</option>
-                  </select>
+                  </ViewerWindowSelect>
                 </div>
 
                 {selectedProp.type !== 'timestamp' && selectedProp.type !== 'scalebar' ? (
-                  <div className="control-row props-editor-mode-row props-editor-span-2">
-                    <button
+                  <ViewerWindowRow className="props-editor-mode-row props-editor-span-2" wrap>
+                    <ViewerWindowButton
                       type="button"
                       className="viewer-mode-button props-toggle-button props-dimension-toggle"
                       aria-label="Toggle On-screen or On-world"
                       onClick={toggleSelectedDimension}
                     >
                       {selectedPropDimension === '2d' ? 'On-screen' : 'On-world'}
-                    </button>
+                    </ViewerWindowButton>
                     {selectedPropDimension === '3d' ? (
-                      <button
+                      <ViewerWindowButton
                         type="button"
                         className="viewer-mode-button props-toggle-button"
                         aria-label="Toggle World-facing or User-facing"
@@ -700,9 +709,9 @@ function PropsWindow({
                       {selectedProp.world.facingMode === 'fixed'
                         ? 'World-facing'
                         : 'User-facing'}
-                    </button>
+                      </ViewerWindowButton>
                   ) : null}
-                  </div>
+                  </ViewerWindowRow>
                 ) : null}
 
                 <div className="control-row props-editor-inline-row props-editor-inline-row--size-color props-editor-span-2">
@@ -783,8 +792,8 @@ function PropsWindow({
 
                 {selectedProp.type === 'scalebar' ? (
                   <>
-                    <div className="control-row props-editor-inline-row props-editor-span-2 props-scalebar-row">
-                      <button
+                    <ViewerWindowRow className="props-editor-inline-row props-editor-span-2 props-scalebar-row" wrap>
+                      <ViewerWindowButton
                         id="props-scalebar-axis-button"
                         type="button"
                         className="viewer-mode-button props-toggle-button props-scalebar-axis-button"
@@ -792,7 +801,7 @@ function PropsWindow({
                         onClick={cycleScalebarAxis}
                       >
                         {selectedProp.scalebar.axis.toUpperCase()}
-                      </button>
+                      </ViewerWindowButton>
                       <label
                         className="props-scalebar-length-field props-editor-inline-control"
                         htmlFor="props-scalebar-length-input"
@@ -809,44 +818,46 @@ function PropsWindow({
                         />
                       </label>
                       <label className="voxel-resolution-unit props-scalebar-unit props-editor-inline-control">
-                        <select
+                        <ViewerWindowSelect
                           id="props-scalebar-unit-select"
                           aria-label="Scalebar spatial unit"
                           value={selectedProp.scalebar.unit}
                           onChange={(event) =>
                             handleScalebarUnitChange(event.target.value as VoxelResolutionUnit)
                           }
+                          compact
                         >
                           {VOXEL_RESOLUTION_UNITS.map((unit) => (
                             <option key={unit} value={unit}>
                               {unit}
                             </option>
                           ))}
-                        </select>
+                        </ViewerWindowSelect>
                       </label>
-                    </div>
+                    </ViewerWindowRow>
 
-                    <div className="control-row props-editor-inline-row props-editor-span-2 props-scalebar-row">
-                      <button
+                    <ViewerWindowRow className="props-editor-inline-row props-editor-span-2 props-scalebar-row" wrap>
+                      <ViewerWindowButton
                         id="props-scalebar-text-toggle"
                         type="button"
                         className="viewer-mode-button props-toggle-button"
+                        active={selectedProp.scalebar.showText}
                         aria-pressed={selectedProp.scalebar.showText}
                         onClick={toggleScalebarText}
                       >
                         {selectedProp.scalebar.showText ? 'Hide text' : 'Show text'}
-                      </button>
+                      </ViewerWindowButton>
                       {selectedProp.scalebar.showText ? (
-                        <button
+                        <ViewerWindowButton
                           id="props-scalebar-text-placement-button"
                           type="button"
                           className="viewer-mode-button props-toggle-button"
                           onClick={cycleScalebarTextPlacement}
                         >
                           {getScalebarTextPlacementLabel(selectedProp.scalebar.textPlacement)}
-                        </button>
+                        </ViewerWindowButton>
                       ) : null}
-                      <button
+                      <ViewerWindowButton
                         id="props-scalebar-facing-mode-button"
                         type="button"
                         className="viewer-mode-button props-toggle-button"
@@ -865,8 +876,8 @@ function PropsWindow({
                         {selectedProp.world.facingMode === 'fixed'
                           ? 'World-facing'
                           : 'User-facing'}
-                      </button>
-                    </div>
+                      </ViewerWindowButton>
+                    </ViewerWindowRow>
                   </>
                 ) : null}
 
@@ -874,7 +885,7 @@ function PropsWindow({
                   <div className="control-row props-typeface-row props-editor-span-2">
                     <label className="props-typeface-field" htmlFor="props-typeface-select">
                       <span className="voxel-resolution-field-label">Font:</span>
-                      <select
+                      <ViewerWindowSelect
                         id="props-typeface-select"
                         value={selectedProp.typeface}
                         onChange={(event) =>
@@ -883,22 +894,24 @@ function PropsWindow({
                             typeface: event.target.value as ViewerProp['typeface'],
                           }))
                         }
+                        compact
                       >
                         {VIEWER_PROP_TYPEFACES.map((typeface) => (
                           <option key={typeface} value={typeface}>
                             {typeface}
                           </option>
                         ))}
-                      </select>
+                      </ViewerWindowSelect>
                     </label>
                     <div className="props-text-style-controls" role="group" aria-label="Text style">
-                      <button
+                      <ViewerWindowIconButton
                         type="button"
                         className={
                           selectedProp.bold
                             ? 'props-text-style-button is-active'
                             : 'props-text-style-button'
                         }
+                        active={selectedProp.bold}
                         aria-label="Toggle boldface"
                         aria-pressed={selectedProp.bold}
                         onClick={() =>
@@ -914,14 +927,15 @@ function PropsWindow({
                         >
                           B
                         </span>
-                      </button>
-                      <button
+                      </ViewerWindowIconButton>
+                      <ViewerWindowIconButton
                         type="button"
                         className={
                           selectedProp.italic
                             ? 'props-text-style-button is-active'
                             : 'props-text-style-button'
                         }
+                        active={selectedProp.italic}
                         aria-label="Toggle italic"
                         aria-pressed={selectedProp.italic}
                         onClick={() =>
@@ -937,14 +951,15 @@ function PropsWindow({
                         >
                           I
                         </span>
-                      </button>
-                      <button
+                      </ViewerWindowIconButton>
+                      <ViewerWindowIconButton
                         type="button"
                         className={
                           selectedProp.underline
                             ? 'props-text-style-button is-active'
                             : 'props-text-style-button'
                         }
+                        active={selectedProp.underline}
                         aria-label="Toggle underline"
                         aria-pressed={selectedProp.underline}
                         onClick={() =>
@@ -960,7 +975,7 @@ function PropsWindow({
                         >
                           U
                         </span>
-                      </button>
+                      </ViewerWindowIconButton>
                     </div>
                   </div>
                 ) : null}
@@ -972,7 +987,7 @@ function PropsWindow({
                       htmlFor="props-timestamp-units-button"
                     >
                       <span className="voxel-resolution-field-label">Units:</span>
-                      <button
+                      <ViewerWindowButton
                         id="props-timestamp-units-button"
                         type="button"
                         className="viewer-mode-button props-toggle-button"
@@ -986,7 +1001,7 @@ function PropsWindow({
                         title="Toggle timestamp units"
                       >
                         {resolvedTimestampUnits === 'physical' ? 'Physical' : 'Index'}
-                      </button>
+                      </ViewerWindowButton>
                     </label>
                   </div>
                 ) : null}
@@ -1013,79 +1028,70 @@ function PropsWindow({
                   <div className="props-editor-section props-editor-span-2">
                     {timeRangeControls}
                     <div className="props-slider-grid props-slider-grid--double">
-                      <div className="control-group control-group--slider props-editor-group">
-                        <label htmlFor="props-2d-x-slider">
-                          X <span>{Math.round(selectedProp.screen.x * 100)}%</span>
-                        </label>
-                        <input
-                          id="props-2d-x-slider"
-                          type="range"
-                          min={0}
-                          max={100}
-                          step={1}
-                          value={Math.round(selectedProp.screen.x * 100)}
-                          onChange={(event) =>
-                            updateSelectedProp((current) => ({
-                              ...current,
-                              screen: {
-                                ...current.screen,
-                                x: clampNumber(Number(event.target.value) / 100, 0, 1),
-                              },
-                            }))
-                          }
-                        />
-                      </div>
+                      <ViewerWindowSlider
+                        id="props-2d-x-slider"
+                        className="props-editor-group"
+                        label="X"
+                        valueLabel={`${Math.round(selectedProp.screen.x * 100)}%`}
+                        min={0}
+                        max={100}
+                        step={1}
+                        value={Math.round(selectedProp.screen.x * 100)}
+                        onChange={(event) =>
+                          updateSelectedProp((current) => ({
+                            ...current,
+                            screen: {
+                              ...current.screen,
+                              x: clampNumber(Number(event.target.value) / 100, 0, 1),
+                            },
+                          }))
+                        }
+                      />
 
-                      <div className="control-group control-group--slider props-editor-group">
-                        <label htmlFor="props-2d-y-slider">
-                          Y <span>{Math.round(selectedProp.screen.y * 100)}%</span>
-                        </label>
-                        <input
-                          id="props-2d-y-slider"
-                          type="range"
-                          min={0}
-                          max={100}
-                          step={1}
-                          value={Math.round(selectedProp.screen.y * 100)}
-                          onChange={(event) =>
-                            updateSelectedProp((current) => ({
-                              ...current,
-                              screen: {
-                                ...current.screen,
-                                y: clampNumber(Number(event.target.value) / 100, 0, 1),
-                              },
-                            }))
-                          }
-                        />
-                      </div>
+                      <ViewerWindowSlider
+                        id="props-2d-y-slider"
+                        className="props-editor-group"
+                        label="Y"
+                        valueLabel={`${Math.round(selectedProp.screen.y * 100)}%`}
+                        min={0}
+                        max={100}
+                        step={1}
+                        value={Math.round(selectedProp.screen.y * 100)}
+                        onChange={(event) =>
+                          updateSelectedProp((current) => ({
+                            ...current,
+                            screen: {
+                              ...current.screen,
+                              y: clampNumber(Number(event.target.value) / 100, 0, 1),
+                            },
+                          }))
+                        }
+                      />
 
-                      <div className="control-group control-group--slider props-editor-group">
-                        <label htmlFor="props-2d-rotation-slider">
-                          Rotation <span>{`${Math.round(selectedProp.screen.rotation)}\u00B0`}</span>
-                        </label>
-                        <input
-                          id="props-2d-rotation-slider"
-                          type="range"
-                          min={-180}
-                          max={180}
-                          step={1}
-                          value={selectedProp.screen.rotation}
-                          onChange={(event) =>
-                            updateSelectedProp((current) => ({
-                              ...current,
-                              screen: {
-                                ...current.screen,
-                                rotation: Number(event.target.value),
-                              },
-                            }))
-                          }
-                        />
-                      </div>
+                      <ViewerWindowSlider
+                        id="props-2d-rotation-slider"
+                        className="props-editor-group"
+                        label="Rotation"
+                        valueLabel={`${Math.round(selectedProp.screen.rotation)}\u00B0`}
+                        min={-180}
+                        max={180}
+                        step={1}
+                        value={selectedProp.screen.rotation}
+                        onChange={(event) =>
+                          updateSelectedProp((current) => ({
+                            ...current,
+                            screen: {
+                              ...current.screen,
+                              rotation: Number(event.target.value),
+                            },
+                          }))
+                        }
+                      />
 
                       <div className="control-group props-editor-group props-reset-group">
-                        <button type="button" onClick={resetSelectedPlacement}>
+                        <ViewerWindowButton type="button" onClick={resetSelectedPlacement}>
                           Reset
-                        </button>
+                        </ViewerWindowButton>
                       </div>
                     </div>
                   </div>
@@ -1097,64 +1103,57 @@ function PropsWindow({
                         const axisRange = resolveWorldAxisRange(axis);
                         const displayValue = selectedProp.world[axis];
                         return (
-                          <div
+                          <ViewerWindowSlider
                             key={`world-position-${axis}`}
-                            className="control-group control-group--slider props-editor-group"
-                          >
-                            <label htmlFor={`props-3d-position-${axis}`}>
-                              {axis.toUpperCase()} <span>{formatSliderValue(displayValue)}</span>
-                            </label>
-                            <input
-                              id={`props-3d-position-${axis}`}
-                              type="range"
-                              min={axisRange.min}
-                              max={axisRange.max}
-                              step={0.1}
-                              value={displayValue}
-                              onChange={(event) =>
-                                updateSelectedProp((current) => ({
-                                  ...current,
-                                  world: {
-                                    ...current.world,
-                                    [axis]: Number(event.target.value),
-                                  },
-                                }))
-                              }
-                            />
-                          </div>
-                        );
-                      })}
-                      {(['roll', 'pitch', 'yaw'] as const).map((axis) => (
-                        <div key={axis} className="control-group control-group--slider props-editor-group">
-                          <label htmlFor={`props-3d-${axis}`}>
-                            {getRotationAxisLabel(axis)}{' '}
-                            <span>{`${Math.round(selectedProp.world[axis])}\u00B0`}</span>
-                          </label>
-                          <input
-                            id={`props-3d-${axis}`}
-                            type="range"
-                            min={-180}
-                            max={180}
-                            step={1}
-                            value={selectedProp.world[axis]}
-                            disabled={
-                              selectedProp.world.facingMode === 'billboard' && axis !== 'roll'
-                            }
+                            id={`props-3d-position-${axis}`}
+                            className="props-editor-group"
+                            label={axis.toUpperCase()}
+                            valueLabel={formatSliderValue(displayValue)}
+                            min={axisRange.min}
+                            max={axisRange.max}
+                            step={0.1}
+                            value={displayValue}
                             onChange={(event) =>
                               updateSelectedProp((current) => ({
                                 ...current,
-                                world: { ...current.world, [axis]: Number(event.target.value) },
+                                world: {
+                                  ...current.world,
+                                  [axis]: Number(event.target.value),
+                                },
                               }))
                             }
                           />
-                        </div>
+                        );
+                      })}
+                      {(['roll', 'pitch', 'yaw'] as const).map((axis) => (
+                        <ViewerWindowSlider
+                          key={axis}
+                          id={`props-3d-${axis}`}
+                          className="props-editor-group"
+                          label={getRotationAxisLabel(axis)}
+                          valueLabel={`${Math.round(selectedProp.world[axis])}\u00B0`}
+                          min={-180}
+                          max={180}
+                          step={1}
+                          value={selectedProp.world[axis]}
+                          disabled={
+                            selectedProp.world.facingMode === 'billboard' && axis !== 'roll'
+                          }
+                          onChange={(event) =>
+                            updateSelectedProp((current) => ({
+                              ...current,
+                              world: { ...current.world, [axis]: Number(event.target.value) },
+                            }))
+                          }
+                        />
                       ))}
                     </div>
 
                     <div className="control-group props-editor-group">
                       <div className="viewer-mode-row props-flip-row">
-                        <button
+                        <ViewerWindowButton
                           type="button"
+                          active={selectedProp.world.flipX}
                           onClick={() =>
                             updateSelectedProp((current) => ({
                               ...current,
@@ -1164,9 +1163,10 @@ function PropsWindow({
                           aria-pressed={selectedProp.world.flipX}
                         >
                           Flip X
-                        </button>
-                        <button
+                        </ViewerWindowButton>
+                        <ViewerWindowButton
                           type="button"
+                          active={selectedProp.world.flipY}
                           onClick={() =>
                             updateSelectedProp((current) => ({
                               ...current,
@@ -1176,14 +1176,14 @@ function PropsWindow({
                           aria-pressed={selectedProp.world.flipY}
                         >
                           Flip Y
-                        </button>
-                        <button
+                        </ViewerWindowButton>
+                        <ViewerWindowButton
                           type="button"
                           className="props-reset-inline-button"
                           onClick={resetSelectedPlacement}
                         >
                           Reset
-                        </button>
+                        </ViewerWindowButton>
                       </div>
                     </div>
                   </div>
@@ -1195,7 +1195,7 @@ function PropsWindow({
               </div>
             )}
           </div>
-        </div>
+        </ViewerWindowStack>
       </div>
     </FloatingWindow>
   );

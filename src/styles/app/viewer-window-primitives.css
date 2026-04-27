@@ -1,0 +1,659 @@
+.viewer-window-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  min-width: 0;
+}
+
+.viewer-window-row {
+  display: flex;
+  gap: 0.75rem;
+  min-width: 0;
+}
+
+.viewer-window-row--wrap {
+  flex-wrap: wrap;
+}
+
+.viewer-window-row--align-start {
+  align-items: flex-start;
+}
+
+.viewer-window-row--align-center {
+  align-items: center;
+}
+
+.viewer-window-row--align-stretch {
+  align-items: stretch;
+}
+
+.viewer-window-row--justify-start {
+  justify-content: flex-start;
+}
+
+.viewer-window-row--justify-center {
+  justify-content: center;
+}
+
+.viewer-window-row--justify-between {
+  justify-content: space-between;
+}
+
+.viewer-window-row--justify-end {
+  justify-content: flex-end;
+}
+
+.floating-window .viewer-window-button,
+.floating-window .global-controls .viewer-window-button {
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: var(--floating-window-control-size);
+  min-height: var(--floating-window-control-size);
+  min-width: 0;
+  padding-block: 0;
+  padding-inline: var(--floating-window-control-inline-padding);
+  border: 1px solid var(--control-border);
+  border-radius: var(--floating-window-control-radius);
+  background: var(--control-background);
+  color: inherit;
+  font-size: var(--type-size-label);
+  font-weight: var(--type-weight-label);
+  letter-spacing: 0;
+  line-height: var(--type-line-ui);
+  cursor: pointer;
+  text-align: center;
+  white-space: nowrap;
+  transition: border-color 0.2s ease, background-color 0.2s ease, transform 0.2s ease;
+}
+
+.floating-window .viewer-window-button:not(:disabled):hover,
+.floating-window .global-controls .viewer-window-button:not(:disabled):hover {
+  border-color: var(--control-border-strong);
+  background: var(--accent-soft);
+  transform: translateY(-1px);
+}
+
+.floating-window .viewer-window-button:disabled,
+.floating-window .global-controls .viewer-window-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.floating-window .viewer-window-button--expand {
+  flex: 1 1 0;
+}
+
+.floating-window .viewer-window-icon-button,
+.floating-window .global-controls .viewer-window-icon-button {
+  flex: 0 0 var(--floating-window-control-size);
+  width: var(--floating-window-control-size);
+  min-width: var(--floating-window-control-size);
+  padding-inline: 0;
+}
+
+.floating-window .viewer-window-button.is-active,
+.floating-window .global-controls .viewer-window-button.is-active {
+  border-color: var(--accent-border);
+  background: var(--accent-soft);
+  color: var(--text-primary);
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.08),
+    0 6px 16px rgba(0, 0, 0, 0.18);
+}
+
+.viewer-window-field-row {
+  gap: 0.5rem;
+}
+
+.viewer-window-field-label {
+  flex: 0 0 auto;
+  color: var(--text-secondary);
+  font-size: var(--type-size-label);
+  font-weight: var(--type-weight-label);
+  line-height: var(--type-line-ui);
+}
+
+.viewer-window-field-value,
+.viewer-window-value {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text-primary);
+  font-size: var(--type-size-label);
+  font-weight: var(--type-weight-body);
+  line-height: var(--type-line-ui);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.viewer-window-divider {
+  height: 1px;
+  margin: 0.15rem 0;
+  background: var(--control-border);
+}
+
+.floating-window .viewer-window-select-field,
+.floating-window .global-controls .viewer-window-select-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  min-width: 0;
+}
+
+.viewer-window-select-label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  color: var(--text-secondary);
+  font-size: var(--type-size-label);
+  font-weight: var(--type-weight-label);
+  line-height: var(--type-line-ui);
+}
+
+.floating-window .viewer-window-select,
+.floating-window .global-controls .viewer-window-select {
+  --viewer-window-select-background: var(--control-background, var(--panel-background-strong, #142232));
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  height: var(--floating-window-control-size);
+  min-height: var(--floating-window-control-size);
+  padding-block: 0;
+  padding-inline: var(--floating-window-control-inline-padding) calc(var(--floating-window-control-inline-padding) + 1rem);
+  border: 1px solid var(--control-border);
+  border-radius: var(--floating-window-control-radius);
+  appearance: none;
+  background-color: var(--viewer-window-select-background);
+  background-image:
+    linear-gradient(45deg, transparent 50%, currentColor 50%),
+    linear-gradient(135deg, currentColor 50%, transparent 50%);
+  background-position:
+    right 0.78rem center,
+    right 0.54rem center;
+  background-size:
+    0.34rem 0.34rem,
+    0.34rem 0.34rem;
+  background-repeat: no-repeat;
+  color: var(--text-primary);
+  color-scheme: dark;
+  font-size: var(--type-size-label);
+  font-weight: var(--type-weight-body);
+  letter-spacing: 0;
+  line-height: var(--type-line-ui);
+  cursor: pointer;
+  box-shadow: var(--control-shadow-inset);
+  transition: border-color 0.2s ease, background-color 0.2s ease;
+}
+
+.floating-window .viewer-window-select--compact,
+.floating-window .global-controls .viewer-window-select--compact {
+  width: auto;
+}
+
+.floating-window .viewer-window-select--expand,
+.floating-window .global-controls .viewer-window-select--expand {
+  flex: 1 1 0;
+}
+
+.floating-window .viewer-window-select:not(:disabled):hover,
+.floating-window .viewer-window-select:not(:disabled):focus,
+.floating-window .global-controls .viewer-window-select:not(:disabled):hover,
+.floating-window .global-controls .viewer-window-select:not(:disabled):focus {
+  --viewer-window-select-background: var(--accent-soft, var(--control-background, var(--panel-background-strong, #142232)));
+  border-color: var(--control-border-strong);
+}
+
+.floating-window .viewer-window-select:focus,
+.floating-window .global-controls .viewer-window-select:focus {
+  outline: none;
+}
+
+.floating-window .viewer-window-select:disabled,
+.floating-window .global-controls .viewer-window-select:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.floating-window .viewer-window-select option,
+.floating-window .global-controls .viewer-window-select option {
+  background-color: var(--panel-background-strong, #142232);
+  color: var(--text-primary, rgba(231, 237, 247, 0.96));
+}
+
+:root[data-theme='light'] .floating-window .viewer-window-select,
+:root[data-theme='light'] .floating-window .global-controls .viewer-window-select {
+  color-scheme: light;
+}
+
+.floating-window .viewer-window-slider,
+.floating-window .global-controls .viewer-window-slider,
+.viewer-window-range-slider {
+  --viewer-window-slider-accent: var(--accent);
+  --viewer-window-slider-track: rgba(255, 255, 255, 0.12);
+  --viewer-window-slider-track-border: rgba(255, 255, 255, 0.08);
+  --viewer-window-slider-thumb-border: var(--panel-background-strong);
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  min-width: 0;
+}
+
+.viewer-window-slider-label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  min-width: 0;
+  color: var(--text-secondary);
+  font-size: var(--type-size-label);
+  font-weight: var(--type-weight-label);
+  line-height: var(--type-line-ui);
+}
+
+.viewer-window-slider-label > span:first-child {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.viewer-window-slider-value {
+  flex: 0 0 auto;
+  color: var(--text-primary);
+  font-weight: var(--type-weight-body);
+  white-space: nowrap;
+}
+
+.floating-window .viewer-window-slider-input,
+.floating-window .global-controls .viewer-window-slider-input {
+  width: 100%;
+  min-width: 0;
+  height: 1.5rem;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  appearance: none;
+  background: transparent;
+  cursor: pointer;
+  accent-color: var(--viewer-window-slider-accent);
+}
+
+.floating-window .viewer-window-slider-input:disabled,
+.floating-window .global-controls .viewer-window-slider-input:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.floating-window .viewer-window-slider-input::-webkit-slider-runnable-track,
+.floating-window .global-controls .viewer-window-slider-input::-webkit-slider-runnable-track {
+  height: 0.44rem;
+  border-radius: 999px;
+  background:
+    linear-gradient(
+      90deg,
+      var(--viewer-window-slider-accent) 0 var(--viewer-window-slider-fill-percent),
+      var(--viewer-window-slider-track) var(--viewer-window-slider-fill-percent) 100%
+    );
+  box-shadow: inset 0 0 0 1px var(--viewer-window-slider-track-border);
+}
+
+.floating-window .viewer-window-slider-input::-moz-range-track,
+.floating-window .global-controls .viewer-window-slider-input::-moz-range-track {
+  height: 0.44rem;
+  border-radius: 999px;
+  background: var(--viewer-window-slider-track);
+  box-shadow: inset 0 0 0 1px var(--viewer-window-slider-track-border);
+}
+
+.floating-window .viewer-window-slider-input::-moz-range-progress,
+.floating-window .global-controls .viewer-window-slider-input::-moz-range-progress {
+  height: 0.44rem;
+  border-radius: 999px;
+  background: var(--viewer-window-slider-accent);
+}
+
+.floating-window .viewer-window-slider-input::-webkit-slider-thumb,
+.floating-window .global-controls .viewer-window-slider-input::-webkit-slider-thumb {
+  width: 1rem;
+  height: 1rem;
+  margin-top: -0.28rem;
+  border: 2px solid var(--viewer-window-slider-thumb-border);
+  border-radius: 999px;
+  appearance: none;
+  background: var(--viewer-window-slider-accent);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.floating-window .viewer-window-slider-input::-moz-range-thumb,
+.floating-window .global-controls .viewer-window-slider-input::-moz-range-thumb {
+  width: 1rem;
+  height: 1rem;
+  border: 2px solid var(--viewer-window-slider-thumb-border);
+  border-radius: 999px;
+  background: var(--viewer-window-slider-accent);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.floating-window .viewer-window-slider-input:focus-visible::-webkit-slider-thumb,
+.floating-window .viewer-window-slider-input:active::-webkit-slider-thumb,
+.floating-window .global-controls .viewer-window-slider-input:focus-visible::-webkit-slider-thumb,
+.floating-window .global-controls .viewer-window-slider-input:active::-webkit-slider-thumb {
+  transform: scale(1.05);
+  box-shadow: 0 4px 12px color-mix(in srgb, var(--viewer-window-slider-accent) 55%, transparent);
+}
+
+.floating-window .viewer-window-slider-input:focus-visible::-moz-range-thumb,
+.floating-window .viewer-window-slider-input:active::-moz-range-thumb,
+.floating-window .global-controls .viewer-window-slider-input:focus-visible::-moz-range-thumb,
+.floating-window .global-controls .viewer-window-slider-input:active::-moz-range-thumb {
+  transform: scale(1.05);
+  box-shadow: 0 4px 12px color-mix(in srgb, var(--viewer-window-slider-accent) 55%, transparent);
+}
+
+.viewer-window-range-slider-inputs {
+  position: relative;
+  height: 1.75rem;
+  min-width: 0;
+}
+
+.viewer-window-range-slider-track,
+.viewer-window-range-slider-fill {
+  position: absolute;
+  top: 50%;
+  height: 0.44rem;
+  transform: translateY(-50%);
+  border-radius: 999px;
+}
+
+.viewer-window-range-slider-track {
+  right: 0;
+  left: 0;
+  background: var(--viewer-window-slider-track);
+  box-shadow: inset 0 0 0 1px var(--viewer-window-slider-track-border);
+}
+
+.viewer-window-range-slider-fill {
+  left: var(--viewer-window-range-min-percent);
+  width: var(--viewer-window-range-width-percent);
+  background: var(--viewer-window-slider-accent);
+}
+
+.floating-window .viewer-window-range-slider-handle,
+.floating-window .global-controls .viewer-window-range-slider-handle {
+  position: absolute;
+  top: 50%;
+  right: 0;
+  left: 0;
+  width: 100%;
+  height: 1.75rem;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  appearance: none;
+  background: transparent;
+  transform: translateY(-50%);
+  pointer-events: none;
+  accent-color: var(--viewer-window-slider-accent);
+}
+
+.floating-window .viewer-window-range-slider-handle--min,
+.floating-window .global-controls .viewer-window-range-slider-handle--min {
+  z-index: 2;
+}
+
+.floating-window .viewer-window-range-slider-handle--max,
+.floating-window .global-controls .viewer-window-range-slider-handle--max {
+  z-index: 3;
+}
+
+.floating-window .viewer-window-range-slider-handle::-webkit-slider-runnable-track,
+.floating-window .global-controls .viewer-window-range-slider-handle::-webkit-slider-runnable-track {
+  height: 0.44rem;
+  background: transparent;
+}
+
+.floating-window .viewer-window-range-slider-handle::-moz-range-track,
+.floating-window .global-controls .viewer-window-range-slider-handle::-moz-range-track {
+  height: 0.44rem;
+  background: transparent;
+}
+
+.floating-window .viewer-window-range-slider-handle::-webkit-slider-thumb,
+.floating-window .global-controls .viewer-window-range-slider-handle::-webkit-slider-thumb {
+  width: 1rem;
+  height: 1rem;
+  margin-top: -0.28rem;
+  border: 2px solid var(--viewer-window-slider-thumb-border);
+  border-radius: 999px;
+  appearance: none;
+  background: var(--viewer-window-slider-accent);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
+  pointer-events: auto;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.floating-window .viewer-window-range-slider-handle::-moz-range-thumb,
+.floating-window .global-controls .viewer-window-range-slider-handle::-moz-range-thumb {
+  width: 1rem;
+  height: 1rem;
+  border: 2px solid var(--viewer-window-slider-thumb-border);
+  border-radius: 999px;
+  background: var(--viewer-window-slider-accent);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
+  pointer-events: auto;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.floating-window .viewer-window-range-slider-handle:disabled::-webkit-slider-thumb,
+.floating-window .viewer-window-range-slider-handle:disabled::-moz-range-thumb,
+.floating-window .global-controls .viewer-window-range-slider-handle:disabled::-webkit-slider-thumb,
+.floating-window .global-controls .viewer-window-range-slider-handle:disabled::-moz-range-thumb {
+  opacity: 0.5;
+}
+
+.viewer-window-segmented-control {
+  display: grid;
+  grid-template-columns: repeat(var(--viewer-window-segment-count), 2.6rem);
+  gap: 0.14rem;
+  flex: 0 0 auto;
+  min-width: 0;
+  padding: 0.14rem;
+  border: 1px solid var(--control-border);
+  border-radius: 0.54rem;
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.floating-window .viewer-window-segment-button,
+.floating-window .global-controls .viewer-window-segment-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 0;
+  height: var(--floating-window-control-size);
+  min-height: var(--floating-window-control-size);
+  padding: 0;
+  border: 0;
+  border-radius: var(--floating-window-control-radius);
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: var(--type-size-label);
+  font-weight: var(--type-weight-label);
+  line-height: var(--type-line-ui);
+  transform: none;
+}
+
+.floating-window .viewer-window-segment-button:not(:disabled):hover,
+.floating-window .global-controls .viewer-window-segment-button:not(:disabled):hover {
+  border-color: transparent;
+  background: rgba(255, 255, 255, 0.06);
+  transform: none;
+}
+
+.floating-window .viewer-window-segment-button.is-active,
+.floating-window .global-controls .viewer-window-segment-button.is-active {
+  background: var(--accent-soft);
+  color: var(--text-primary);
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.08),
+    0 6px 16px rgba(0, 0, 0, 0.18);
+}
+
+.viewer-window-manager,
+.roi-manager-window {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 116px;
+  gap: 0.9rem;
+  align-items: start;
+  height: var(--viewer-window-manager-actions-height, auto);
+}
+
+.viewer-window-manager-list,
+.roi-manager-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  min-height: 0;
+  max-height: var(--viewer-window-manager-actions-height, none);
+  overflow-y: auto;
+  padding-right: 0.2rem;
+}
+
+.floating-window .viewer-window-manager-list-item,
+.floating-window .global-controls .viewer-window-manager-list-item,
+.floating-window .roi-manager-list-item,
+.floating-window .global-controls .roi-manager-list-item {
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+  min-height: var(--floating-window-control-size);
+  padding-block: 0;
+  padding-inline: var(--floating-window-control-inline-padding);
+  border: 1px solid var(--control-border);
+  border-radius: var(--floating-window-control-radius);
+  background: var(--control-background);
+  color: inherit;
+  font-size: var(--type-size-label);
+  font-weight: var(--type-weight-body);
+  line-height: var(--type-line-ui);
+  cursor: pointer;
+  text-align: left;
+  transition: border-color 0.2s ease, background-color 0.2s ease, transform 0.2s ease;
+}
+
+.floating-window .viewer-window-manager-list-item:not(:disabled):hover,
+.floating-window .global-controls .viewer-window-manager-list-item:not(:disabled):hover,
+.floating-window .roi-manager-list-item:not(:disabled):hover,
+.floating-window .global-controls .roi-manager-list-item:not(:disabled):hover {
+  border-color: var(--control-border-strong);
+  background: var(--accent-soft);
+  transform: translateY(-1px);
+}
+
+.floating-window .viewer-window-manager-list-item:disabled,
+.floating-window .global-controls .viewer-window-manager-list-item:disabled,
+.floating-window .roi-manager-list-item:disabled,
+.floating-window .global-controls .roi-manager-list-item:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.floating-window .viewer-window-manager-list-item.is-active,
+.floating-window .global-controls .viewer-window-manager-list-item.is-active,
+.floating-window .roi-manager-list-item.is-active,
+.floating-window .global-controls .roi-manager-list-item.is-active {
+  background: var(--accent-soft);
+  color: var(--text-primary);
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.08),
+    0 6px 16px rgba(0, 0, 0, 0.18);
+}
+
+.floating-window .viewer-window-manager-list-item.is-selected:not(.is-active),
+.floating-window .global-controls .viewer-window-manager-list-item.is-selected:not(.is-active),
+.floating-window .roi-manager-list-item.is-selected:not(.is-active),
+.floating-window .global-controls .roi-manager-list-item.is-selected:not(.is-active) {
+  border-color: var(--control-border);
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.viewer-window-manager-list-item-label,
+.roi-manager-list-item-label {
+  min-width: 0;
+  overflow: hidden;
+  font-weight: var(--type-weight-label);
+  letter-spacing: 0;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.viewer-window-manager-selection-badge,
+.roi-manager-selection-badge {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.25rem;
+  height: 1.25rem;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.14);
+  color: var(--text-primary);
+  font-weight: var(--type-weight-label);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.12);
+}
+
+.viewer-window-manager-selection-badge.is-active,
+.roi-manager-selection-badge.is-active {
+  background: rgba(91, 140, 255, 0.42);
+  color: var(--text-primary);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.18);
+}
+
+.viewer-window-empty-state,
+.roi-manager-empty-state {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: var(--type-size-meta);
+  font-weight: var(--type-weight-body);
+  line-height: var(--type-line-ui);
+}
+
+.viewer-window-message {
+  font-size: var(--type-size-meta);
+  font-weight: var(--type-weight-body);
+  line-height: var(--type-line-ui);
+}
+
+.viewer-window-manager-actions,
+.roi-manager-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+}
+
+.floating-window .viewer-window-manager-actions .viewer-window-button,
+.floating-window .global-controls .viewer-window-manager-actions .viewer-window-button,
+.floating-window .roi-manager-actions .viewer-window-button,
+.floating-window .global-controls .roi-manager-actions .viewer-window-button {
+  font-weight: var(--type-weight-label);
+  letter-spacing: 0;
+}
+
+@media (max-width: 640px) {
+  .viewer-window-manager,
+  .roi-manager-window {
+    grid-template-columns: 1fr;
+    height: auto;
+  }
+
+  .viewer-window-manager-actions,
+  .roi-manager-actions {
+    flex-direction: row;
+    flex-wrap: wrap;
+  }
+}
