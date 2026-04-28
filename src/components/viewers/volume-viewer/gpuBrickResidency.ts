@@ -4,6 +4,7 @@ import * as THREE from 'three';
 import { getLod0FeatureFlags } from '../../../config/lod0Flags';
 import type { VolumeBrickPageTable } from '../../../core/volumeProvider';
 import type { ViewerProjectionMode } from '../../../hooks/useVolumeRenderSetup';
+import { resolvePackedBrickSlotGridLayout } from '../../../shared/utils/sparseSegmentationAtlasLayout';
 import type { VolumeResources } from '../VolumeViewer.types';
 
 type TextureFormat = THREE.Data3DTexture['format'];
@@ -147,6 +148,24 @@ export function resolveRendererMax3DTextureSize(
   return Math.floor(raw);
 }
 
+export function resolveRendererMaxTextureSize(
+  rendererRef: MutableRefObject<THREE.WebGLRenderer | null> | undefined
+): number | null {
+  const renderer = rendererRef?.current;
+  if (!renderer || !renderer.capabilities?.isWebGL2) {
+    return null;
+  }
+  const gl = renderer.getContext() as WebGL2RenderingContext | null;
+  if (!gl) {
+    return null;
+  }
+  const raw = Number(gl.getParameter(gl.MAX_TEXTURE_SIZE));
+  if (!Number.isFinite(raw) || raw <= 0) {
+    return null;
+  }
+  return Math.floor(raw);
+}
+
 export function exceeds3DTextureSizeLimit(
   size: { width: number; height: number; depth: number },
   max3DTextureSize: number | null | undefined
@@ -196,28 +215,33 @@ function resolveBrickAtlasSlotLayout({
     };
   }
 
-  const maxSlotsX = Math.max(1, Math.floor(safeMax3D / safeChunkWidth));
-  const maxSlotsY = Math.max(1, Math.floor(safeMax3D / safeChunkHeight));
-  const maxSlotsZ = Math.max(1, Math.floor(safeMax3D / safeChunkDepth));
-  let slotGridX = Math.min(maxSlotsX, normalizedSlotCapacity);
-  let slotGridY = Math.min(maxSlotsY, Math.max(1, Math.ceil(normalizedSlotCapacity / slotGridX)));
-  let slotGridZ = Math.max(1, Math.ceil(normalizedSlotCapacity / (slotGridX * slotGridY)));
-  if (slotGridZ > maxSlotsZ) {
-    slotGridZ = maxSlotsZ;
-    const requiredPlaneSlots = Math.max(1, Math.ceil(normalizedSlotCapacity / slotGridZ));
-    slotGridX = Math.min(maxSlotsX, requiredPlaneSlots);
-    slotGridY = Math.min(maxSlotsY, Math.max(1, Math.ceil(requiredPlaneSlots / slotGridX)));
+  const packedLayout = resolvePackedBrickSlotGridLayout({
+    slotCount: normalizedSlotCapacity,
+    brickWidth: safeChunkWidth,
+    brickHeight: safeChunkHeight,
+    brickDepth: safeChunkDepth,
+    max3DTextureSize: safeMax3D,
+  });
+  if (!packedLayout) {
+    return {
+      slotGridX: 1,
+      slotGridY: 1,
+      slotGridZ: normalizedSlotCapacity,
+      allocatedSlotCapacity: normalizedSlotCapacity,
+      atlasWidth: safeChunkWidth,
+      atlasHeight: safeChunkHeight,
+      atlasDepth: safeChunkDepth * normalizedSlotCapacity
+    };
   }
-  const allocatedSlotCapacity = Math.max(1, slotGridX * slotGridY * slotGridZ);
 
   return {
-    slotGridX,
-    slotGridY,
-    slotGridZ,
-    allocatedSlotCapacity,
-    atlasWidth: safeChunkWidth * slotGridX,
-    atlasHeight: safeChunkHeight * slotGridY,
-    atlasDepth: safeChunkDepth * slotGridZ
+    slotGridX: packedLayout.slotGrid.x,
+    slotGridY: packedLayout.slotGrid.y,
+    slotGridZ: packedLayout.slotGrid.z,
+    allocatedSlotCapacity: packedLayout.allocatedSlotCapacity,
+    atlasWidth: packedLayout.atlasSize.width,
+    atlasHeight: packedLayout.atlasSize.height,
+    atlasDepth: packedLayout.atlasSize.depth
   };
 }
 

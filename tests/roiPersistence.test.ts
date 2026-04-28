@@ -24,11 +24,13 @@ console.log('Starting roiPersistence tests');
         start: { x: 0, y: 0, z: 0 },
         end: { x: 2, y: 2, z: 2 },
         color: '#00ffaa',
+        alignment: 'glass',
       },
     ],
     selectedSavedRoiIds: ['roi-2', 'roi-1'],
     activeSavedRoiId: 'roi-2',
     defaultColor: '#facc15',
+    defaultAlignment: 'glass',
     dimensionMode: '3d',
     tool: 'ellipse',
   });
@@ -44,8 +46,10 @@ console.log('Starting roiPersistence tests');
     start: { x: 0, y: 0, z: 0 },
     end: { x: 2, y: 2, z: 2 },
     color: '#00FFAA',
+    alignment: 'glass',
   });
   assert.equal(loaded.defaultColor, '#FACC15');
+  assert.equal(loaded.defaultAlignment, 'glass');
   assert.equal(loaded.tool, 'ellipse');
 })();
 

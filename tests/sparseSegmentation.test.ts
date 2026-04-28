@@ -337,7 +337,7 @@ test('preprocessing and provider keep sparse segmentation uint32 labels exact wi
     layers,
     channels: [{ id: 'channel-seg', name: 'Segmentation' }],
     trackSets: [],
-    voxelResolution: { x: 1000, y: 1000, z: 1000, unit: 'nm', correctAnisotropy: false },
+    voxelResolution: { x: 1000, y: 1000, z: 1000, unit: 'nm' },
     temporalResolution: { interval: 1, unit: 's' },
     movieMode: '3d',
     storage: storageHandle.storage,
@@ -375,10 +375,38 @@ test('preprocessing and provider keep sparse segmentation uint32 labels exact wi
   assert.equal(brick?.labelAtOffset(1), 65536);
   assert.equal(brick?.labelAtOffset(2), 0xffffffff);
 
+  const pageTable = await provider.getBrickPageTable?.('seg-u32', 0, { scaleLevel: 0 });
+  assert.ok(pageTable);
+  const sourceIndex = pageTable.brickAtlasIndices[0] ?? -1;
+  assert.equal(sourceIndex, 0);
+  const sourceBrick = await provider.getSparseSegmentationBrickBySourceIndex?.('seg-u32', 0, 0, sourceIndex);
+  assert.equal(sourceBrick?.labelAtOffset(1), 65536);
+  assert.equal(sourceBrick?.labelAtOffset(2), 0xffffffff);
+  const sourceBrickAgain = await provider.getSparseSegmentationBrickBySourceIndex?.('seg-u32', 0, 0, sourceIndex);
+  assert.strictEqual(sourceBrickAgain, sourceBrick);
+  const sourceBatch = await provider.getSparseSegmentationBricksBySourceIndex?.('seg-u32', 0, 0, [sourceIndex, sourceIndex], {
+    concurrency: 2,
+  });
+  assert.equal(sourceBatch?.length, 2);
+  assert.strictEqual(sourceBatch?.[0], sourceBrick);
+  assert.strictEqual(sourceBatch?.[1], sourceBrick);
+  await assert.rejects(
+    () => provider.getSparseSegmentationBrickBySourceIndex!('seg-u32', 0, 0, 99),
+    /source index 99 is out of bounds/
+  );
+  const abortController = new AbortController();
+  abortController.abort();
+  await assert.rejects(
+    () => provider.getSparseSegmentationBrickBySourceIndex!('seg-u32', 0, 0, sourceIndex, { signal: abortController.signal }),
+    /aborted|abort/i
+  );
+
   const atlas = await provider.getBrickAtlas?.('seg-u32', 0, { scaleLevel: 0 });
   assert.ok(atlas);
   assert.equal(atlas.kind, 'segmentation');
   assert.equal(atlas.textureFormat, 'rgba');
+  assert.deepEqual(atlas.slotGrid, { x: 1, y: 1, z: 1 });
+  assert.equal(atlas.renderStrategy, 'full-resident-packed');
   assert.deepEqual(Array.from((atlas.data as Uint8Array).slice(4, 8)), [0, 0, 1, 0]);
   assert.deepEqual(Array.from((atlas.data as Uint8Array).slice(8, 12)), [255, 255, 255, 255]);
 

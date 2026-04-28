@@ -97,7 +97,7 @@ test('viewer prop display text falls back to index units when physical metadata 
 
 test('viewer scalebar defaults derive a 15-voxel X-length from dataset resolution', () => {
   assert.deepEqual(
-    buildDefaultViewerPropScalebarState({ x: 10, y: 12, z: 20, unit: 'nm', correctAnisotropy: false }),
+    buildDefaultViewerPropScalebarState({ x: 10, y: 12, z: 20, unit: 'nm' }),
     {
       axis: 'x',
       length: 150,
@@ -121,7 +121,7 @@ test('viewer scalebar info converts physical length to voxel length', () => {
           textPlacement: 'below',
         },
       },
-      { x: 2, y: 2, z: 2, unit: 'μm', correctAnisotropy: false }
+      { x: 2, y: 2, z: 2, unit: 'μm' }
     ),
     {
       label: '30000 nm',
@@ -145,7 +145,7 @@ test('viewer scalebar info flags anisotropy and suppresses sub-voxel bars', () =
           textPlacement: 'right',
         },
       },
-      { x: 2, y: 2, z: 4, unit: 'μm', correctAnisotropy: false }
+      { x: 2, y: 2, z: 4, unit: 'μm' }
     ),
     {
       label: '500 nm',

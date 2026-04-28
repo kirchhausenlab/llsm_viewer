@@ -1,5 +1,5 @@
 import type { VolumeBrickAtlas, VolumeBrickPageTable } from '../../../core/volumeProvider';
-import { isIntensityVolume, type NormalizedVolume } from '../../../core/volumeProcessing';
+import type { NormalizedVolume } from '../../../core/volumeProcessing';
 import type { PlaybackIndexWindow } from '../../../shared/utils';
 import { computeLoopedNextTimeIndex } from '../../../shared/utils';
 import type { PreprocessedAnyLayerScaleManifestEntry } from '../../../shared/utils/preprocessedDataset/types';
@@ -288,7 +288,7 @@ export function isPromotionReadyForResource({
     return brickAtlas.enabled && brickAtlas.pageTable.occupiedBrickCount > 0;
   }
   if (volume) {
-    return isIntensityVolume(volume) ? volume.normalized.byteLength > 0 : volume.labels.byteLength > 0;
+    return volume.normalized.byteLength > 0;
   }
   return pageTable ? pageTable.occupiedBrickCount > 0 : false;
 }

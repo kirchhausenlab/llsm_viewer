@@ -1,4 +1,3 @@
-import * as THREE from 'three';
 import { normalizeHexColor } from './layerColors';
 
 export type TrackColorOption = {
@@ -22,6 +21,8 @@ export function normalizeTrackColor(color: string, fallback: string = DEFAULT_TR
 }
 
 const GOLDEN_ANGLE_DEGREES = 137.508;
+const TRACK_COLOR_SATURATION = 0.75;
+const TRACK_COLOR_LIGHTNESS = 0.55;
 
 function toNumericSeed(seed: string | number): number {
   if (typeof seed === 'number' && Number.isFinite(seed)) {
@@ -36,15 +37,49 @@ function toNumericSeed(seed: string | number): number {
   return (hash % 1000000) + 1;
 }
 
-export function createTrackColor(seed: string | number): THREE.Color {
-  const color = new THREE.Color();
-  const normalizedSeed = toNumericSeed(seed);
-  const hue = ((normalizedSeed * GOLDEN_ANGLE_DEGREES) % 360) / 360;
-  color.setHSL(hue, 0.75, 0.55);
-  return color;
+function hueToRgb(p: number, q: number, t: number): number {
+  let value = t;
+  if (value < 0) {
+    value += 1;
+  }
+  if (value > 1) {
+    value -= 1;
+  }
+  if (value < 1 / 6) {
+    return p + (q - p) * 6 * value;
+  }
+  if (value < 1 / 2) {
+    return q;
+  }
+  if (value < 2 / 3) {
+    return p + (q - p) * (2 / 3 - value) * 6;
+  }
+  return p;
+}
+
+function toHexByte(value: number): string {
+  const byte = Math.min(255, Math.max(0, Math.round(value * 255)));
+  return byte.toString(16).padStart(2, '0');
+}
+
+function linearToSrgb(value: number): number {
+  return value < 0.0031308 ? value * 12.92 : 1.055 * Math.pow(value, 0.41666) - 0.055;
+}
+
+function createTrackColorHexFromHue(hueDegrees: number): string {
+  const hue = (((hueDegrees % 360) + 360) % 360) / 360;
+  const q =
+    TRACK_COLOR_LIGHTNESS < 0.5
+      ? TRACK_COLOR_LIGHTNESS * (1 + TRACK_COLOR_SATURATION)
+      : TRACK_COLOR_LIGHTNESS + TRACK_COLOR_SATURATION - TRACK_COLOR_LIGHTNESS * TRACK_COLOR_SATURATION;
+  const p = 2 * TRACK_COLOR_LIGHTNESS - q;
+  const red = hueToRgb(p, q, hue + 1 / 3);
+  const green = hueToRgb(p, q, hue);
+  const blue = hueToRgb(p, q, hue - 1 / 3);
+  return `#${toHexByte(linearToSrgb(red))}${toHexByte(linearToSrgb(green))}${toHexByte(linearToSrgb(blue))}`.toUpperCase();
 }
 
 export function getTrackColorHex(seed: string | number): string {
-  const color = createTrackColor(seed);
-  return `#${color.getHexString()}`;
+  const normalizedSeed = toNumericSeed(seed);
+  return createTrackColorHexFromHue((normalizedSeed * GOLDEN_ANGLE_DEGREES) % 360);
 }

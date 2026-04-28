@@ -836,7 +836,7 @@ export function useLayerControls({
         scaleLevel,
         brickPageTable,
         brickAtlas,
-        backgroundMask: layer.isSegmentation ? null : (backgroundMasksByScale[scaleLevel] ?? null),
+        backgroundMask: backgroundMasksByScale[scaleLevel] ?? null,
         playbackRole: isPlaying ? 'active' : undefined
       };
     });
@@ -926,7 +926,7 @@ export function useLayerControls({
           scaleLevel,
           brickPageTable,
           brickAtlas,
-          backgroundMask: layer.isSegmentation ? null : (frame.backgroundMasksByScale[scaleLevel] ?? null),
+          backgroundMask: frame.backgroundMasksByScale[scaleLevel] ?? null,
           playbackWarmupForLayerKey: layer.key,
           playbackWarmupTimeIndex: frame.timeIndex,
           playbackRole: 'warmup',

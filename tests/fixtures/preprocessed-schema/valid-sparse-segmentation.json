@@ -1,5 +1,5 @@
 {
-  "format": "llsm-viewer-preprocessed-vnext-sparse-seg1",
+  "format": "llsm-viewer-preprocessed-isotropic-sparse-v1",
   "generatedAt": "2026-04-25T00:00:00.000Z",
   "dataset": {
     "movieMode": "3d",
@@ -25,7 +25,11 @@
             "emptyLabel": 0,
             "normalization": null,
             "representation": "sparse-label-bricks-v1",
-            "brickSize": [32, 32, 32],
+            "brickSize": [
+              32,
+              32,
+              32
+            ],
             "colorSeed": 3735928559,
             "sparse": {
               "version": 1,
@@ -39,12 +43,24 @@
               "scales": [
                 {
                   "level": 0,
-                  "downsampleFactor": [1, 1, 1],
+                  "downsampleFactor": [
+                    1,
+                    1,
+                    1
+                  ],
                   "width": 1,
                   "height": 1,
                   "depth": 1,
-                  "brickSize": [32, 32, 32],
-                  "brickGridShape": [1, 1, 1],
+                  "brickSize": [
+                    32,
+                    32,
+                    32
+                  ],
+                  "brickGridShape": [
+                    1,
+                    1,
+                    1
+                  ],
                   "occupiedBrickCount": 1,
                   "nonzeroVoxelCount": 1,
                   "directory": {
@@ -67,7 +83,11 @@
                     "levels": [
                       {
                         "level": 0,
-                        "gridShape": [1, 1, 1],
+                        "gridShape": [
+                          1,
+                          1,
+                          1
+                        ],
                         "dataType": "uint8",
                         "path": "channels/channel-seg/layer-seg/sparse/scales/0/occupancy/level-0.ssbo",
                         "byteLength": 65,
@@ -86,14 +106,34 @@
     "voxelResolution": {
       "x": 120,
       "y": 120,
-      "z": 300,
-      "unit": "nm",
-      "correctAnisotropy": false
+      "z": 120,
+      "unit": "nm"
     },
     "temporalResolution": {
       "interval": 2.3,
       "unit": "ms"
     },
-    "anisotropyCorrection": null
+    "sourceVoxelResolution": {
+      "x": 120,
+      "y": 120,
+      "z": 300,
+      "unit": "nm"
+    },
+    "storedVoxelResolution": {
+      "x": 120,
+      "y": 120,
+      "z": 120,
+      "unit": "nm"
+    },
+    "isotropicResampling": {
+      "enabled": true,
+      "scale": {
+        "x": 1,
+        "y": 1,
+        "z": 2.5
+      },
+      "intensityInterpolation": "linear",
+      "segmentationInterpolation": "nearest"
+    }
   }
 }

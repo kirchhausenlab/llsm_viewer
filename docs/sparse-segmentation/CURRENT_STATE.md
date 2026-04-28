@@ -56,7 +56,7 @@ Important files:
 
 Current behavior:
 
-- manifest format currently includes `llsm-viewer-preprocessed-vnext-hes2`
+- manifest format currently includes `llsm-viewer-preprocessed-isotropic-v1`
 - `PreprocessedLayerManifestEntry` uses `isSegmentation: boolean`
 - segmentation scales still validate dense `zarr.data` as `uint16`
 - segmentation skip hierarchy uses `uint8` min/max/occupancy descriptors

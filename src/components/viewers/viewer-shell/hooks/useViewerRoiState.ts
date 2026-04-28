@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
-import type { RoiDefinition, RoiDimensionMode, RoiTool, SavedRoi } from '../../../../types/roi';
+import type { RoiAlignment, RoiDefinition, RoiDimensionMode, RoiTool, SavedRoi } from '../../../../types/roi';
 import {
   cloneRoiDefinition,
   cloneSavedRoi,
+  DEFAULT_ROI_ALIGNMENT,
   DEFAULT_ROI_COLOR,
   formatRoiCentroidName,
+  normalizeRoiAlignment,
   normalizeRoiColor,
 } from '../../../../types/roi';
 
@@ -20,10 +22,9 @@ type UseViewerRoiStateOptions = {
 type UseViewerRoiStateResult = {
   tool: RoiTool;
   dimensionMode: RoiDimensionMode;
+  defaultAlignment: RoiAlignment;
   defaultColor: string;
   workingRoi: RoiDefinition | null;
-  twoDCurrentZEnabled: boolean;
-  twoDStartZIndex: number;
   savedRois: SavedRoi[];
   selectedSavedRoiIds: string[];
   activeSavedRoiId: string | null;
@@ -31,10 +32,9 @@ type UseViewerRoiStateResult = {
   showAllSavedRois: boolean;
   setTool: (tool: RoiTool) => void;
   setDimensionMode: (mode: RoiDimensionMode) => void;
+  setDefaultAlignment: (alignment: RoiAlignment) => void;
   setDefaultColor: (color: string) => void;
-  setTwoDCurrentZEnabled: (enabled: boolean) => void;
-  setTwoDStartZIndex: (value: number) => void;
-  setWorkingRoi: (roi: RoiDefinition | null) => void;
+  setWorkingRoi: (roi: RoiDefinition | null, options?: { detach?: boolean }) => void;
   updateWorkingRoi: (updater: (current: RoiDefinition) => RoiDefinition) => void;
   clearWorkingRoiAttachment: () => void;
   activateSavedRoi: (roiId: string) => void;
@@ -51,6 +51,7 @@ type UseViewerRoiStateResult = {
     editingSavedRoiId: string | null;
     workingRoi: RoiDefinition | null;
     defaultColor: string;
+    defaultAlignment?: RoiAlignment;
     dimensionMode: RoiDimensionMode;
     tool: RoiTool;
   }) => void;
@@ -61,18 +62,12 @@ const normalizeName = (name: string) => name.trim();
 export function useViewerRoiState({
   volumeDimensions,
 }: UseViewerRoiStateOptions): UseViewerRoiStateResult {
-  const maxZIndex = Math.max(0, volumeDimensions.depth - 1);
-  const clampZIndex = useCallback(
-    (value: number) => Math.min(maxZIndex, Math.max(0, Math.round(value))),
-    [maxZIndex]
-  );
   const nextRoiIdRef = useRef(1);
   const [tool, setTool] = useState<RoiTool>('line');
   const [dimensionMode, setDimensionMode] = useState<RoiDimensionMode>('2d');
+  const [defaultAlignment, setDefaultAlignmentState] = useState<RoiAlignment>(DEFAULT_ROI_ALIGNMENT);
   const [defaultColor, setDefaultColorState] = useState(() => normalizeRoiColor(DEFAULT_ROI_COLOR));
   const [workingRoi, setWorkingRoiState] = useState<RoiDefinition | null>(null);
-  const [twoDCurrentZEnabled, setTwoDCurrentZEnabled] = useState(false);
-  const [twoDStartZIndex, setTwoDStartZIndexState] = useState(0);
   const [savedRois, setSavedRois] = useState<SavedRoi[]>([]);
   const [selectedSavedRoiIds, setSelectedSavedRoiIds] = useState<string[]>([]);
   const [activeSavedRoiId, setActiveSavedRoiId] = useState<string | null>(null);
@@ -83,15 +78,16 @@ export function useViewerRoiState({
     setDefaultColorState(normalizeRoiColor(color));
   }, []);
 
-  const setTwoDStartZIndex = useCallback(
-    (value: number) => {
-      setTwoDStartZIndexState(clampZIndex(value));
-    },
-    [clampZIndex]
-  );
+  const setDefaultAlignment = useCallback((alignment: RoiAlignment) => {
+    setDefaultAlignmentState(normalizeRoiAlignment(alignment));
+  }, []);
 
-  const setWorkingRoi = useCallback((roi: RoiDefinition | null) => {
+  const setWorkingRoi = useCallback((roi: RoiDefinition | null, options?: { detach?: boolean }) => {
     setWorkingRoiState(roi ? cloneRoiDefinition(roi) : null);
+    if (options?.detach || roi === null) {
+      setActiveSavedRoiId(null);
+      setEditingSavedRoiId(null);
+    }
   }, []);
 
   const updateWorkingRoi = useCallback((updater: (current: RoiDefinition) => RoiDefinition) => {
@@ -110,16 +106,10 @@ export function useViewerRoiState({
 
     setTool((current) => (current === workingRoi.shape ? current : workingRoi.shape));
     setDimensionMode((current) => (current === workingRoi.mode ? current : workingRoi.mode));
-
-    if (workingRoi.mode === '2d') {
-      const clamped = clampZIndex(workingRoi.start.z);
-      setTwoDStartZIndexState((current) => (current === clamped ? current : clamped));
+    if (workingRoi.mode === '3d') {
+      setDefaultAlignmentState(normalizeRoiAlignment(workingRoi.alignment));
     }
-  }, [clampZIndex, workingRoi]);
-
-  useEffect(() => {
-    setTwoDStartZIndexState((current) => clampZIndex(current));
-  }, [clampZIndex]);
+  }, [workingRoi]);
 
   const attachSavedRoi = useCallback(
     (roiId: string, options?: { preserveSelection?: boolean }) => {
@@ -140,6 +130,9 @@ export function useViewerRoiState({
         const workingCopy = cloneRoiDefinition(nextActiveRoi);
         setWorkingRoiState(workingCopy);
         setDefaultColorState(normalizeRoiColor(nextActiveRoi.color));
+        if (nextActiveRoi.mode === '3d') {
+          setDefaultAlignmentState(normalizeRoiAlignment(nextActiveRoi.alignment));
+        }
         return nextActiveRoi.id;
       });
     },
@@ -208,6 +201,9 @@ export function useViewerRoiState({
     if (promotedRoi) {
       setWorkingRoiState(cloneRoiDefinition(promotedRoi));
       setDefaultColorState(normalizeRoiColor(promotedRoi.color));
+      if (promotedRoi.mode === '3d') {
+        setDefaultAlignmentState(normalizeRoiAlignment(promotedRoi.alignment));
+      }
       setEditingSavedRoiId(promotedRoi.id);
     } else if (editingSavedRoiId === activeSavedRoiId) {
       setEditingSavedRoiId(null);
@@ -250,6 +246,9 @@ export function useViewerRoiState({
     );
     setEditingSavedRoiId(activeSavedRoiId);
     setDefaultColorState(normalizeRoiColor(normalizedWorkingRoi.color));
+    if (normalizedWorkingRoi.mode === '3d') {
+      setDefaultAlignmentState(normalizeRoiAlignment(normalizedWorkingRoi.alignment));
+    }
   }, [activeSavedRoiId, workingRoi]);
 
   const normalizedSavedRois = useMemo(() => savedRois.map((roi) => cloneSavedRoi(roi)), [savedRois]);
@@ -261,6 +260,7 @@ export function useViewerRoiState({
     editingSavedRoiId: string | null;
     workingRoi: RoiDefinition | null;
     defaultColor: string;
+    defaultAlignment?: RoiAlignment;
     dimensionMode: RoiDimensionMode;
     tool: RoiTool;
   }) => {
@@ -270,6 +270,7 @@ export function useViewerRoiState({
     setEditingSavedRoiId(state.editingSavedRoiId);
     setWorkingRoiState(state.workingRoi ? cloneRoiDefinition(state.workingRoi) : null);
     setDefaultColorState(normalizeRoiColor(state.defaultColor));
+    setDefaultAlignmentState(normalizeRoiAlignment(state.defaultAlignment));
     setDimensionMode(state.dimensionMode);
     setTool(state.tool);
   }, []);
@@ -277,10 +278,9 @@ export function useViewerRoiState({
   return {
     tool,
     dimensionMode,
+    defaultAlignment,
     defaultColor,
     workingRoi,
-    twoDCurrentZEnabled,
-    twoDStartZIndex,
     savedRois: normalizedSavedRois,
     selectedSavedRoiIds,
     activeSavedRoiId,
@@ -288,9 +288,8 @@ export function useViewerRoiState({
     showAllSavedRois,
     setTool,
     setDimensionMode,
+    setDefaultAlignment,
     setDefaultColor,
-    setTwoDCurrentZEnabled,
-    setTwoDStartZIndex,
     setWorkingRoi,
     updateWorkingRoi,
     clearWorkingRoiAttachment,

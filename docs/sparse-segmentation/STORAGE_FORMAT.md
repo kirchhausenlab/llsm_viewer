@@ -8,7 +8,7 @@ The exact TypeScript manifest shapes are defined in `SCHEMA_SPARSE_SEGMENTATION.
 
 New preprocessing output should use a new manifest format identifier:
 
-- `llsm-viewer-preprocessed-vnext-sparse-seg1`
+- `llsm-viewer-preprocessed-isotropic-sparse-v1`
 
 Reader behavior:
 

@@ -24,6 +24,13 @@ import { useViewerPanelWindows } from './viewer-shell/hooks/useViewerPanelWindow
 import { useViewerPropsState } from './viewer-shell/hooks/useViewerPropsState';
 import { useViewerRoiState } from './viewer-shell/hooks/useViewerRoiState';
 import { useViewerRecording } from './viewer-shell/hooks/useViewerRecording';
+import {
+  addMissingLayerRenderModesToSnapshot,
+  captureLayerRenderModeSnapshot,
+  collectChannelLayersFor2dView,
+  readLayerRenderModeSnapshot,
+  type LayerRenderModeSnapshot,
+} from './viewer-shell/twoDLayerModes';
 import type { ViewerShellProps } from './viewer-shell/types';
 import type {
   DesktopViewerBackgroundConfig,
@@ -34,11 +41,11 @@ import type {
 import {
   createDefaultLayerSettings,
   RENDER_STYLE_SLICE,
-  type RenderStyle,
-  type SamplingMode,
 } from '../../state/layerSettings';
 import type {
   CameraCoordinate,
+  CameraFaceView,
+  CameraFaceViewMode,
   CameraRotation,
   CameraWindowController,
   CameraWindowState,
@@ -55,7 +62,9 @@ import {
   buildRoiMeasurementsCsv,
   buildRoiMeasurementsSnapshot,
 } from '../../shared/utils/roiMeasurements';
+import type { BackgroundMaskVolume } from '../../shared/utils/backgroundMask';
 import { parseRoiManagerStateFromJson, serializeRoiManagerState } from '../../shared/utils/roiPersistence';
+import { reorientRoiDefinitionForAlignment } from '../../shared/utils/roiGeometry';
 import { createDefaultTrackSetState } from '../../hooks/tracks/useTrackStyling';
 import { resolveTrackVisibilityForState } from '../../shared/utils/trackVisibilityState';
 import {
@@ -72,10 +81,18 @@ import { useAnnotate } from '../../hooks/annotation/useAnnotate';
 import type { AnnotateSourceOption, EditableSegmentationChannel, LoadedEditableSegmentationCopy } from '../../types/annotation';
 import {
   exportChannel,
-  materializeRegularSegmentationSource,
   sanitizeExportBaseName,
   type ChannelExportSource,
 } from '../../shared/utils/channelExport';
+import {
+  addEditableSparseBrickVoxels,
+  createEditableSegmentationChannel,
+} from '../../shared/utils/annotation/editableSegmentationState';
+import type {
+  SparseSegmentationBrickCoord,
+  SparseSegmentationBrickSize,
+  SparseSegmentationLocalVoxel,
+} from '../../shared/utils/preprocessedDataset/sparseSegmentation';
 import { writeEditableSegmentationChannel } from '../../shared/utils/preprocessedDataset/editableSegmentation/sparseWriter';
 import {
   DEFAULT_HOVER_SETTINGS,
@@ -92,6 +109,12 @@ import {
   DEFAULT_DESKTOP_RENDER_RESOLUTION,
   type DesktopRenderResolution,
 } from '../../types/renderResolution';
+import {
+  isAnnotationViewerTool,
+  isRoiViewerTool,
+  type ViewerTool,
+  type ViewerToolDimensionMode,
+} from '../../types/viewerTool';
 import { useUiTheme } from '../../ui/app/providers/UiThemeProvider';
 import type { LoadedDatasetLayer } from '../../hooks/dataset';
 
@@ -106,8 +129,6 @@ type RotationDraft = {
   pitch: string;
   roll: string;
 };
-
-type LayerRenderModeSnapshot = Record<string, { renderStyle: RenderStyle; samplingMode: SamplingMode }>;
 
 const EMPTY_COORDINATE_DRAFT: CoordinateDraft = { x: '', y: '', z: '' };
 const DEFAULT_DARK_VIEWER_BACKGROUND = '#040607';
@@ -327,6 +348,7 @@ function ViewerShell({
     setMeasurementsWindowInitialPosition,
   } = layout;
   const { loadedChannelIds, channelLayersMap } = channelsPanel;
+  const deskew = datasetAccess.manifest?.dataset.deskew ?? null;
   const managedChannelLayers = useMemo(
     () => loadedChannelIds.flatMap((channelId) => channelLayersMap.get(channelId) ?? []),
     [channelLayersMap, loadedChannelIds]
@@ -514,46 +536,95 @@ function ViewerShell({
         throw new Error('Segmentation source no longer exists.');
       }
 
-      const timepointLabels = new Map<number, Uint32Array>();
+      if (!provider.getSparseSegmentationField || !provider.getSparseSegmentationBrick) {
+        throw new Error('Segmentation source copy is unavailable for this provider.');
+      }
+      const sourceBricks: Array<{
+        timepoint: number;
+        brickCoord: SparseSegmentationBrickCoord;
+        brickSize: SparseSegmentationBrickSize;
+        voxels: SparseSegmentationLocalVoxel[];
+      }> = [];
       const uniqueLabels = new Set<number>();
       let maxLabel = 0;
       for (let timepoint = 0; timepoint < source.volumeCount; timepoint += 1) {
-        const materialized = await materializeRegularSegmentationSource({
-          provider,
-          layer,
-          timepoint,
+        const field = await provider.getSparseSegmentationField(source.layerKey, timepoint, {
+          scaleLevel: 0,
+          loadDirectory: true,
+          loadLabelMetadata: false,
         });
-        timepointLabels.set(timepoint, materialized.labels);
-        for (let index = 0; index < materialized.labels.length; index += 1) {
-          const label = materialized.labels[index] ?? 0;
-          if (label > 0) {
+        for (const record of field.directory.recordsForTimepoint(timepoint)) {
+          const brick = await provider.getSparseSegmentationBrick(
+            source.layerKey,
+            timepoint,
+            0,
+            record.brickCoord as SparseSegmentationBrickCoord
+          );
+          const voxels: SparseSegmentationLocalVoxel[] = [];
+          brick.forEachNonzero((offset, label) => {
+            if (label <= 0) {
+              return;
+            }
             uniqueLabels.add(label);
             maxLabel = Math.max(maxLabel, label);
+            voxels.push({ offset, label });
+          });
+          if (voxels.length > 0) {
+            sourceBricks.push({
+              timepoint,
+              brickCoord: record.brickCoord as SparseSegmentationBrickCoord,
+              brickSize: field.brickSize,
+              voxels,
+            });
           }
         }
       }
 
+      const tempChannel = createEditableSegmentationChannel({
+        channelId: `copy-${source.channelId}`,
+        layerKey: `copy-${source.layerKey}`,
+        name: source.label,
+        dimensions: source.dimensions,
+        volumeCount: source.volumeCount,
+        createdFrom: { kind: 'empty' },
+        labels: [{ name: '' }],
+      });
+
       if (source.editableLabelNames) {
         const labelCount = Math.max(1, source.editableLabelNames.length, maxLabel);
-        return {
-          labels: Array.from({ length: labelCount }, (_, index) => ({
-            name: source.editableLabelNames?.[index] ?? '',
-          })),
-          timepointLabels,
-        };
+        const labels = Array.from({ length: labelCount }, (_, index) => ({
+          name: source.editableLabelNames?.[index] ?? '',
+        }));
+        for (const sourceBrick of sourceBricks) {
+          addEditableSparseBrickVoxels({
+            channel: tempChannel,
+            timepoint: sourceBrick.timepoint,
+            brickCoord: sourceBrick.brickCoord,
+            brickSize: sourceBrick.brickSize,
+            voxels: sourceBrick.voxels,
+          });
+        }
+        return { labels, timepoints: tempChannel.timepoints };
       }
 
       const sortedLabels = [...uniqueLabels].sort((left, right) => left - right);
       const remap = new Map(sortedLabels.map((label, index) => [label, index + 1]));
-      for (const labels of timepointLabels.values()) {
-        for (let index = 0; index < labels.length; index += 1) {
-          const label = labels[index] ?? 0;
-          labels[index] = label === 0 ? 0 : remap.get(label) ?? 0;
-        }
+      const labels = Array.from({ length: Math.max(1, sortedLabels.length) }, () => ({ name: '' }));
+      for (const sourceBrick of sourceBricks) {
+        addEditableSparseBrickVoxels({
+          channel: tempChannel,
+          timepoint: sourceBrick.timepoint,
+          brickCoord: sourceBrick.brickCoord,
+          brickSize: sourceBrick.brickSize,
+          voxels: sourceBrick.voxels.map((voxel) => ({
+            offset: voxel.offset,
+            label: remap.get(voxel.label) ?? 0,
+          })),
+        });
       }
       return {
-        labels: Array.from({ length: Math.max(1, sortedLabels.length) }, () => ({ name: '' })),
-        timepointLabels,
+        labels,
+        timepoints: tempChannel.timepoints,
       };
     },
     [datasetAccess.volumeProvider, regularSegmentationLayerByKey]
@@ -589,30 +660,9 @@ function ViewerShell({
     loadRegularSegmentationSource,
     saveEditableChannel,
   });
-
-  const annotationStrokeHandlers = useMemo(() => ({
-    enabled: Boolean(annotateController.available && annotateController.activeChannel?.enabled),
-    onStrokeStart: annotateController.beginStroke,
-    onStrokeApply: annotateController.applyStrokeAt,
-    onStrokeEnd: annotateController.endStroke,
-  }), [
-    annotateController.activeChannel?.enabled,
-    annotateController.applyStrokeAt,
-    annotateController.available,
-    annotateController.beginStroke,
-    annotateController.endStroke,
-  ]);
-
-  const volumeViewerWithAnnotation = useMemo(
-    () =>
-      ({
-        ...volumeViewerProps,
-        layers: [...volumeViewerProps.layers, ...annotateController.getEditableViewerLayers()],
-        onRegisterCaptureTarget: registerVolumeCaptureTarget,
-        annotation: annotationStrokeHandlers,
-      }) satisfies ViewerShellProps['volumeViewerProps'],
-    [annotateController, annotationStrokeHandlers, registerVolumeCaptureTarget, volumeViewerProps]
-  );
+  const [activeViewerTool, setActiveViewerTool] = useState<ViewerTool>('hand');
+  const [viewerToolDimensionMode, setViewerToolDimensionMode] = useState<ViewerToolDimensionMode>('2d');
+  const selectedZIndex = Math.max(0, (playbackState.zSliderValue ?? 1) - 1);
 
   const {
     isChannelsWindowOpen,
@@ -671,6 +721,56 @@ function ViewerShell({
     hasTrackData,
     canShowPlotSettings: selectedTracksPanel.shouldRender
   });
+
+  const isAnnotationInputEnabled = Boolean(
+    annotateController.available &&
+    isAnnotationViewerTool(activeViewerTool) &&
+    annotateController.activeChannel?.enabled
+  );
+
+  useEffect(() => {
+    if (isAnnotationViewerTool(activeViewerTool) && !annotateController.available) {
+      setActiveViewerTool('hand');
+    }
+  }, [activeViewerTool, annotateController.available]);
+
+  const annotationStrokeHandlers = useMemo(() => ({
+    enabled: isAnnotationInputEnabled,
+    hoverMode: annotateController.activeChannel?.hoverMode ?? '3d',
+    selectedZIndex,
+    dimensions: annotateController.activeChannel?.dimensions ?? null,
+    onStrokeStart: annotateController.beginStroke,
+    onStrokeApply: annotateController.applyStrokeAt,
+    onStrokeEnd: annotateController.endStroke,
+  }), [
+    annotateController.activeChannel,
+    annotateController.applyStrokeAt,
+    annotateController.beginStroke,
+    annotateController.endStroke,
+    annotateController.revision,
+    isAnnotationInputEnabled,
+    selectedZIndex,
+  ]);
+
+  const volumeViewerWithAnnotation = useMemo(
+    () =>
+      ({
+        ...volumeViewerProps,
+        layers: [
+          ...volumeViewerProps.layers,
+          ...annotateController.getEditableViewerLayers(channelsPanel.layerSettings),
+        ],
+        onRegisterCaptureTarget: registerVolumeCaptureTarget,
+        annotation: annotationStrokeHandlers,
+      }) satisfies ViewerShellProps['volumeViewerProps'],
+    [
+      annotateController,
+      annotationStrokeHandlers,
+      channelsPanel.layerSettings,
+      registerVolumeCaptureTarget,
+      volumeViewerProps,
+    ]
+  );
 
   const resolvedChannelsPanel = useMemo(() => {
     const editableLayers = annotateController.getEditableLoadedLayers();
@@ -740,6 +840,34 @@ function ViewerShell({
     annotateController,
     channelsPanel,
   ]);
+  const resolvedManagedChannelLayers = useMemo(
+    () => collectChannelLayersFor2dView(
+      resolvedChannelsPanel.loadedChannelIds,
+      resolvedChannelsPanel.channelLayersMap
+    ),
+    [resolvedChannelsPanel.channelLayersMap, resolvedChannelsPanel.loadedChannelIds]
+  );
+
+  const selectedAnnotateChannel = useMemo(() => {
+    const channelId = resolvedChannelsPanel.activeChannelId;
+    if (!channelId) {
+      return null;
+    }
+    return {
+      channelId,
+      name: resolvedChannelsPanel.channelNameMap.get(channelId) ?? channelId,
+      editable: Boolean(annotateController.getEditableChannelById(channelId)),
+    };
+  }, [
+    annotateController,
+    resolvedChannelsPanel.activeChannelId,
+    resolvedChannelsPanel.channelNameMap,
+  ]);
+  const canEditSelectedAnnotateChannel = Boolean(
+    annotateController.activeChannel &&
+    selectedAnnotateChannel?.editable &&
+    selectedAnnotateChannel.channelId === annotateController.activeChannel.channelId
+  );
 
   const exportSources = useMemo<ChannelExportSource[]>(() => {
     const sources: ChannelExportSource[] = [];
@@ -968,11 +1096,9 @@ function ViewerShell({
   });
   const {
     tool: roiTool,
-    dimensionMode: roiDimensionMode,
+    defaultAlignment: roiDefaultAlignment,
     defaultColor: roiDefaultColor,
     workingRoi,
-    twoDCurrentZEnabled,
-    twoDStartZIndex,
     savedRois,
     selectedSavedRoiIds,
     activeSavedRoiId,
@@ -980,9 +1106,8 @@ function ViewerShell({
     showAllSavedRois,
     setTool: setRoiTool,
     setDimensionMode: setRoiDimensionMode,
+    setDefaultAlignment: setRoiDefaultAlignment,
     setDefaultColor: setRoiDefaultColor,
-    setTwoDCurrentZEnabled,
-    setTwoDStartZIndex,
     setWorkingRoi,
     updateWorkingRoi,
     clearWorkingRoiAttachment,
@@ -1003,14 +1128,25 @@ function ViewerShell({
     [activeSavedRoiId, savedRois]
   );
   const currentRoiName = activeSavedRoi?.name ?? (workingRoi ? 'Unsaved ROI' : 'No ROI');
-  const roiAttachmentState: 'none' | 'unsaved' | 'saved' =
-    activeSavedRoi !== null ? 'saved' : workingRoi ? 'unsaved' : 'none';
   const selectedSavedRois = useMemo(
     () =>
       selectedSavedRoiIds
         .map((roiId) => savedRois.find((roi) => roi.id === roiId) ?? null)
         .filter((roi): roi is (typeof savedRois)[number] => roi !== null),
     [savedRois, selectedSavedRoiIds]
+  );
+  const selectedSavedRoisForCurrentZ = useMemo(
+    () =>
+      selectedSavedRois.map((roi) =>
+        roi.mode === '2d'
+          ? {
+              ...roi,
+              start: { ...roi.start, z: selectedZIndex },
+              end: { ...roi.end, z: selectedZIndex },
+            }
+          : roi
+      ),
+    [selectedSavedRois, selectedZIndex]
   );
   const viewerLayerVolumeByKey = useMemo(
     () => new Map(volumeViewerProps.layers.map((layer) => [layer.key, layer.volume ?? null])),
@@ -1084,45 +1220,147 @@ function ViewerShell({
     [setRoiDefaultColor, updateWorkingRoi, workingRoi]
   );
 
+  const handleRoiAlignmentChange = useCallback(
+    (alignment: typeof roiDefaultAlignment) => {
+      setRoiDefaultAlignment(alignment);
+      if (workingRoi?.mode === '3d') {
+        const alignmentDeskew = deskew
+          ? {
+              angleRadians: deskew.angleRadians,
+              direction: deskew.direction,
+            }
+          : null;
+        updateWorkingRoi((current) => reorientRoiDefinitionForAlignment(current, alignment, alignmentDeskew));
+      }
+    },
+    [deskew, setRoiDefaultAlignment, updateWorkingRoi, workingRoi]
+  );
+
   useEffect(() => {
-    if (!twoDCurrentZEnabled || roiDimensionMode !== '2d') {
-      return;
+    if (!workingRoi || activeSavedRoiId !== null) {
+      return undefined;
     }
 
-    const targetZIndex = Math.max(0, (playbackState.zSliderValue ?? 1) - 1);
-    if (workingRoi?.mode === '2d') {
-      if (workingRoi.start.z === targetZIndex && workingRoi.end.z === targetZIndex) {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Delete') {
         return;
       }
-      updateWorkingRoi((current) => ({
-        ...current,
-        start: {
-          ...current.start,
-          z: targetZIndex,
-        },
-        end: {
-          ...current.end,
-          z: targetZIndex,
-        },
-      }));
+
+      const target = event.target as HTMLElement | null;
+      const tagName = target?.tagName;
+      if (target?.isContentEditable || tagName === 'INPUT' || tagName === 'TEXTAREA' || tagName === 'SELECT') {
+        return;
+      }
+
+      event.preventDefault();
+      clearWorkingRoiAttachment();
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [activeSavedRoiId, clearWorkingRoiAttachment, workingRoi]);
+
+  useEffect(() => {
+    if (workingRoi?.mode !== '2d') {
       return;
     }
 
-    if (!workingRoi) {
-      setTwoDStartZIndex(targetZIndex);
+    if (workingRoi.start.z === selectedZIndex && workingRoi.end.z === selectedZIndex) {
+      return;
     }
+
+    updateWorkingRoi((current) => ({
+      ...current,
+      start: {
+        ...current.start,
+        z: selectedZIndex,
+      },
+      end: {
+        ...current.end,
+        z: selectedZIndex,
+      },
+    }));
   }, [
-    playbackState.zSliderValue,
-    roiDimensionMode,
-    setTwoDStartZIndex,
-    twoDCurrentZEnabled,
+    selectedZIndex,
     updateWorkingRoi,
     workingRoi,
   ]);
 
-  const handleClearOrDetachRoi = useCallback(() => {
-    clearWorkingRoiAttachment();
-  }, [clearWorkingRoiAttachment]);
+  const handleViewerToolChange = useCallback(
+    (tool: ViewerTool) => {
+      if (isAnnotationViewerTool(tool) && !annotateController.available) {
+        setActiveViewerTool('hand');
+        annotateController.setEnabled(false);
+        return;
+      }
+
+      setActiveViewerTool(tool);
+
+      if (isRoiViewerTool(tool)) {
+        setRoiTool(tool);
+        setRoiDimensionMode(viewerToolDimensionMode);
+        annotateController.setEnabled(false);
+        return;
+      }
+
+      if (isAnnotationViewerTool(tool)) {
+        annotateController.setMode(viewerToolDimensionMode);
+        annotateController.setBrushMode(tool);
+        annotateController.setEnabled(true);
+        return;
+      }
+
+      annotateController.setEnabled(false);
+    },
+    [
+      annotateController.available,
+      annotateController.setBrushMode,
+      annotateController.setEnabled,
+      annotateController.setMode,
+      setRoiDimensionMode,
+      setRoiTool,
+      viewerToolDimensionMode,
+    ]
+  );
+
+  const handleViewerToolDimensionModeChange = useCallback(
+    (mode: ViewerToolDimensionMode) => {
+      setViewerToolDimensionMode(mode);
+      setRoiDimensionMode(mode);
+      annotateController.setMode(mode);
+    },
+    [annotateController.setMode, setRoiDimensionMode]
+  );
+
+  useEffect(() => {
+    if (
+      !isAnnotationViewerTool(activeViewerTool) ||
+      !annotateController.available ||
+      !annotateController.activeChannel
+    ) {
+      return;
+    }
+
+    if (annotateController.activeChannel.mode !== viewerToolDimensionMode) {
+      annotateController.setMode(viewerToolDimensionMode);
+    }
+    if (annotateController.activeChannel.brushMode !== activeViewerTool) {
+      annotateController.setBrushMode(activeViewerTool);
+    }
+    if (!annotateController.activeChannel.enabled) {
+      annotateController.setEnabled(true);
+    }
+  }, [
+    activeViewerTool,
+    annotateController.activeChannel,
+    annotateController.available,
+    annotateController.setBrushMode,
+    annotateController.setEnabled,
+    annotateController.setMode,
+    viewerToolDimensionMode,
+  ]);
 
   const handleRenameActiveRoi = useCallback(() => {
     if (!activeSavedRoi) {
@@ -1205,10 +1443,21 @@ function ViewerShell({
       return;
     }
 
+    let measurementBackgroundMask: BackgroundMaskVolume | null = null;
+    try {
+      measurementBackgroundMask = await datasetAccess.volumeProvider?.getBackgroundMask?.({ scaleLevel: 0 }) ?? null;
+    } catch (error) {
+      console.warn('Failed to load ROI measurement mask.', error);
+    }
+
     const resolvedChannels = await Promise.all(
       measurableChannelSources.map(async (channel) => {
-        if (channel.volume !== null || !loadMeasurementVolume) {
-          return channel;
+        const hasFullResolutionVolume = channel.volume !== null && (channel.volume.scaleLevel ?? 0) === 0;
+        if (hasFullResolutionVolume || !loadMeasurementVolume) {
+          return {
+            ...channel,
+            backgroundMask: measurementBackgroundMask,
+          };
         }
 
         try {
@@ -1216,17 +1465,27 @@ function ViewerShell({
           return {
             ...channel,
             volume: loadedVolume,
+            backgroundMask: measurementBackgroundMask,
           };
         } catch {
-          return channel;
+          return {
+            ...channel,
+            backgroundMask: measurementBackgroundMask,
+          };
         }
       })
     );
 
     const snapshot = buildRoiMeasurementsSnapshot({
-      selectedRois: selectedSavedRois,
+      selectedRois: selectedSavedRoisForCurrentZ,
       channels: resolvedChannels,
       timepoint: currentViewerPropTimepoint,
+      deskew: deskew
+        ? {
+            angleRadians: deskew.angleRadians,
+            direction: deskew.direction,
+          }
+        : null,
     });
 
     if (snapshot.rows.length === 0) {
@@ -1241,11 +1500,13 @@ function ViewerShell({
   }, [
     canMeasureRois,
     currentViewerPropTimepoint,
+    datasetAccess.volumeProvider,
+    deskew,
     loadMeasurementVolume,
     measurableChannelSources,
     measurementDefaults,
     playbackState.selectedIndex,
-    selectedSavedRois,
+    selectedSavedRoisForCurrentZ,
   ]);
 
   const handleOpenSetMeasurementsWindow = useCallback(() => {
@@ -1300,8 +1561,9 @@ function ViewerShell({
       selectedSavedRoiIds,
       activeSavedRoiId,
       defaultColor: roiDefaultColor,
-      dimensionMode: roiDimensionMode,
-      tool: roiTool,
+      defaultAlignment: roiDefaultAlignment,
+      dimensionMode: viewerToolDimensionMode,
+      tool: isRoiViewerTool(activeViewerTool) ? activeViewerTool : roiTool,
     });
 
     await saveTextFile(
@@ -1312,14 +1574,16 @@ function ViewerShell({
     );
   }, [
     activeSavedRoiId,
+    activeViewerTool,
     buildTimestampedFileName,
     canSaveRois,
+    roiDefaultAlignment,
     roiDefaultColor,
-    roiDimensionMode,
     roiTool,
     saveTextFile,
     savedRois,
     selectedSavedRoiIds,
+    viewerToolDimensionMode,
   ]);
 
   const handleLoadRoiFile = useCallback(
@@ -1327,6 +1591,7 @@ function ViewerShell({
       try {
         const loadedState = parseRoiManagerStateFromJson(await file.text(), volumeDimensions);
         replaceState(loadedState);
+        setViewerToolDimensionMode(loadedState.dimensionMode);
       } catch (error) {
         if (typeof window !== 'undefined' && typeof window.alert === 'function') {
           window.alert(error instanceof Error ? error.message : 'Failed to load ROI file.');
@@ -1432,33 +1697,50 @@ function ViewerShell({
     () => cameraControllerRef.current?.captureCameraState() ?? cameraWindowState,
     [cameraWindowState]
   );
+  const readCurrentLayerRenderMode = useCallback(
+    (layerKey: string) =>
+      readLayerRenderModeSnapshot(
+        layerKey,
+        resolvedChannelsPanel.layerSettings,
+        resolvedChannelsPanel.getLayerDefaultSettings
+      ),
+    [resolvedChannelsPanel.getLayerDefaultSettings, resolvedChannelsPanel.layerSettings]
+  );
   const captureLayerRenderModes = useCallback((): LayerRenderModeSnapshot => {
-    const snapshot: LayerRenderModeSnapshot = {};
-    for (const layer of managedChannelLayers) {
-      const settings = channelsPanel.layerSettings[layer.key] ?? channelsPanel.getLayerDefaultSettings(layer.key);
-      snapshot[layer.key] = {
-        renderStyle: settings.renderStyle,
-        samplingMode: settings.samplingMode,
-      };
-    }
-    return snapshot;
-  }, [channelsPanel.getLayerDefaultSettings, channelsPanel.layerSettings, managedChannelLayers]);
+    return captureLayerRenderModeSnapshot(
+      resolvedManagedChannelLayers,
+      resolvedChannelsPanel.layerSettings,
+      resolvedChannelsPanel.getLayerDefaultSettings
+    );
+  }, [
+    resolvedChannelsPanel.getLayerDefaultSettings,
+    resolvedChannelsPanel.layerSettings,
+    resolvedManagedChannelLayers,
+  ]);
   const force2dLayerModes = useCallback(() => {
-    for (const layer of managedChannelLayers) {
-      channelsPanel.onLayerRenderStyleChange(layer.key, RENDER_STYLE_SLICE, 'nearest');
+    for (const layer of resolvedManagedChannelLayers) {
+      const settings = readCurrentLayerRenderMode(layer.key);
+      if (settings.renderStyle === RENDER_STYLE_SLICE && settings.samplingMode === 'nearest') {
+        continue;
+      }
+      resolvedChannelsPanel.onLayerRenderStyleChange(layer.key, RENDER_STYLE_SLICE, 'nearest');
     }
-  }, [channelsPanel.onLayerRenderStyleChange, managedChannelLayers]);
+  }, [
+    readCurrentLayerRenderMode,
+    resolvedChannelsPanel.onLayerRenderStyleChange,
+    resolvedManagedChannelLayers,
+  ]);
   const restoreLayerRenderModes = useCallback(
     (snapshot: LayerRenderModeSnapshot) => {
-      const activeLayerKeys = new Set(managedChannelLayers.map((layer) => layer.key));
+      const activeLayerKeys = new Set(resolvedManagedChannelLayers.map((layer) => layer.key));
       for (const [layerKey, settings] of Object.entries(snapshot)) {
         if (!activeLayerKeys.has(layerKey)) {
           continue;
         }
-        channelsPanel.onLayerRenderStyleChange(layerKey, settings.renderStyle, settings.samplingMode);
+        resolvedChannelsPanel.onLayerRenderStyleChange(layerKey, settings.renderStyle, settings.samplingMode);
       }
     },
-    [channelsPanel.onLayerRenderStyleChange, managedChannelLayers]
+    [resolvedChannelsPanel.onLayerRenderStyleChange, resolvedManagedChannelLayers]
   );
 
   const handleToggle2dView = useCallback(() => {
@@ -1491,6 +1773,25 @@ function ViewerShell({
     modeControls.onProjectionModeChange,
     modeControls.resetViewHandler,
     restoreLayerRenderModes,
+  ]);
+
+  useEffect(() => {
+    if (!is2dViewActive) {
+      return;
+    }
+    previousLayerRenderModesRef.current = addMissingLayerRenderModesToSnapshot(
+      previousLayerRenderModesRef.current,
+      resolvedManagedChannelLayers,
+      resolvedChannelsPanel.layerSettings,
+      resolvedChannelsPanel.getLayerDefaultSettings
+    );
+    force2dLayerModes();
+  }, [
+    force2dLayerModes,
+    is2dViewActive,
+    resolvedChannelsPanel.getLayerDefaultSettings,
+    resolvedChannelsPanel.layerSettings,
+    resolvedManagedChannelLayers,
   ]);
 
   useEffect(() => {
@@ -1609,6 +1910,39 @@ function ViewerShell({
       setIsCameraDraftDirty(false);
     }
   }, [is2dViewActive, parsedCameraPosition.value, parsedCameraRotation.value, translationEnabled]);
+
+  const handleCameraFaceViewChange = useCallback((face: CameraFaceView, mode: CameraFaceViewMode) => {
+    if (is2dViewActive) {
+      return;
+    }
+    const controller = cameraControllerRef.current;
+    if (!controller) {
+      return;
+    }
+
+    const applied = controller.applyCameraFaceView(
+      face,
+      mode === 'glass' && deskew
+        ? {
+            deskew: {
+              angleRadians: deskew.angleRadians,
+              direction: deskew.direction,
+            },
+          }
+        : undefined,
+    );
+    if (applied) {
+      const nextState = controller.captureCameraState();
+      if (nextState) {
+        setCameraPositionDraft(coordinateToDraft(nextState.cameraPosition, {
+          decimalPlaces: 2,
+          fixed: true,
+        }));
+        setCameraRotationDraft(rotationToDraft(nextState.cameraRotation));
+      }
+      setIsCameraDraftDirty(false);
+    }
+  }, [deskew, is2dViewActive]);
 
   const handleVoxelFollowChange = useCallback((axis: keyof CoordinateDraft, value: string) => {
     setVoxelFollowDraft((current) => ({ ...current, [axis]: value }));
@@ -1859,7 +2193,7 @@ function ViewerShell({
     }
 
     const setWorkingRoiForTests = (nextRoi: typeof workingRoi) => {
-      setWorkingRoi(nextRoi);
+      setWorkingRoi(nextRoi, { detach: true });
       if (nextRoi?.color) {
         setRoiDefaultColor(nextRoi.color);
       }
@@ -2062,6 +2396,16 @@ function ViewerShell({
       onOpenAnnotate: openAnnotate,
       annotateDisabled: !annotateController.available,
       annotateDisabledTitle: annotateController.available ? undefined : annotateController.unavailableReason ?? undefined,
+      activeViewerTool,
+      viewerToolDimensionMode,
+      onViewerToolChange: handleViewerToolChange,
+      onViewerToolDimensionModeChange: handleViewerToolDimensionModeChange,
+      annotationToolsDisabled: !annotateController.available,
+      annotationToolsDisabledTitle: annotateController.available ? undefined : annotateController.unavailableReason ?? undefined,
+      annotationUndoDisabled: !canEditSelectedAnnotateChannel || !annotateController.canUndo,
+      annotationRedoDisabled: !canEditSelectedAnnotateChannel || !annotateController.canRedo,
+      onAnnotationUndo: annotateController.undo,
+      onAnnotationRedo: annotateController.redo,
       onOpenExportChannel: openExportChannel,
       onOpenDrawRoiWindow: openDrawRoiWindow,
       onOpenRoiManagerWindow: openRoiManagerWindow,
@@ -2080,6 +2424,11 @@ function ViewerShell({
       onToggle2dView: handleToggle2dView,
       twoDViewButtonDisabled,
       twoDViewButtonTitle,
+      isVrActive: modeToggle.isVrActive,
+      projectionMode: modeToggle.projectionMode,
+      onProjectionModeChange: modeToggle.onProjectionModeChange,
+      onCameraFaceViewChange: handleCameraFaceViewChange,
+      deskewModeActive: deskew !== null,
       onVrButtonClick: modeToggle.onVrButtonClick,
       vrButtonDisabled,
       vrButtonTitle,
@@ -2114,7 +2463,16 @@ function ViewerShell({
     }),
     [
       annotateController.available,
+      annotateController.canRedo,
+      annotateController.canUndo,
+      annotateController.redo,
+      annotateController.undo,
       annotateController.unavailableReason,
+      activeViewerTool,
+      canEditSelectedAnnotateChannel,
+      deskew,
+      handleViewerToolChange,
+      handleViewerToolDimensionModeChange,
       handleReturnToLauncher,
       hoverCoordinateDigits,
       hoverIntensityValueDigits,
@@ -2132,6 +2490,7 @@ function ViewerShell({
       openDrawRoiWindow,
       handleOpenSetMeasurementsWindow,
       handleToggle2dView,
+      handleCameraFaceViewChange,
       openRecordWindow,
       openRoiManagerWindow,
       openPropsWindow,
@@ -2146,6 +2505,7 @@ function ViewerShell({
       twoDViewButtonTitle,
       trackVisibilitySummaryByTrackSet,
       tracksPanel,
+      viewerToolDimensionMode,
       vrButtonDisabled,
       vrButtonTitle,
       topMenu
@@ -2259,7 +2619,7 @@ function ViewerShell({
       {
         id: 'edit-draw-roi',
         group: 'Edit',
-        label: 'Draw ROI',
+        label: 'ROI properties',
         onSelect: topMenuProps.onOpenDrawRoiWindow,
       },
       {
@@ -2338,13 +2698,19 @@ function ViewerShell({
         onUpdateWorldPosition: propsController.updateWorldPosition,
       },
       roiConfig: {
-        isDrawWindowOpen: isDrawRoiWindowOpen,
-        tool: roiTool,
-        dimensionMode: roiDimensionMode,
-        selectedZIndex: Math.max(0, (playbackState.zSliderValue ?? 1) - 1),
-        twoDCurrentZEnabled,
-        twoDStartZIndex,
+        isDrawToolActive: isRoiViewerTool(activeViewerTool),
+        isMoveToolActive: activeViewerTool === 'hand',
+        tool: isRoiViewerTool(activeViewerTool) ? activeViewerTool : roiTool,
+        dimensionMode: viewerToolDimensionMode,
+        selectedZIndex,
         defaultColor: roiDefaultColor,
+        defaultAlignment: roiDefaultAlignment,
+        deskew: deskew
+          ? {
+              angleRadians: deskew.angleRadians,
+              direction: deskew.direction,
+            }
+          : null,
         workingRoi,
         savedRois,
         activeSavedRoiId,
@@ -2356,12 +2722,10 @@ function ViewerShell({
     }),
     [
       activeSavedRoiId,
+      activeViewerTool,
       editingSavedRoiId,
       isPropsWindowOpen,
-      isDrawRoiWindowOpen,
       activateSavedRoi,
-      twoDCurrentZEnabled,
-      twoDStartZIndex,
       propsController.props,
       propsController.selectProp,
       propsController.selectedPropId,
@@ -2369,8 +2733,9 @@ function ViewerShell({
       propsController.updateWorldPosition,
       currentViewerPropTimepoint,
       totalViewerPropTimepoints,
+      deskew,
+      roiDefaultAlignment,
       roiDefaultColor,
-      roiDimensionMode,
       roiTool,
       savedRois,
       setWorkingRoi,
@@ -2386,7 +2751,8 @@ function ViewerShell({
       handleCameraWindowStateChange,
       handleRegisterCameraWindowController,
       workingRoi,
-      playbackState.zSliderValue,
+      selectedZIndex,
+      viewerToolDimensionMode,
       volumeViewerWithAnnotation,
     ]
   );
@@ -2545,6 +2911,7 @@ function ViewerShell({
           controlWindowWidth={controlWindowWidth}
           resetSignal={resetToken}
           controller={annotateController}
+          selectedChannel={selectedAnnotateChannel}
           onClose={closeAnnotate}
         />
       ) : null}
@@ -2574,22 +2941,15 @@ function ViewerShell({
           controlWindowWidth={controlWindowWidth}
           resetSignal={resetToken}
           volumeDimensions={volumeDimensions}
-          tool={roiTool}
-          dimensionMode={roiDimensionMode}
-          selectedZIndex={Math.max(0, (playbackState.zSliderValue ?? 1) - 1)}
+          dimensionMode={viewerToolDimensionMode}
           currentRoiName={currentRoiName}
-          roiAttachmentState={roiAttachmentState}
           currentColor={currentRoiColor}
+          currentAlignment={workingRoi?.alignment ?? roiDefaultAlignment}
+          glassAlignmentEnabled={deskew !== null}
           workingRoi={workingRoi}
-          twoDCurrentZEnabled={twoDCurrentZEnabled}
-          twoDStartZIndex={twoDStartZIndex}
-          onToolChange={setRoiTool}
-          onDimensionModeChange={setRoiDimensionMode}
           onColorChange={handleRoiColorChange}
-          onTwoDCurrentZEnabledChange={setTwoDCurrentZEnabled}
-          onTwoDStartZIndexChange={setTwoDStartZIndex}
+          onAlignmentChange={handleRoiAlignmentChange}
           onUpdateWorkingRoi={updateWorkingRoi}
-          onClearOrDetach={handleClearOrDetachRoi}
           onClose={closeDrawRoiWindow}
         />
       ) : null}
@@ -2712,6 +3072,7 @@ function ViewerShell({
           onDelete={deleteActiveSavedRoi}
           onRename={handleRenameActiveRoi}
           onUpdate={updateActiveSavedRoiFromWorking}
+          onProperties={openDrawRoiWindow}
           onMeasure={handleOpenMeasurementsWindow}
           onSave={handleSaveRois}
           onLoad={handleLoadRois}

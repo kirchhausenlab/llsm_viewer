@@ -6,8 +6,8 @@ import type { LoadedDatasetLayer } from '../../hooks/dataset';
 import type { EditableSegmentationChannel } from '../../types/annotation';
 import { encodeGrayscaleTiffStack } from './tiffWriter';
 import {
-  getEditableTimepointLabels,
   getEditableVoxelCount,
+  materializeEditableTimepointLabels,
 } from './annotation/editableSegmentationState';
 import {
   globalCoordForLocalOffset,
@@ -48,9 +48,6 @@ function arrayBufferToBytes(buffer: ArrayBuffer): Uint8Array {
 }
 
 function encodeIntensityVolume(volume: NormalizedVolume): Uint8Array {
-  if (volume.kind !== 'intensity') {
-    throw new Error('Expected an intensity volume.');
-  }
   if (volume.normalizedDataType === 'uint16') {
     if (!(volume.normalized instanceof Uint16Array)) {
       throw new Error('Expected uint16 normalized intensity data.');
@@ -168,20 +165,9 @@ export async function materializeRegularSegmentationSource({
     return materializeSparseSegmentationLabels({ provider, layerKey: layer.key, timepoint });
   }
 
-  const volume = await provider.getVolume(layer.key, timepoint, { scaleLevel: 0 });
-  if (volume.kind !== 'segmentation') {
-    throw new Error(`Layer "${layer.label}" is not a segmentation volume.`);
-  }
-  const labels = new Uint32Array(volume.labels.length);
-  for (let index = 0; index < volume.labels.length; index += 1) {
-    labels[index] = volume.labels[index] ?? 0;
-  }
-  return {
-    width: volume.width,
-    height: volume.height,
-    depth: volume.depth,
-    labels,
-  };
+  throw new Error(
+    `Unsupported legacy dense segmentation layer "${layer.label}". This dataset must be reprocessed with sparse segmentation support before launching the viewer.`
+  );
 }
 
 async function encodeRegularChannelTimepoint({
@@ -212,8 +198,10 @@ function encodeEditableChannelTimepoint({
   source: Extract<ChannelExportSource, { kind: 'editable' }>;
   timepoint: number;
 }): Uint8Array {
-  const labels = getEditableTimepointLabels(source.channel, timepoint);
-  const data = labels ? labels.slice() : new Uint32Array(getEditableVoxelCount(source.channel));
+  const data =
+    source.channel.timepoints.has(Math.max(0, Math.min(source.channel.volumeCount - 1, Math.floor(timepoint))))
+      ? materializeEditableTimepointLabels(source.channel, timepoint)
+      : new Uint32Array(getEditableVoxelCount(source.channel));
   return encodeSegmentationLabels({
     width: source.channel.dimensions.width,
     height: source.channel.dimensions.height,

@@ -905,12 +905,12 @@ export function useRouteLayerVolumes({
 
   const handleLaunchViewer = useCallback(async (options?: LaunchViewerOptions) => {
     if (isLaunchingViewer) {
-      return;
+      return false;
     }
 
     if (!preprocessedExperiment || !volumeProvider) {
       showLaunchError('Preprocess or import a preprocessed experiment before launching the viewer.');
-      return;
+      return false;
     }
 
     const performanceMode = Boolean(options?.performanceMode);
@@ -1003,11 +1003,13 @@ export function useRouteLayerVolumes({
         setVolumeProviderDiagnostics(volumeProvider.getDiagnostics());
       }
       completeLaunchSession(layerKeys.length);
+      return true;
     } catch (error) {
       console.error('Failed to launch viewer', error);
       const message = error instanceof Error ? error.message : 'Failed to launch viewer.';
       failLaunchSession(message);
       showLaunchError(message);
+      return false;
     } finally {
       finishLaunchSessionAttempt();
     }

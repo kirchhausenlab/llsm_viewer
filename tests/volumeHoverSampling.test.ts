@@ -9,6 +9,7 @@ import {
   sampleVolumeAtVoxel,
   sampleVolumeAtNormalizedPosition,
 } from '../src/components/viewers/volume-viewer/volumeHoverSampling.ts';
+import { prepareSliceTextureFromBrickAtlas } from '../src/components/viewers/volume-viewer/rendering/renderingUtils.ts';
 import type { NormalizedVolume } from '../src/core/volumeProcessing.ts';
 import { mapDisplayCoordinateToDataCoordinate, sampleRawValuesAtPosition } from '../src/shared/utils/hoverSampling.ts';
 
@@ -233,6 +234,49 @@ const createVolume = ({
 
   assert.ok(Math.abs(atlas.normalizedValues[0] - 0.5) < 1e-9);
   assert.ok(Math.abs(atlas.rawValues[0] - 32767.5) < 1e-6);
+})();
+
+(() => {
+  const atlasData = new Uint8Array(4 * 2 * 2 * 1);
+  const writeLabel = (voxelOffset: number, label: number) => {
+    const offset = voxelOffset * 4;
+    atlasData[offset] = label & 0xff;
+    atlasData[offset + 1] = (label >>> 8) & 0xff;
+    atlasData[offset + 2] = (label >>> 16) & 0xff;
+    atlasData[offset + 3] = Math.floor(label / 0x1000000) & 0xff;
+  };
+  writeLabel(0, 65536);
+  writeLabel(1, 0xffffffff);
+  const source = {
+    pageTable: {
+      layerKey: 'layer-packed-seg',
+      timepoint: 0,
+      scaleLevel: 0,
+      gridShape: [1, 1, 2],
+      chunkShape: [1, 1, 1],
+      volumeShape: [1, 1, 2],
+      brickAtlasIndices: new Int32Array([0, 1]),
+    },
+    kind: 'segmentation' as const,
+    atlasData,
+    atlasSize: { width: 2, height: 2, depth: 1 },
+    slotGrid: { x: 2, y: 2, z: 1 },
+    textureFormat: 'rgba' as const,
+    sourceChannels: 1,
+    dataType: 'uint8' as const,
+    min: 0,
+    max: 0xffffffff,
+  };
+
+  assert.deepStrictEqual(sampleBrickAtlasAtVoxel(source, 0, 0, 0).rawValues, [65536]);
+  assert.deepStrictEqual(sampleBrickAtlasAtVoxel(source, 1, 0, 0).rawValues, [0xffffffff]);
+  assert.deepStrictEqual(
+    sampleBrickAtlasAtNormalizedPosition(source, { x: 0.5, y: 0, z: 0 }).rawValues,
+    [0xffffffff],
+  );
+  const slice = prepareSliceTextureFromBrickAtlas(source, 0, null, null, 1234);
+  assert.equal(slice.data[3], 255);
+  assert.equal(slice.data[7], 255);
 })();
 
 (() => {

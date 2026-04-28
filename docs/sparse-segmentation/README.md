@@ -5,6 +5,10 @@ Created: **2026-04-25**
 
 This folder is the source of truth for replacing dense segmentation channels with a sparse voxel-brick segmentation system.
 
+Runtime update: **GPU atlas refactor implemented**. Sparse segmentation scale-0 bricks are packed into a balanced slot grid instead of a legacy Z-stacked texture when full residency fits. When a configured budget requires batching, the viewer uses an exact complete-batch render path instead of fallback, partial presentation, or silent scale downgrade.
+
+Cleanup update: **legacy dense preprocessed segmentation runtime removed**. `NormalizedVolume` and `provider.getVolume()` are intensity-only, dense `volume.labels` sampling/upload paths are gone, and regular segmentation export now requires sparse `uint32` traversal.
+
 The implementation is a hard cutover for segmentation data. There is no dense segmentation fallback, no geometry or mesh conversion, and no WebGPU dependency for this program. The renderer must stay on the current WebGL2 + Three.js stack, while keeping the storage and provider contracts clean enough for a future WebGPU backend.
 
 ## Objective
@@ -54,16 +58,18 @@ The new system treats segmentation as a sparse categorical field. Empty space is
 7. `SPARSE_ALGORITHMS.md`
 8. `WEBGL2_RENDERING.md`
 9. `WEBGL2_DATA_LAYOUT.md`
-10. `MIGRATION_MAP.md`
-11. `ROADMAP.md`
-12. `BACKLOG.md`
-13. `TEST_PLAN.md`
-14. `BENCHMARK_MATRIX.md`
-15. `CUTOVER_CHECKLIST.md`
-16. `RISK_REGISTER.md`
-17. `EXECUTION_LOG.md`
-18. `SESSION_HANDOFF.md`
-19. `SESSION_PROMPT.md`
+10. `GPU_ATLAS_REFACTOR.md`
+11. `LEGACY_DENSE_SEGMENTATION_CLEANUP.md`
+12. `MIGRATION_MAP.md`
+13. `ROADMAP.md`
+14. `BACKLOG.md`
+15. `TEST_PLAN.md`
+16. `BENCHMARK_MATRIX.md`
+17. `CUTOVER_CHECKLIST.md`
+18. `RISK_REGISTER.md`
+19. `EXECUTION_LOG.md`
+20. `SESSION_HANDOFF.md`
+21. `SESSION_PROMPT.md`
 
 ## Agent workflow
 

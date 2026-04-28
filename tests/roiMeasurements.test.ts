@@ -9,6 +9,7 @@ import {
   computeRoiMeasurementValues,
   validateSavedRoiWithinDimensions,
 } from '../src/shared/utils/roiMeasurements.ts';
+import { reorientRoiDefinitionForAlignment } from '../src/shared/utils/roiGeometry.ts';
 
 console.log('Starting roiMeasurements tests');
 
@@ -72,6 +73,66 @@ function createVolume(width: number, height: number, depth: number, normalized: 
 })();
 
 (() => {
+  const normalized: number[] = [];
+  for (let z = 0; z < 5; z += 1) {
+    for (let x = 0; x < 5; x += 1) {
+      normalized.push(z * 10 + x);
+    }
+  }
+  const volume = createVolume(5, 1, 5, normalized);
+  const roi: SavedRoi = {
+    id: 'roi-glass',
+    name: 'ROI Glass',
+    shape: 'rectangle',
+    mode: '3d',
+    start: { x: 0, y: 0, z: 2 },
+    end: { x: 4, y: 0, z: 2 },
+    color: '#FFFFFF',
+  };
+
+  const axesValues = computeRoiMeasurementValues(roi, volume);
+  assert.equal(axesValues.min, 20);
+  assert.equal(axesValues.max, 24);
+
+  const noSkewRoi = {
+    ...reorientRoiDefinitionForAlignment(
+      roi,
+      'glass',
+      { angleRadians: Math.PI / 2, direction: 'X' },
+    ),
+    id: roi.id,
+    name: roi.name,
+  };
+  const noSkewGlassValues = computeRoiMeasurementValues(
+    noSkewRoi,
+    volume,
+    null,
+    { angleRadians: Math.PI / 2, direction: 'X' },
+  );
+  assert.equal(noSkewGlassValues.min, 20);
+  assert.equal(noSkewGlassValues.max, 24);
+
+  const tiltedRoi = {
+    ...reorientRoiDefinitionForAlignment(
+      roi,
+      'glass',
+      { angleRadians: Math.PI / 4, direction: 'X' },
+    ),
+    id: roi.id,
+    name: roi.name,
+  };
+  const glassValues = computeRoiMeasurementValues(
+    tiltedRoi,
+    volume,
+    null,
+    { angleRadians: Math.PI / 4, direction: 'X' },
+  );
+  assert.equal(glassValues.count, 3);
+  assert.equal(glassValues.min, 13);
+  assert.equal(glassValues.max, 31);
+})();
+
+(() => {
   const volume: IntensityVolume = {
     kind: 'intensity',
     width: 2,
@@ -99,6 +160,30 @@ function createVolume(width: number, height: number, depth: number, normalized: 
   assert.equal(values.min, 0);
   assert.equal(values.max, 65535);
   assert.equal(values.mean, 32767.5);
+})();
+
+(() => {
+  const volume = createVolume(2, 1, 1, [10, 20]);
+  const roi: SavedRoi = {
+    id: 'roi-masked',
+    name: 'ROI Masked',
+    shape: 'rectangle',
+    mode: '2d',
+    start: { x: 0, y: 0, z: 0 },
+    end: { x: 1, y: 0, z: 0 },
+    color: '#FFFFFF',
+  };
+
+  const values = computeRoiMeasurementValues(roi, volume, {
+    width: 2,
+    height: 1,
+    depth: 1,
+    data: new Uint8Array([255, 255]),
+  });
+  assert.equal(values.count, 0);
+  assert.equal(values.min, null);
+  assert.equal(values.max, null);
+  assert.equal(values.mean, null);
 })();
 
 (() => {

@@ -6,6 +6,7 @@ import {
   useState,
   type CSSProperties,
   type KeyboardEvent as ReactKeyboardEvent,
+  type ReactNode,
   type RefObject
 } from 'react';
 
@@ -13,9 +14,21 @@ import type { TopMenuProps } from './types';
 import ThemeModeToggle from '../../app/ThemeModeToggle';
 import VolumeChannelTabs from './VolumeChannelTabs';
 import VolumeTrackTabs from './VolumeTrackTabs';
+import {
+  BrushToolIcon,
+  EllipseToolIcon,
+  EraserToolIcon,
+  GearToolIcon,
+  HandToolIcon,
+  LineToolIcon,
+  RedoToolIcon,
+  RectangleToolIcon,
+  UndoToolIcon,
+} from './ToolIcons';
 import { formatCompactChannelLabel } from './channelLabel';
 import { isLightHexColor } from '../../../shared/utils/appHelpers';
 import { toUserFacingVoxelIndex } from '../../../shared/utils/voxelIndex';
+import type { ViewerTool, ViewerToolDimensionMode } from '../../../types/viewerTool';
 
 type DropdownMenuId = 'file' | 'view' | 'edit' | 'tracks' | 'help';
 
@@ -26,11 +39,178 @@ type DropdownMenuItem = {
   onSelect?: () => void;
 };
 
+type ProjectionMode = 'perspective' | 'orthographic';
+type DimensionMode = '2d' | '3d';
+type CameraFaceView = 'xy' | 'yz' | 'xz';
+type OverlayStyleMode = 'axes' | 'glass';
+
+type TopMenuSegmentedOption<T extends string> = {
+  value: T;
+  content: ReactNode;
+  ariaLabel?: string;
+  title?: string;
+  disabled?: boolean;
+};
+
 const DROPDOWN_MENU_ORDER: DropdownMenuId[] = ['file', 'view', 'edit', 'tracks', 'help'];
+const CAMERA_FACE_LABELS: Array<{ value: CameraFaceView; label: string }> = [
+  { value: 'xy', label: 'XY' },
+  { value: 'yz', label: 'YZ' },
+  { value: 'xz', label: 'XZ' }
+];
+const VIEWER_TOOL_BUTTONS: Array<{
+  value: ViewerTool;
+  ariaLabel: string;
+  title: string;
+  content: ReactNode;
+  annotation?: boolean;
+}> = [
+  { value: 'hand', ariaLabel: 'Hand', title: 'Hand', content: <HandToolIcon className="viewer-top-menu-tool-icon" /> },
+  { value: 'line', ariaLabel: 'Line', title: 'Line', content: <LineToolIcon className="viewer-top-menu-tool-icon" /> },
+  {
+    value: 'rectangle',
+    ariaLabel: 'Rectangle',
+    title: 'Rectangle',
+    content: <RectangleToolIcon className="viewer-top-menu-tool-icon" />,
+  },
+  {
+    value: 'ellipse',
+    ariaLabel: 'Ellipse',
+    title: 'Ellipse',
+    content: <EllipseToolIcon className="viewer-top-menu-tool-icon" />,
+  },
+  {
+    value: 'brush',
+    ariaLabel: 'Brush',
+    title: 'Brush',
+    content: <BrushToolIcon className="viewer-top-menu-tool-icon" />,
+    annotation: true,
+  },
+  {
+    value: 'eraser',
+    ariaLabel: 'Eraser',
+    title: 'Eraser',
+    content: <EraserToolIcon className="viewer-top-menu-tool-icon" />,
+    annotation: true,
+  },
+];
 
 const clampRangeValue = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
 const HOVER_INTENSITY_MIN_DURATION_SECONDS = 8;
 const HOVER_INTENSITY_PIXELS_PER_SECOND = 18;
+
+const classNames = (...classes: Array<string | false | null | undefined>) => classes.filter(Boolean).join(' ');
+
+function ProjectionModeIcon({ mode }: { mode: ProjectionMode }) {
+  if (mode === 'orthographic') {
+    return (
+      <svg
+        className="viewer-top-menu-projection-icon"
+        viewBox="0 0 24 24"
+        role="img"
+        aria-hidden="true"
+        focusable="false"
+      >
+        <path d="M12 3.8 19 7.7v8.6l-7 3.9-7-3.9V7.7l7-3.9Z" />
+        <path d="m5 7.7 7 3.9 7-3.9M12 11.6v8.6" />
+      </svg>
+    );
+  }
+
+  return (
+    <svg
+      className="viewer-top-menu-projection-icon"
+      viewBox="0 0 24 24"
+      role="img"
+      aria-hidden="true"
+      focusable="false"
+    >
+      <path d="M4.8 7.2h8.4v9.6H4.8V7.2Z" />
+      <path d="m13.2 7.2 6-2.6v14.8l-6-2.6M4.8 7.2l6-2.6h8.4M4.8 16.8l6 2.6h8.4" />
+    </svg>
+  );
+}
+
+function AxesGuideIcon() {
+  return (
+    <svg
+      className="viewer-top-menu-overlay-icon"
+      viewBox="0 0 24 24"
+      aria-hidden="true"
+      focusable="false"
+    >
+      <path d="M6 18h12" />
+      <path d="m15 15 3 3-3 3" />
+      <path d="M6 18V6" />
+      <path d="m3 9 3-3 3 3" />
+      <path d="M6 18 17 7" />
+      <path d="M13 7h4v4" />
+    </svg>
+  );
+}
+
+function GlassGuideIcon() {
+  return (
+    <svg
+      className="viewer-top-menu-overlay-icon"
+      viewBox="0 0 24 24"
+      aria-hidden="true"
+      focusable="false"
+    >
+      <path d="M8 4.5h10l-3 15H5l3-15Z" />
+      <path d="m10 7.5 5.4 0" />
+      <path d="m8.6 12.2 5.4 0" />
+      <path d="m6.8 17 5.4 0" />
+    </svg>
+  );
+}
+
+function TopMenuSegmentedControl<T extends string>({
+  ariaLabel,
+  value,
+  options,
+  onChange,
+  className,
+  buttonClassName
+}: {
+  ariaLabel: string;
+  value: T;
+  options: Array<TopMenuSegmentedOption<T>>;
+  onChange: (value: T) => void;
+  className?: string;
+  buttonClassName?: string;
+}) {
+  return (
+    <div
+      className={classNames('viewer-top-menu-segmented-control', className)}
+      role="group"
+      aria-label={ariaLabel}
+      style={{ '--viewer-top-menu-segment-count': options.length } as CSSProperties}
+    >
+      {options.map((option) => {
+        const selected = option.value === value;
+        return (
+          <button
+            key={option.value}
+            type="button"
+            className={classNames(
+              'viewer-top-menu-segment-button',
+              buttonClassName,
+              selected && 'is-active'
+            )}
+            aria-label={option.ariaLabel}
+            aria-pressed={selected}
+            title={option.title}
+            disabled={option.disabled}
+            onClick={() => onChange(option.value)}
+          >
+            {option.content}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
 
 const formatFollowCoordinate = (value: number): string => {
   if (!Number.isFinite(value)) {
@@ -61,6 +241,16 @@ export default function TopMenu(props: TopMenuProps) {
     onOpenAnnotate,
     annotateDisabled = false,
     annotateDisabledTitle,
+    activeViewerTool = 'hand',
+    viewerToolDimensionMode = '2d',
+    onViewerToolChange,
+    onViewerToolDimensionModeChange,
+    annotationToolsDisabled = false,
+    annotationToolsDisabledTitle,
+    annotationUndoDisabled = true,
+    annotationRedoDisabled = true,
+    onAnnotationUndo,
+    onAnnotationRedo,
     onOpenExportChannel,
     onOpenDrawRoiWindow,
     onOpenRoiManagerWindow,
@@ -97,6 +287,11 @@ export default function TopMenu(props: TopMenuProps) {
     onToggle2dView,
     twoDViewButtonDisabled = true,
     twoDViewButtonTitle,
+    isVrActive = false,
+    projectionMode = 'perspective',
+    onProjectionModeChange,
+    onCameraFaceViewChange,
+    deskewModeActive = false,
     loadedChannelIds,
     channelNameMap,
     channelVisibility,
@@ -123,6 +318,7 @@ export default function TopMenu(props: TopMenuProps) {
   } = props;
   const [openMenu, setOpenMenu] = useState<DropdownMenuId | null>(null);
   const [hoverIntensityOverflow, setHoverIntensityOverflow] = useState(0);
+  const [overlayStyleMode, setOverlayStyleMode] = useState<OverlayStyleMode>('axes');
   const topMenuRowRef = useRef<HTMLDivElement | null>(null);
   const topMenuHeightRef = useRef(0);
   const hoverIntensityViewportRef = useRef<HTMLSpanElement | null>(null);
@@ -199,7 +395,6 @@ export default function TopMenu(props: TopMenuProps) {
           disabled: annotateDisabled,
           title: annotateDisabledTitle
         },
-        { label: 'Draw ROI', onSelect: onOpenDrawRoiWindow },
         { label: 'ROI Manager', onSelect: onOpenRoiManagerWindow },
         { label: 'Set measurements', onSelect: onOpenSetMeasurementsWindow }
       ],
@@ -389,6 +584,53 @@ export default function TopMenu(props: TopMenuProps) {
     triggerRefs.current[menuId]?.focus();
   };
 
+  const handleDimensionModeChange = (nextMode: DimensionMode) => {
+    const currentMode: DimensionMode = is2dViewActive ? '2d' : '3d';
+    if (nextMode === currentMode) {
+      return;
+    }
+    onToggle2dView?.();
+  };
+
+  const handleViewerToolDimensionModeChange = (nextMode: ViewerToolDimensionMode) => {
+    if (nextMode === viewerToolDimensionMode) {
+      return;
+    }
+    onViewerToolDimensionModeChange?.(nextMode);
+  };
+
+  const handleProjectionModeChange = (nextMode: ProjectionMode) => {
+    if (nextMode === projectionMode || is2dViewActive) {
+      return;
+    }
+    onProjectionModeChange?.(nextMode);
+  };
+
+  const handleCameraFaceViewChange = (face: CameraFaceView) => {
+    if (is2dViewActive) {
+      return;
+    }
+    onCameraFaceViewChange?.(face, deskewModeActive ? overlayStyleMode : 'axes');
+  };
+
+  const renderViewerToolButton = (tool: (typeof VIEWER_TOOL_BUTTONS)[number]) => {
+    const disabled = Boolean(tool.annotation && annotationToolsDisabled);
+    return (
+      <button
+        key={tool.value}
+        type="button"
+        className="viewer-top-menu-button viewer-top-menu-tool-button"
+        aria-label={tool.ariaLabel}
+        aria-pressed={activeViewerTool === tool.value}
+        title={disabled ? annotationToolsDisabledTitle ?? tool.title : tool.title}
+        disabled={disabled}
+        onClick={() => onViewerToolChange?.(tool.value)}
+      >
+        {tool.content}
+      </button>
+    );
+  };
+
   const intensityComponents = useMemo(
     () =>
       hoveredVoxel && hoveredVoxel.components.length > 0
@@ -460,6 +702,40 @@ export default function TopMenu(props: TopMenuProps) {
         )}s`
       } as CSSProperties)
     : undefined;
+  const resolvedProjectionMode: ProjectionMode =
+    projectionMode === 'orthographic' ? 'orthographic' : 'perspective';
+  const dimensionMode: DimensionMode = is2dViewActive ? '2d' : '3d';
+  const projectionLockTitle = is2dViewActive
+    ? 'Projection mode is locked while 2D view is active.'
+    : undefined;
+  const isometricDisabled = is2dViewActive || isVrActive || !is3dModeAvailable || !onProjectionModeChange;
+  const isometricTitle = projectionLockTitle
+    ?? (isVrActive
+      ? 'Isometric view is unavailable while VR is active.'
+      : !is3dModeAvailable || !onProjectionModeChange
+        ? 'Projection mode is unavailable until the viewer is ready.'
+        : undefined);
+  const perspectiveDisabled = is2dViewActive || !is3dModeAvailable || !onProjectionModeChange;
+  const perspectiveTitle = projectionLockTitle
+    ?? (!is3dModeAvailable || !onProjectionModeChange
+      ? 'Projection mode is unavailable until the viewer is ready.'
+      : undefined);
+  const faceViewDisabled = is2dViewActive || !onCameraFaceViewChange;
+  const faceViewTitle = is2dViewActive
+    ? 'Face view shortcuts are unavailable while 2D view is active.'
+    : !onCameraFaceViewChange
+      ? 'Face view shortcuts are unavailable until the viewer is ready.'
+      : undefined;
+  const effectiveOverlayStyleMode: OverlayStyleMode = deskewModeActive ? overlayStyleMode : 'axes';
+  const overlayStyleTitle = deskewModeActive
+    ? 'Choose how the camera face buttons are interpreted.'
+    : 'Glass camera views require de-skew mode.';
+
+  useEffect(() => {
+    if (!deskewModeActive && overlayStyleMode !== 'axes') {
+      setOverlayStyleMode('axes');
+    }
+  }, [deskewModeActive, overlayStyleMode]);
 
   useLayoutEffect(() => {
     if (typeof window === 'undefined') {
@@ -569,11 +845,164 @@ export default function TopMenu(props: TopMenuProps) {
         </div>
 
         <div className="viewer-top-menu-cell viewer-top-menu-cell--top viewer-top-menu-cell--column-2">
-          <div className="viewer-top-menu-cell-content" />
+          <div className="viewer-top-menu-cell-content viewer-top-menu-cell-content--start">
+            <div className="viewer-top-menu-view-controls">
+              <TopMenuSegmentedControl<DimensionMode>
+                ariaLabel="View dimensionality"
+                value={dimensionMode}
+                onChange={handleDimensionModeChange}
+                className="viewer-top-menu-segmented-control--dimension"
+                options={[
+                  {
+                    value: '2d',
+                    content: '2D',
+                    title: twoDViewButtonTitle,
+                    disabled: twoDViewButtonDisabled
+                  },
+                  {
+                    value: '3d',
+                    content: '3D',
+                    title: twoDViewButtonTitle,
+                    disabled: twoDViewButtonDisabled
+                  }
+                ]}
+              />
+              <TopMenuSegmentedControl<ProjectionMode>
+                ariaLabel="Projection mode"
+                value={resolvedProjectionMode}
+                onChange={handleProjectionModeChange}
+                className="viewer-top-menu-segmented-control--projection"
+                buttonClassName="viewer-top-menu-segment-button--icon"
+                options={[
+                  {
+                    value: 'perspective',
+                    content: <ProjectionModeIcon mode="perspective" />,
+                    ariaLabel: 'Perspective',
+                    title: perspectiveTitle,
+                    disabled: perspectiveDisabled
+                  },
+                  {
+                    value: 'orthographic',
+                    content: <ProjectionModeIcon mode="orthographic" />,
+                    ariaLabel: 'Isometric',
+                    title: isometricTitle,
+                    disabled: isometricDisabled
+                  }
+                ]}
+              />
+              <button
+                type="button"
+                className="viewer-top-menu-button viewer-top-menu-view-settings-button"
+                aria-label="Open Render Settings window"
+                title="Open Render Settings window"
+                onClick={onOpenRenderSettingsWindow}
+              >
+                <GearToolIcon className="viewer-top-menu-view-icon" />
+              </button>
+              <span className="viewer-top-menu-face-spacer" aria-hidden="true" />
+              <div className="viewer-top-menu-face-buttons" role="group" aria-label="Camera face views">
+                {CAMERA_FACE_LABELS.map(({ value, label }) => (
+                  <button
+                    key={value}
+                    type="button"
+                    className="viewer-top-menu-button viewer-top-menu-face-button"
+                    disabled={faceViewDisabled}
+                    title={faceViewTitle}
+                    onClick={() => handleCameraFaceViewChange(value)}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+              <TopMenuSegmentedControl<OverlayStyleMode>
+                ariaLabel="Volume guide style"
+                value={effectiveOverlayStyleMode}
+                onChange={(value) => {
+                  if (deskewModeActive) {
+                    setOverlayStyleMode(value);
+                  }
+                }}
+                className="viewer-top-menu-segmented-control--overlay"
+                options={[
+                  {
+                    value: 'axes',
+                    content: <AxesGuideIcon />,
+                    ariaLabel: 'Axes',
+                    disabled: !deskewModeActive,
+                    title: overlayStyleTitle
+                  },
+                  {
+                    value: 'glass',
+                    content: <GlassGuideIcon />,
+                    ariaLabel: 'Glass',
+                    disabled: !deskewModeActive,
+                    title: overlayStyleTitle
+                  }
+                ]}
+              />
+            </div>
+          </div>
         </div>
 
         <div className="viewer-top-menu-cell viewer-top-menu-cell--top viewer-top-menu-cell--column-3">
-          <div className="viewer-top-menu-cell-content" />
+          <div className="viewer-top-menu-cell-content viewer-top-menu-cell-content--start">
+            <div className="viewer-top-menu-tool-controls" role="toolbar" aria-label="Drawing and annotation tools">
+              <TopMenuSegmentedControl<ViewerToolDimensionMode>
+                ariaLabel="Tool dimensionality"
+                value={viewerToolDimensionMode}
+                onChange={handleViewerToolDimensionModeChange}
+                className="viewer-top-menu-segmented-control--tool-dimension"
+                options={[
+                  { value: '2d', content: '2D' },
+                  { value: '3d', content: '3D' },
+                ]}
+              />
+              {renderViewerToolButton(VIEWER_TOOL_BUTTONS[0])}
+              <span className="viewer-top-menu-tool-spacer" aria-hidden="true" />
+              {VIEWER_TOOL_BUTTONS.slice(1, 4).map(renderViewerToolButton)}
+              <button
+                type="button"
+                className="viewer-top-menu-button viewer-top-menu-tool-button viewer-top-menu-tool-settings-button"
+                aria-label="Open ROI properties window"
+                title="Open ROI properties window"
+                onClick={onOpenDrawRoiWindow}
+              >
+                <GearToolIcon className="viewer-top-menu-tool-icon" />
+              </button>
+              <span className="viewer-top-menu-tool-spacer" aria-hidden="true" />
+              {VIEWER_TOOL_BUTTONS.slice(4).map(renderViewerToolButton)}
+              <button
+                type="button"
+                className="viewer-top-menu-button viewer-top-menu-tool-button viewer-top-menu-tool-history-button"
+                aria-label="Undo"
+                title="Undo"
+                disabled={annotationUndoDisabled}
+                onClick={onAnnotationUndo}
+              >
+                <UndoToolIcon className="viewer-top-menu-tool-icon" />
+              </button>
+              <button
+                type="button"
+                className="viewer-top-menu-button viewer-top-menu-tool-button viewer-top-menu-tool-history-button"
+                aria-label="Redo"
+                title="Redo"
+                disabled={annotationRedoDisabled}
+                onClick={onAnnotationRedo}
+              >
+                <RedoToolIcon className="viewer-top-menu-tool-icon" />
+              </button>
+              <button
+                type="button"
+                className="viewer-top-menu-button viewer-top-menu-tool-button viewer-top-menu-tool-settings-button"
+                aria-label="Open Annotate window"
+                title={annotateDisabled ? annotateDisabledTitle ?? 'Annotate is unavailable' : 'Open Annotate window'}
+                disabled={annotateDisabled}
+                onClick={onOpenAnnotate}
+              >
+                <GearToolIcon className="viewer-top-menu-tool-icon" />
+              </button>
+            </div>
+          </div>
         </div>
 
         <div className="viewer-top-menu-cell viewer-top-menu-cell--top viewer-top-menu-cell--column-4">
@@ -597,16 +1026,6 @@ export default function TopMenu(props: TopMenuProps) {
               </div>
             </div>
             <div className="viewer-top-menu-cell-group viewer-top-menu-cell-group--end viewer-top-menu-primary-actions">
-              <button
-                type="button"
-                className="viewer-top-menu-button"
-                onClick={() => onToggle2dView?.()}
-                disabled={twoDViewButtonDisabled}
-                title={twoDViewButtonTitle}
-                aria-pressed={is2dViewActive}
-              >
-                {is2dViewActive ? '3D view' : '2D view'}
-              </button>
               <button
                 type="button"
                 className="viewer-top-menu-button"

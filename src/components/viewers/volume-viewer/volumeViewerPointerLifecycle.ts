@@ -9,6 +9,11 @@ import type {
   VolumeViewerProps,
 } from '../VolumeViewer.types';
 import type { HoveredVoxelInfo } from '../../../types/hover';
+import {
+  resolvePlaneVoxelPoint,
+  resolvePointerLocalRay,
+  resolveVolumeBounds,
+} from './pointerPlaneCoordinates';
 
 type PointerLookHandlers = {
   beginPointerLook: (event: PointerEvent) => void;
@@ -32,6 +37,7 @@ type AttachVolumeViewerPointerLifecycleParams = PointerLookHandlers & {
   rotationTargetRef: MutableRefObject<THREE.Vector3>;
   updateVoxelHover: (event: PointerEvent | MouseEvent) => void;
   isRoiDrawToolActiveRef: MutableRefObject<boolean>;
+  isRoiMoveToolActiveRef: MutableRefObject<boolean>;
   isRoiDrawPreviewActiveRef: MutableRefObject<boolean>;
   isRoiMoveInteractionActiveRef: MutableRefObject<boolean>;
   isRoiMoveActiveRef: MutableRefObject<boolean>;
@@ -57,7 +63,7 @@ type AttachVolumeViewerPointerLifecycleParams = PointerLookHandlers & {
 
 export function attachVolumeViewerPointerLifecycle({
   domElement,
-  camera: _camera,
+  camera,
   controlsRef,
   controls: staticControls,
   layersRef: _layersRef,
@@ -71,6 +77,7 @@ export function attachVolumeViewerPointerLifecycle({
   rotationTargetRef,
   updateVoxelHover,
   isRoiDrawToolActiveRef,
+  isRoiMoveToolActiveRef,
   isRoiDrawPreviewActiveRef,
   isRoiMoveInteractionActiveRef,
   isRoiMoveActiveRef,
@@ -105,7 +112,7 @@ export function attachVolumeViewerPointerLifecycle({
       return;
     }
 
-    if (!isRoiDrawToolActiveRef.current || !event || event.buttons !== 0) {
+    if (!isRoiMoveToolActiveRef.current || !event || event.buttons !== 0) {
       domElement.style.cursor = '';
       return;
     }
@@ -119,13 +126,52 @@ export function attachVolumeViewerPointerLifecycle({
       }
     | null = null;
 
+  const suppressCanvasGesture = (event: PointerEvent) => {
+    event.preventDefault();
+    event.stopPropagation();
+    event.stopImmediatePropagation?.();
+  };
+
+  const applyAnnotationStrokeAtEvent = (
+    annotation: NonNullable<VolumeViewerProps['annotation']>,
+    event: PointerEvent,
+  ) => {
+    if (annotation.hoverMode === '2d') {
+      const volumeRootGroup = _volumeRootGroupRef.current;
+      const bounds = resolveVolumeBounds(annotation.dimensions ?? null);
+      if (!volumeRootGroup || !bounds) {
+        return;
+      }
+      const localRay = resolvePointerLocalRay({
+        event,
+        domElement,
+        camera,
+        volumeRootGroup,
+      });
+      if (!localRay) {
+        return;
+      }
+      const point = resolvePlaneVoxelPoint(localRay, bounds, annotation.selectedZIndex ?? 0);
+      if (point.isValid) {
+        annotation.onStrokeApply(point.voxelPoint);
+      }
+      return;
+    }
+
+    updateVoxelHover(event);
+    const hovered = hoverIntensityRef.current;
+    if (hovered) {
+      annotation.onStrokeApply(hovered.coordinates);
+    }
+  };
+
   const handlePointerDown = (event: PointerEvent) => {
     if (event.button !== 0) {
       return;
     }
 
     const annotation = annotationRef.current;
-    const shouldAnnotate = Boolean(annotation?.enabled && event.ctrlKey);
+    const shouldAnnotate = Boolean(annotation?.enabled && event.shiftKey);
     if (shouldAnnotate && annotation) {
       domElement.style.cursor = '';
       annotationStrokePointerIdRef.current = event.pointerId;
@@ -135,26 +181,24 @@ export function attachVolumeViewerPointerLifecycle({
         // Ignore: some platforms may reject capture.
       }
       annotation.onStrokeStart();
-      updateVoxelHover(event);
-      const hovered = hoverIntensityRef.current;
-      if (hovered) {
-        annotation.onStrokeApply(hovered.coordinates);
-      }
+      applyAnnotationStrokeAtEvent(annotation, event);
       return;
+    }
+
+    if (isRoiMoveToolActiveRef.current && !event.shiftKey) {
+      updateVoxelHover(event);
+      if (performRoiHitTest(event) && handleRoiPointerDown(event, domElement)) {
+        suppressCanvasGesture(event);
+        updateRoiCursor(event);
+        return;
+      }
     }
 
     if (isRoiDrawToolActiveRef.current && event.shiftKey) {
       domElement.style.cursor = '';
       updateVoxelHover(event);
       if (handleRoiPointerDown(event, domElement)) {
-        return;
-      }
-    }
-
-    if (isRoiDrawToolActiveRef.current && !event.shiftKey) {
-      updateVoxelHover(event);
-      if (performRoiHitTest(event) && handleRoiPointerDown(event, domElement)) {
-        updateRoiCursor(event);
+        suppressCanvasGesture(event);
         return;
       }
     }
@@ -197,17 +241,14 @@ export function attachVolumeViewerPointerLifecycle({
     const isAnnotating = annotationStrokePointerIdRef.current !== null;
     if (annotation && isAnnotating && annotationStrokePointerIdRef.current === event.pointerId) {
       domElement.style.cursor = '';
-      updateVoxelHover(event);
-      const hovered = hoverIntensityRef.current;
-      if (hovered) {
-        annotation.onStrokeApply(hovered.coordinates);
-      }
+      applyAnnotationStrokeAtEvent(annotation, event);
       return;
     }
 
     if (isRoiDrawPreviewActiveRef.current) {
       updateVoxelHover(event);
       if (handleRoiPointerMove(event)) {
+        suppressCanvasGesture(event);
         updateRoiCursor(event);
         return;
       }
@@ -244,11 +285,7 @@ export function attachVolumeViewerPointerLifecycle({
     const activePointerId = annotationStrokePointerIdRef.current;
     if (annotation && activePointerId !== null && activePointerId === event.pointerId) {
       domElement.style.cursor = '';
-      updateVoxelHover(event);
-      const hovered = hoverIntensityRef.current;
-      if (hovered) {
-        annotation.onStrokeApply(hovered.coordinates);
-      }
+      applyAnnotationStrokeAtEvent(annotation, event);
       annotation.onStrokeEnd();
       annotationStrokePointerIdRef.current = null;
       try {
@@ -262,6 +299,7 @@ export function attachVolumeViewerPointerLifecycle({
     if (isRoiDrawPreviewActiveRef.current) {
       updateVoxelHover(event);
       if (handleRoiPointerUp(event, domElement)) {
+        suppressCanvasGesture(event);
         updateRoiCursor(event);
         return;
       }

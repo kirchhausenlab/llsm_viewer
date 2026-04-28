@@ -3,12 +3,15 @@ import React from 'react';
 import TestRenderer, { act } from 'react-test-renderer';
 
 import AnnotateWindow from '../src/components/viewers/viewer-shell/AnnotateWindow.tsx';
-import type { AnnotateController } from '../src/hooks/annotation/useAnnotate.ts';
+import type {
+  AnnotateController,
+  AnnotateCreateChannelResult,
+} from '../src/hooks/annotation/useAnnotate.ts';
 import type { EditableSegmentationChannel } from '../src/types/annotation.ts';
 
 console.log('Starting AnnotateWindow tests');
 
-function createChannel(): EditableSegmentationChannel {
+function createChannel(overrides: Partial<EditableSegmentationChannel> = {}): EditableSegmentationChannel {
   return {
     channelId: 'annotate-1',
     layerKey: 'annotate-layer-1',
@@ -16,17 +19,20 @@ function createChannel(): EditableSegmentationChannel {
     dimensions: { width: 3, height: 3, depth: 1 },
     volumeCount: 1,
     createdFrom: { kind: 'empty' },
-    labels: [{ name: '' }],
-    activeLabelIndex: 0,
-    timepointLabels: new Map(),
-    enabled: true,
+    labels: [{ name: '' }, { name: 'Nucleus' }],
+    activeLabelIndex: 1,
+    timepoints: new Map(),
+    enabled: false,
     overlayVisible: true,
     mode: '3d',
     brushMode: 'brush',
-    radius: 1,
+    brushShape: 'circle',
+    hoverMode: '3d',
+    radius: 5,
     dirty: true,
     revision: 1,
     savedRevision: 0,
+    ...overrides,
   };
 }
 
@@ -38,13 +44,24 @@ function createController(overrides: Partial<AnnotateController> = {}): Annotate
     channels: [activeChannel],
     activeChannel,
     activeChannelId: activeChannel.channelId,
-    sourceOptions: [{ id: 'empty', kind: 'empty', label: 'Empty' }],
+    sourceOptions: [
+      { id: 'empty', kind: 'empty', label: 'Empty' },
+      {
+        id: 'regular:labels',
+        kind: 'regular-segmentation',
+        label: 'Labels',
+        channelId: 'labels',
+        layerKey: 'labels-layer',
+        volumeCount: 1,
+        dimensions: { width: 3, height: 3, depth: 1 },
+      },
+    ],
     selectedSourceId: 'empty',
     creationName: 'Annotation',
     message: null,
     busy: false,
     canUndo: true,
-    canRedo: false,
+    canRedo: true,
     hasDirtyChannels: true,
     revision: 1,
     editableVisibility: { [activeChannel.channelId]: true },
@@ -52,13 +69,16 @@ function createController(overrides: Partial<AnnotateController> = {}): Annotate
     editableLayerBrickAtlases: { [activeChannel.layerKey]: null },
     setSelectedSourceId: () => {},
     setCreationName: () => {},
-    createChannel: async () => {},
+    createChannel: async () => ({ ok: true, channelId: 'annotate-2' }),
+    deleteActiveChannel: () => {},
     setActiveChannelId: () => {},
     setChannelVisible: () => {},
     setEnabled: () => {},
     setOverlayVisible: () => {},
     setMode: () => {},
     setBrushMode: () => {},
+    setBrushShape: () => {},
+    setHoverMode: () => {},
     setRadius: () => {},
     setActiveLabelIndex: () => {},
     addLabel: () => {},
@@ -79,70 +99,210 @@ function createController(overrides: Partial<AnnotateController> = {}): Annotate
   };
 }
 
-(() => {
-  let clearCalls = 0;
-  let saveCalls = 0;
-  const renderer = TestRenderer.create(
+function renderAnnotateWindow(controller: AnnotateController, selectedChannel = {
+  channelId: 'annotate-1',
+  name: 'Annotation',
+  editable: true,
+}) {
+  return TestRenderer.create(
     <AnnotateWindow
       initialPosition={{ x: 0, y: 0 }}
       windowMargin={16}
       controlWindowWidth={320}
       resetSignal={0}
-      controller={createController({
-        clearActiveChannel: () => {
-          clearCalls += 1;
-        },
-        saveActiveChannel: async () => {
-          saveCalls += 1;
-        },
-      })}
+      controller={controller}
+      selectedChannel={selectedChannel}
       onClose={() => {}}
     />
   );
+}
 
-  const buttons = renderer.root.findAllByType('button');
-  const clearButton = buttons.find((button) => button.props.children === 'Clear');
-  const saveButton = buttons.find((button) => button.props.children === 'Save');
-  const newButton = buttons.find((button) => button.props.children === 'New');
-  assert.ok(clearButton);
-  assert.ok(saveButton);
+function findButtonByText(renderer: TestRenderer.ReactTestRenderer, text: string) {
+  return renderer.root.findAllByType('button').find((button) => button.props.children === text);
+}
+
+function findNodesByClass(renderer: TestRenderer.ReactTestRenderer, className: string) {
+  return renderer.root.findAll(
+    (node) => typeof node.props.className === 'string' && node.props.className.split(/\s+/).includes(className),
+  );
+}
+
+(() => {
+  let deleteChannelCalls = 0;
+  let clearCalls = 0;
+  let saveCalls = 0;
+  const renderer = renderAnnotateWindow(
+    createController({
+      deleteActiveChannel: () => {
+        deleteChannelCalls += 1;
+      },
+      clearActiveChannel: () => {
+        clearCalls += 1;
+      },
+      saveActiveChannel: async () => {
+        saveCalls += 1;
+      },
+    })
+  );
+
+  const newButton = findButtonByText(renderer, 'New channel');
+  const deleteButton = findButtonByText(renderer, 'Delete channel');
   assert.ok(newButton);
-  assert.equal(newButton.props.disabled, true);
-  assert.equal(renderer.root.findByProps({ id: 'annotate-source-select' }).props.disabled, true);
-  assert.equal(renderer.root.findByProps({ id: 'annotate-channel-name' }).props.disabled, true);
+  assert.ok(deleteButton);
+  assert.equal(newButton.props.disabled, false);
+  assert.equal(deleteButton.props.disabled, false);
+  assert.equal(renderer.root.findByProps({ className: 'annotate-body' }).props['aria-disabled'], false);
 
-  act(() => clearButton.props.onClick());
+  const currentLabel = findNodesByClass(renderer, 'annotate-current-label')[0];
+  assert.ok(currentLabel);
+  assert.equal(currentLabel.props.children, '2 - Nucleus');
+  assert.match(currentLabel.props.style.color, /^rgb\(/);
+
+  assert.equal(findButtonByText(renderer, 'Hide'), undefined);
+  assert.equal(findButtonByText(renderer, 'Show'), undefined);
+  assert.equal(findButtonByText(renderer, 'Undo'), undefined);
+  assert.equal(findButtonByText(renderer, 'Redo'), undefined);
+
+  assert.equal(renderer.root.findAllByProps({ 'aria-label': 'Hand' }).length, 0);
+  assert.equal(renderer.root.findAllByProps({ 'aria-label': 'Brush' }).length, 0);
+  assert.equal(renderer.root.findAllByProps({ 'aria-label': 'Eraser' }).length, 0);
+  assert.equal(renderer.root.findAllByProps({ 'aria-label': 'Undo' }).length, 0);
+  assert.equal(renderer.root.findAllByProps({ 'aria-label': 'Redo' }).length, 0);
+  assert.equal(renderer.root.findAllByProps({ 'aria-label': 'Circle' })[0]?.props['aria-pressed'], true);
+  assert.equal(renderer.root.findAllByProps({ 'aria-label': '3D' })[0]?.props['aria-pressed'], true);
+  assert.equal(renderer.root.findByProps({ id: 'annotate-radius-slider' }).props.value, 5);
+
+  const labelTexts = findNodesByClass(renderer, 'roi-manager-list-item-label');
+  assert.equal(labelTexts[0]?.props.children, '1');
+  const activeLabelButton = renderer.root.findAll(
+    (node) => node.type === 'button' && node.props.role === 'option',
+  )[1];
+  assert.ok(activeLabelButton?.props.className.includes('roi-manager-list-item'));
+  assert.ok(activeLabelButton?.props.className.includes('is-active'));
+
+  act(() => deleteButton.props.onClick());
+  act(() => findButtonByText(renderer, 'Clear')?.props.onClick());
   act(() => {
-    void saveButton.props.onClick();
+    void findButtonByText(renderer, 'Save')?.props.onClick();
   });
-
+  assert.equal(deleteChannelCalls, 1);
   assert.equal(clearCalls, 1);
   assert.equal(saveCalls, 1);
   renderer.unmount();
 })();
 
 (() => {
-  const renderer = TestRenderer.create(
-    <AnnotateWindow
-      initialPosition={{ x: 0, y: 0 }}
-      windowMargin={16}
-      controlWindowWidth={320}
-      resetSignal={0}
-      controller={createController({
-        available: false,
-        unavailableReason: 'Annotate is unavailable for public datasets.',
-        channels: [],
-        activeChannel: null,
-        activeChannelId: null,
-      })}
-      onClose={() => {}}
-    />
+  let brushShape: string | null = null;
+  let hoverMode: string | null = null;
+  const renderer = renderAnnotateWindow(
+    createController({
+      setBrushShape: (value) => {
+        brushShape = value;
+      },
+      setHoverMode: (value) => {
+        hoverMode = value;
+      },
+    })
   );
 
-  const newButton = renderer.root.findAllByType('button').find((button) => button.props.children === 'New');
+  act(() => renderer.root.findByProps({ 'aria-label': 'Square' }).props.onClick());
+  act(() => renderer.root.findByProps({ 'aria-label': '2D' }).props.onClick());
+  assert.equal(brushShape, 'square');
+  assert.equal(hoverMode, '2d');
+  renderer.unmount();
+})();
+
+(() => {
+  const renderer = renderAnnotateWindow(
+    createController({
+      activeChannel: createChannel({ labels: [], activeLabelIndex: 0 }),
+      channels: [createChannel({ labels: [], activeLabelIndex: 0 })],
+    })
+  );
+
+  const currentLabel = findNodesByClass(renderer, 'annotate-current-label')[0];
+  assert.equal(currentLabel?.props.children, 'None');
+  assert.equal(findButtonByText(renderer, 'Delete')?.props.disabled, true);
+  assert.equal(findButtonByText(renderer, 'Rename')?.props.disabled, true);
+  renderer.unmount();
+})();
+
+await (async () => {
+  let createCalls = 0;
+  let nextCreateResult: AnnotateCreateChannelResult = {
+    ok: false,
+    message: 'Channel name must be unique.',
+  };
+  const controller = createController({
+    channels: [],
+    activeChannel: null,
+    activeChannelId: null,
+    createChannel: async ({ name, sourceId } = {}) => {
+      createCalls += 1;
+      assert.equal(name, 'Cells');
+      assert.equal(sourceId, 'regular:labels');
+      return nextCreateResult;
+    },
+  });
+  const renderer = renderAnnotateWindow(controller, null);
+
+  const newButton = findButtonByText(renderer, 'New channel');
+  const deleteButton = findButtonByText(renderer, 'Delete channel');
   assert.ok(newButton);
+  assert.ok(deleteButton);
+  assert.equal(deleteButton.props.disabled, true);
+  assert.equal(renderer.root.findByProps({ className: 'annotate-body is-disabled' }).props['aria-disabled'], true);
+
+  act(() => newButton.props.onClick());
   assert.equal(newButton.props.disabled, true);
-  assert.ok(renderer.root.findAllByProps({ role: 'status' }).some((node) => node.props.children === 'Annotate is unavailable for public datasets.'));
+  assert.ok(renderer.root.findByProps({ children: 'Create new channel' }));
+
+  act(() => {
+    renderer.root.findByProps({ id: 'annotate-create-channel-name' }).props.onChange({
+      target: { value: 'Cells' },
+    });
+    renderer.root.findByProps({ id: 'annotate-create-source-select' }).props.onChange({
+      target: { value: 'regular:labels' },
+    });
+  });
+
+  await act(async () => {
+    renderer.root.findByType('form').props.onSubmit({ preventDefault: () => {} });
+    await Promise.resolve();
+  });
+  assert.equal(createCalls, 1);
+  assert.equal(renderer.root.findByProps({ role: 'alert' }).props.children, 'Channel name must be unique.');
+
+  nextCreateResult = { ok: true, channelId: 'annotate-2' };
+  await act(async () => {
+    renderer.root.findByType('form').props.onSubmit({ preventDefault: () => {} });
+    await Promise.resolve();
+  });
+  assert.equal(createCalls, 2);
+  assert.equal(renderer.root.findAllByProps({ role: 'alert' }).length, 0);
+  assert.equal(renderer.root.findAllByType('form').length, 0);
+
+  act(() => newButton.props.onClick());
+  assert.equal(renderer.root.findAllByType('form').length, 1);
+  act(() => findButtonByText(renderer, 'Cancel')?.props.onClick());
+  assert.equal(renderer.root.findAllByType('form').length, 0);
+  assert.equal(createCalls, 2);
+  renderer.unmount();
+})();
+
+(() => {
+  const renderer = renderAnnotateWindow(
+    createController({
+      channels: [],
+      activeChannel: null,
+      activeChannelId: null,
+    }),
+    { channelId: 'labels', name: 'Labels', editable: false }
+  );
+
+  assert.equal(findButtonByText(renderer, 'Delete channel')?.props.disabled, true);
+  assert.equal(renderer.root.findByProps({ className: 'annotate-body is-disabled' }).props['aria-disabled'], true);
+  assert.ok(renderer.root.findAllByProps({ children: 'Labels (read-only)' }).length > 0);
   renderer.unmount();
 })();
 

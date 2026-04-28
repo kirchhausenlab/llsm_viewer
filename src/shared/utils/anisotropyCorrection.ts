@@ -27,7 +27,7 @@ type ResampleOptions = {
 export function computeAnisotropyScale(
   voxelResolution: VoxelResolutionValues | null
 ): AnisotropyScaleFactors | null {
-  if (!voxelResolution || !voxelResolution.correctAnisotropy) {
+  if (!voxelResolution) {
     return null;
   }
   const axes: Array<'x' | 'y' | 'z'> = ['x', 'y', 'z'];
@@ -48,6 +48,25 @@ export function computeAnisotropyScale(
     return null;
   }
   return scale;
+}
+
+export function computeStoredIsotropicVoxelResolution(
+  voxelResolution: VoxelResolutionValues | null
+): VoxelResolutionValues | null {
+  if (!voxelResolution) {
+    return null;
+  }
+  const scale = computeAnisotropyScale(voxelResolution);
+  if (!scale) {
+    return { ...voxelResolution };
+  }
+  const minSpacing = Math.min(voxelResolution.x, voxelResolution.y, voxelResolution.z);
+  return {
+    x: minSpacing,
+    y: minSpacing,
+    z: minSpacing,
+    unit: voxelResolution.unit
+  };
 }
 
 export function isIdentityScale(scale: AnisotropyScaleFactors): boolean {

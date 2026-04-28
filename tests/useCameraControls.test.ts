@@ -116,3 +116,211 @@ test('keyboard movement uses the default translation multiplier and ignores shif
     hook.unmount();
   });
 });
+
+test('camera face views orbit around the current target and preserve distance', () => {
+  withWindowMock(() => {
+    const hook = renderHook(() =>
+      useCameraControls({
+        trackLinesRef: { current: new Map() },
+        roiLinesRef: { current: new Map() },
+        volumeRootGroupRef: { current: null },
+        currentDimensionsRef: { current: null },
+        followTargetActiveRef: { current: false },
+        followTargetOffsetRef: { current: null },
+        setHasMeasured: () => {},
+        projectionMode: 'perspective',
+      }),
+    );
+
+    const camera = new THREE.PerspectiveCamera();
+    const controls = {
+      target: new THREE.Vector3(0, 0, 0),
+      update: () => {},
+    } as any;
+    hook.result.cameraRef.current = camera;
+    hook.result.controlsRef.current = controls;
+
+    camera.position.set(0, 0, 10);
+    assert.equal(hook.result.applyCameraFaceView('yz'), true);
+    assertNearlyEqual(camera.position.x, 10);
+    assertNearlyEqual(camera.position.y, 0);
+    assertNearlyEqual(camera.position.z, 0);
+    assertNearlyEqual(camera.position.distanceTo(controls.target), 10);
+    assertNearlyEqual(controls.target.x, 0);
+    assertNearlyEqual(controls.target.y, 0);
+    assertNearlyEqual(controls.target.z, 0);
+
+    camera.position.set(0, 0, 10);
+    controls.target.set(0, 0, 0);
+    assert.equal(hook.result.applyCameraFaceView('xz'), true);
+    assertNearlyEqual(camera.position.x, 0);
+    assertNearlyEqual(camera.position.y, -10);
+    assertNearlyEqual(camera.position.z, 0);
+    assertNearlyEqual(camera.position.distanceTo(controls.target), 10);
+    assertNearlyEqual(camera.up.x, 0);
+    assertNearlyEqual(camera.up.y, 0);
+    assertNearlyEqual(camera.up.z, 1);
+
+    hook.unmount();
+  });
+});
+
+test('camera face views recenter on the volume when not following', () => {
+  withWindowMock(() => {
+    const volumeRootGroup = new THREE.Group();
+    volumeRootGroup.position.set(10, 20, 30);
+    const hook = renderHook(() =>
+      useCameraControls({
+        trackLinesRef: { current: new Map() },
+        roiLinesRef: { current: new Map() },
+        volumeRootGroupRef: { current: volumeRootGroup },
+        currentDimensionsRef: { current: { width: 4, height: 6, depth: 8 } },
+        followTargetActiveRef: { current: false },
+        followTargetOffsetRef: { current: null },
+        setHasMeasured: () => {},
+        projectionMode: 'perspective',
+      }),
+    );
+
+    const camera = new THREE.PerspectiveCamera();
+    const controls = {
+      target: new THREE.Vector3(-3, -4, -5),
+      update: () => {},
+    } as any;
+    hook.result.cameraRef.current = camera;
+    hook.result.controlsRef.current = controls;
+
+    camera.position.set(-3, -4, 7);
+    assert.equal(hook.result.applyCameraFaceView('yz'), true);
+    assertNearlyEqual(controls.target.x, 11.5);
+    assertNearlyEqual(controls.target.y, 22.5);
+    assertNearlyEqual(controls.target.z, 33.5);
+    assertNearlyEqual(camera.position.x, 23.5);
+    assertNearlyEqual(camera.position.y, 22.5);
+    assertNearlyEqual(camera.position.z, 33.5);
+    assertNearlyEqual(camera.position.distanceTo(controls.target), 12);
+
+    hook.unmount();
+  });
+});
+
+test('camera face views keep the current target when following', () => {
+  withWindowMock(() => {
+    const volumeRootGroup = new THREE.Group();
+    volumeRootGroup.position.set(10, 20, 30);
+    const followTargetOffsetRef = { current: null as THREE.Vector3 | null };
+    const hook = renderHook(() =>
+      useCameraControls({
+        trackLinesRef: { current: new Map() },
+        roiLinesRef: { current: new Map() },
+        volumeRootGroupRef: { current: volumeRootGroup },
+        currentDimensionsRef: { current: { width: 4, height: 6, depth: 8 } },
+        followTargetActiveRef: { current: true },
+        followTargetOffsetRef,
+        setHasMeasured: () => {},
+        projectionMode: 'perspective',
+      }),
+    );
+
+    const camera = new THREE.PerspectiveCamera();
+    const controls = {
+      target: new THREE.Vector3(-3, -4, -5),
+      update: () => {},
+    } as any;
+    hook.result.cameraRef.current = camera;
+    hook.result.controlsRef.current = controls;
+
+    camera.position.set(-3, -4, 7);
+    assert.equal(hook.result.applyCameraFaceView('yz'), true);
+    assertNearlyEqual(controls.target.x, -3);
+    assertNearlyEqual(controls.target.y, -4);
+    assertNearlyEqual(controls.target.z, -5);
+    assertNearlyEqual(camera.position.x, 9);
+    assertNearlyEqual(camera.position.y, -4);
+    assertNearlyEqual(camera.position.z, -5);
+    assertNearlyEqual(camera.position.distanceTo(controls.target), 12);
+    assert.ok(followTargetOffsetRef.current);
+    assertNearlyEqual(followTargetOffsetRef.current.x, 12);
+    assertNearlyEqual(followTargetOffsetRef.current.y, 0);
+    assertNearlyEqual(followTargetOffsetRef.current.z, 0);
+
+    hook.unmount();
+  });
+});
+
+test('camera face glass views apply deskew tilt to the full glass basis', () => {
+  withWindowMock(() => {
+    const hook = renderHook(() =>
+      useCameraControls({
+        trackLinesRef: { current: new Map() },
+        roiLinesRef: { current: new Map() },
+        volumeRootGroupRef: { current: null },
+        currentDimensionsRef: { current: null },
+        followTargetActiveRef: { current: false },
+        followTargetOffsetRef: { current: null },
+        setHasMeasured: () => {},
+        projectionMode: 'perspective',
+      }),
+    );
+
+    const camera = new THREE.PerspectiveCamera();
+    const controls = {
+      target: new THREE.Vector3(0, 0, 0),
+      update: () => {},
+    } as any;
+    hook.result.cameraRef.current = camera;
+    hook.result.controlsRef.current = controls;
+
+    camera.position.set(0, 0, 10);
+    assert.equal(
+      hook.result.applyCameraFaceView('xy', {
+        deskew: {
+          angleRadians: THREE.MathUtils.degToRad(60),
+          direction: 'X',
+        },
+      }),
+      true,
+    );
+    assertNearlyEqual(camera.position.x, Math.sqrt(75));
+    assertNearlyEqual(camera.position.y, 0);
+    assertNearlyEqual(camera.position.z, 5);
+
+    camera.position.set(0, 0, 10);
+    controls.target.set(0, 0, 0);
+    assert.equal(
+      hook.result.applyCameraFaceView('xz', {
+        deskew: {
+          angleRadians: Math.PI / 4,
+          direction: 'X',
+        },
+      }),
+      true,
+    );
+    assertNearlyEqual(camera.position.x, 0);
+    assertNearlyEqual(camera.position.y, -10);
+    assertNearlyEqual(camera.position.z, 0);
+    assertNearlyEqual(camera.up.x, Math.SQRT1_2);
+    assertNearlyEqual(camera.up.y, 0);
+    assertNearlyEqual(camera.up.z, Math.SQRT1_2);
+
+    camera.position.set(0, 0, 10);
+    controls.target.set(0, 0, 0);
+    assert.equal(
+      hook.result.applyCameraFaceView('yz', {
+        deskew: {
+          angleRadians: Math.PI / 4,
+          direction: 'Y',
+        },
+      }),
+      true,
+    );
+    assertNearlyEqual(camera.position.x, 10);
+    assertNearlyEqual(camera.position.y, 0);
+    assertNearlyEqual(camera.position.z, 0);
+    assertNearlyEqual(camera.up.x, 0);
+    assertNearlyEqual(camera.up.y, Math.SQRT1_2);
+    assertNearlyEqual(camera.up.z, Math.SQRT1_2);
+
+    hook.unmount();
+  });
+});

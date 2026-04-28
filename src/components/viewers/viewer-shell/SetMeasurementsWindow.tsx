@@ -1,4 +1,9 @@
 import FloatingWindow from '../../widgets/FloatingWindow';
+import {
+  ViewerWindowButton,
+  ViewerWindowRow,
+  ViewerWindowStack,
+} from './window-ui';
 import type { LayoutProps } from './types';
 import type { RoiMeasurementMetricKey, RoiMeasurementSettings } from '../../../types/roiMeasurements';
 import { ROI_MEASUREMENT_METRIC_ORDER } from '../../../types/roiMeasurements';
@@ -46,7 +51,7 @@ export default function SetMeasurementsWindow({
       className="floating-window--set-measurements"
       onClose={onClose}
     >
-      <div className="set-measurements-window">
+      <ViewerWindowStack className="set-measurements-window">
         <div className="set-measurements-options">
           {ROI_MEASUREMENT_METRIC_ORDER.map((metric) => (
             <label key={metric} className="set-measurements-option">
@@ -86,18 +91,18 @@ export default function SetMeasurementsWindow({
           />
         </label>
 
-        <div className="set-measurements-actions">
-          <button type="button" onClick={onHelp}>
+        <ViewerWindowRow className="set-measurements-actions" justify="end" wrap>
+          <ViewerWindowButton type="button" onClick={onHelp}>
             Help
-          </button>
-          <button type="button" onClick={onCancel}>
+          </ViewerWindowButton>
+          <ViewerWindowButton type="button" onClick={onCancel}>
             Cancel
-          </button>
-          <button type="button" onClick={onConfirm}>
+          </ViewerWindowButton>
+          <ViewerWindowButton type="button" onClick={onConfirm}>
             OK
-          </button>
-        </div>
-      </div>
+          </ViewerWindowButton>
+        </ViewerWindowRow>
+      </ViewerWindowStack>
     </FloatingWindow>
   );
 }

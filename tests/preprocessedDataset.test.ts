@@ -144,9 +144,16 @@ const makeManifest = (
           ]
         }
       ],
-      voxelResolution: { x: 120, y: 120, z: 300, unit: 'nm', correctAnisotropy: false },
+      sourceVoxelResolution: { x: 120, y: 120, z: 120, unit: 'nm' },
+      storedVoxelResolution: { x: 120, y: 120, z: 120, unit: 'nm' },
+      voxelResolution: { x: 120, y: 120, z: 120, unit: 'nm' },
       temporalResolution: { interval: 2.3, unit: 'ms' },
-      anisotropyCorrection: null
+      isotropicResampling: {
+        enabled: false,
+        scale: { x: 1, y: 1, z: 1 },
+        intensityInterpolation: 'linear',
+        segmentationInterpolation: 'nearest'
+      }
     }
   };
 };
@@ -383,9 +390,16 @@ await (async () => {
           ]
         }
       ],
-      voxelResolution: { x: 120, y: 120, z: 300, unit: 'nm', correctAnisotropy: false },
+      sourceVoxelResolution: { x: 120, y: 120, z: 120, unit: 'nm' },
+      storedVoxelResolution: { x: 120, y: 120, z: 120, unit: 'nm' },
+      voxelResolution: { x: 120, y: 120, z: 120, unit: 'nm' },
       temporalResolution: { interval: 2.3, unit: 'ms' },
-      anisotropyCorrection: null
+      isotropicResampling: {
+        enabled: false,
+        scale: { x: 1, y: 1, z: 1 },
+        intensityInterpolation: 'linear',
+        segmentationInterpolation: 'nearest'
+      }
     }
   };
 
@@ -613,9 +627,16 @@ await (async () => {
           ]
         }
       ],
-      voxelResolution: { x: 120, y: 120, z: 300, unit: 'nm', correctAnisotropy: false },
+      sourceVoxelResolution: { x: 120, y: 120, z: 120, unit: 'nm' },
+      storedVoxelResolution: { x: 120, y: 120, z: 120, unit: 'nm' },
+      voxelResolution: { x: 120, y: 120, z: 120, unit: 'nm' },
       temporalResolution: { interval: 2.3, unit: 'ms' },
-      anisotropyCorrection: null
+      isotropicResampling: {
+        enabled: false,
+        scale: { x: 1, y: 1, z: 1 },
+        intensityInterpolation: 'linear',
+        segmentationInterpolation: 'nearest'
+      }
     }
   };
 
@@ -869,9 +890,16 @@ await (async () => {
           ]
         }
       ],
-      voxelResolution: { x: 120, y: 120, z: 300, unit: 'nm', correctAnisotropy: false },
+      sourceVoxelResolution: { x: 120, y: 120, z: 120, unit: 'nm' },
+      storedVoxelResolution: { x: 120, y: 120, z: 120, unit: 'nm' },
+      voxelResolution: { x: 120, y: 120, z: 120, unit: 'nm' },
       temporalResolution: { interval: 2.3, unit: 'ms' },
-      anisotropyCorrection: null
+      isotropicResampling: {
+        enabled: false,
+        scale: { x: 1, y: 1, z: 1 },
+        intensityInterpolation: 'linear',
+        segmentationInterpolation: 'nearest'
+      }
     }
   };
 
@@ -1037,9 +1065,16 @@ await (async () => {
           ]
         }
       ],
-      voxelResolution: { x: 120, y: 120, z: 300, unit: 'nm', correctAnisotropy: false },
+      sourceVoxelResolution: { x: 120, y: 120, z: 120, unit: 'nm' },
+      storedVoxelResolution: { x: 120, y: 120, z: 120, unit: 'nm' },
+      voxelResolution: { x: 120, y: 120, z: 120, unit: 'nm' },
       temporalResolution: { interval: 2.3, unit: 'ms' },
-      anisotropyCorrection: null
+      isotropicResampling: {
+        enabled: false,
+        scale: { x: 1, y: 1, z: 1 },
+        intensityInterpolation: 'linear',
+        segmentationInterpolation: 'nearest'
+      }
     }
   };
 

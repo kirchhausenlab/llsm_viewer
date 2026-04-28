@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react';
 import FloatingWindow from '../../widgets/FloatingWindow';
 import type { Position } from './types';
 import { TOP_MENU_HEIGHT, TOP_MENU_WINDOW_PADDING } from '../../../shared/utils/windowLayout';
+import { ViewerWindowButton } from './window-ui';
 
 const NAVIGATION_HELP_WINDOW_HEIGHT = 440;
 const DEFAULT_TAB_ID = 'navigation';
@@ -115,8 +116,8 @@ const HELP_TABS: HelpTab[] = [
         title: 'Editing labels',
         items: [
           'Open Edit > Annotate to create or refine labels.',
-          'Enable Annotate, then hold Ctrl + left-click or drag in the viewer to draw labels.',
-          'Switch to Eraser to remove labels, and use the radius control to change brush size.',
+          'Select Brush in the top menu, then hold Shift + left-click or drag in the viewer to draw labels.',
+          'Select Eraser to remove labels, and use the radius control to change brush size.',
           'Use Undo, Redo, Clear, and Save in the Annotate window to manage your edits.',
           'Show/Hide lets you preview editable labels directly in the viewer.'
         ]
@@ -196,18 +197,19 @@ function NavigationHelpWindow({
             const isActive = tab.id === activeTab.id;
 
             return (
-              <button
+              <ViewerWindowButton
                 key={tab.id}
                 type="button"
                 role="tab"
                 id={`controls-help-tab-${tab.id}`}
                 aria-selected={isActive}
                 aria-controls={`controls-help-panel-${tab.id}`}
-                className={isActive ? 'controls-help-window__tab is-active' : 'controls-help-window__tab'}
+                className="controls-help-window__tab"
+                active={isActive}
                 onClick={() => setActiveTabId(tab.id)}
               >
                 {tab.label}
-              </button>
+              </ViewerWindowButton>
             );
           })}
         </div>

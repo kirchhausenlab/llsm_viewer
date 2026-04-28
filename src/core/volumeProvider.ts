@@ -26,6 +26,10 @@ import {
   type BackgroundMaskVisibleRegion
 } from '../shared/utils/backgroundMask';
 import { buildBrickSubcellTextureSize, resolveBrickSubcellGrid } from '../shared/utils/brickSubcell';
+import {
+  resolvePackedBrickSlotCoordinates,
+  resolvePackedBrickSlotGridLayout
+} from '../shared/utils/sparseSegmentationAtlasLayout';
 import { decodeUint32ArrayLE, HISTOGRAM_BINS } from '../shared/utils/histogram';
 import { decodeInt32ArrayLE } from '../shared/utils/int32';
 import { getLod0FeatureFlags } from '../config/lod0Flags';
@@ -199,6 +203,8 @@ export type VolumeBrickAtlas = {
   sourceChannels: number;
   data: Uint8Array | Uint16Array;
   enabled: boolean;
+  slotGrid?: { x: number; y: number; z: number };
+  renderStrategy?: 'full-resident-packed' | 'source-linear';
 };
 
 export type VolumeBackgroundMask = {
@@ -256,6 +262,20 @@ export type VolumeProvider = {
     brickCoord: SparseSegmentationBrickCoord,
     options?: { signal?: AbortSignal | null }
   ): Promise<DecodedSparseSegmentationBrick>;
+  getSparseSegmentationBrickBySourceIndex?(
+    layerKey: string,
+    timepoint: number,
+    scaleLevel: number,
+    sourceIndex: number,
+    options?: { signal?: AbortSignal | null }
+  ): Promise<DecodedSparseSegmentationBrick>;
+  getSparseSegmentationBricksBySourceIndex?(
+    layerKey: string,
+    timepoint: number,
+    scaleLevel: number,
+    sourceIndices: readonly number[],
+    options?: { signal?: AbortSignal | null; concurrency?: number }
+  ): Promise<DecodedSparseSegmentationBrick[]>;
   querySparseSegmentationLabel?(
     layerKey: string,
     timepoint: number,
@@ -391,6 +411,7 @@ export const DEFAULT_MAX_CACHED_VOLUMES = 12;
 export const DEFAULT_MAX_CACHED_CHUNK_BYTES = 128 * 1024 * 1024;
 export const DEFAULT_MAX_CONCURRENT_CHUNK_READS = 6;
 export const DEFAULT_MAX_CONCURRENT_PREFETCH_LOADS = 2;
+const DEFAULT_SPARSE_SEGMENTATION_ATLAS_MAX_3D_TEXTURE_SIZE = 4096;
 const FULL_SHARD_REUSE_MAX_BYTES = 16 * 1024 * 1024;
 
 function createCacheKey(layerKey: string, timepoint: number, scaleLevel: number): string {
@@ -1237,6 +1258,11 @@ export function createVolumeProvider({
         `Layer ${layer.layerKey} is a sparse segmentation layer and does not expose dense intensity scales.`
       );
     }
+    if (layer.isSegmentation) {
+      throw new Error(
+        `Unsupported legacy dense segmentation layer "${layer.layerKey}". This dataset must be reprocessed with sparse segmentation support before launching the viewer.`
+      );
+    }
     const sorted = [...layer.layer.zarr.scales].sort((left, right) => left.level - right.level);
     if (sorted.length === 0) {
       throw new Error(`Layer ${layer.layerKey} does not define any scales.`);
@@ -1846,18 +1872,7 @@ export function createVolumeProvider({
     const includeHistogram = options?.includeHistogram !== false;
 
     const dataDescriptor = scale.zarr.data;
-    if (layer.isSegmentation) {
-      if (scale.channels !== 1) {
-        throw new Error(
-          `Unsupported segmentation channel count for ${dataDescriptor.path}: expected 1, got ${scale.channels}.`
-        );
-      }
-      if (dataDescriptor.dataType !== 'uint16') {
-        throw new Error(
-          `Unsupported segmentation data type for ${dataDescriptor.path}: expected uint16, got ${dataDescriptor.dataType}.`
-        );
-      }
-    } else if (dataDescriptor.dataType !== 'uint8' && dataDescriptor.dataType !== 'uint16') {
+    if (dataDescriptor.dataType !== 'uint8' && dataDescriptor.dataType !== 'uint16') {
       throw new Error(
         `Unsupported data type for ${dataDescriptor.path}: expected uint8 or uint16, got ${dataDescriptor.dataType}.`
       );
@@ -1890,44 +1905,6 @@ export function createVolumeProvider({
       throw new Error(
         `Volume byte length mismatch for ${dataDescriptor.path} (expected ${expectedByteLength}, got ${volumeBytes.byteLength}).`
       );
-    }
-
-    if (layer.isSegmentation) {
-      const expectedLabelBytes = scale.width * scale.height * scale.depth * 2;
-      if (volumeBytes.byteLength !== expectedLabelBytes) {
-        throw new Error(
-          `Segmentation byte length mismatch for ${dataDescriptor.path} (expected ${expectedLabelBytes}, got ${volumeBytes.byteLength}).`
-        );
-      }
-      const labelBytes =
-        volumeBytes.byteOffset === 0 && volumeBytes.byteLength === volumeBytes.buffer.byteLength
-          ? volumeBytes
-          : volumeBytes.slice();
-      const labels = new Uint16Array(labelBytes.buffer, labelBytes.byteOffset, labelBytes.byteLength / 2);
-      let maxLabel = 0;
-      for (let index = 0; index < labels.length; index += 1) {
-        const labelValue = labels[index] ?? 0;
-        if (labelValue > maxLabel) {
-          maxLabel = labelValue;
-        }
-      }
-      const loadMs = nowMs() - loadStart;
-      stats.totalLoadMs += loadMs;
-      stats.lastLoadMs = loadMs;
-      stats.loadsCompleted += 1;
-      return {
-        kind: 'segmentation',
-        width: scale.width,
-        height: scale.height,
-        depth: scale.depth,
-        channels: 1,
-        dataType: 'uint16',
-        labels,
-        scaleLevel: scale.level,
-        downsampleFactor: scale.downsampleFactor,
-        min: 0,
-        max: maxLabel
-      };
     }
 
     const histogramDescriptor = includeHistogram ? scale.zarr.histogram : undefined;
@@ -2443,17 +2420,35 @@ export function createVolumeProvider({
         textureFormat: 'rgba',
         sourceChannels: 1,
         data: new Uint8Array(4),
-        enabled: false
+        enabled: false,
+        slotGrid: { x: 1, y: 1, z: 1 },
+        renderStrategy: 'full-resident-packed'
       };
     }
     const [brickDepth, brickHeight, brickWidth] = scale.brickSize;
-    const atlasWidth = brickWidth;
-    const atlasHeight = brickHeight;
-    const atlasDepth = brickDepth * records.length;
+    const packedLayout = resolvePackedBrickSlotGridLayout({
+      slotCount: records.length,
+      brickWidth,
+      brickHeight,
+      brickDepth,
+      max3DTextureSize: DEFAULT_SPARSE_SEGMENTATION_ATLAS_MAX_3D_TEXTURE_SIZE
+    });
+    if (!packedLayout) {
+      throw new Error(
+        `Sparse segmentation layer "${layer.layerKey}" at scale ${scale.level} cannot fit ${records.length} occupied bricks into the configured packed atlas texture limit.`
+      );
+    }
+    const atlasWidth = packedLayout.atlasSize.width;
+    const atlasHeight = packedLayout.atlasSize.height;
+    const atlasDepth = packedLayout.atlasSize.depth;
     const data = new Uint8Array(atlasWidth * atlasHeight * atlasDepth * 4);
     for (let slot = 0; slot < records.length; slot += 1) {
       const record = records[slot]!;
       const brick = await loadSparseBrickByRecord(layer, scale, record, signal);
+      const slotCoords = resolvePackedBrickSlotCoordinates(slot, packedLayout.slotGrid);
+      const atlasXBase = slotCoords.x * brickWidth;
+      const atlasYBase = slotCoords.y * brickHeight;
+      const atlasZBase = slotCoords.z * brickDepth;
       brick.forEachNonzero((offset, label) => {
         const global = globalCoordForLocalOffset(record.brickCoord, offset, scale.brickSize);
         if (global.z >= scale.depth || global.y >= scale.height || global.x >= scale.width) {
@@ -2462,8 +2457,10 @@ export function createVolumeProvider({
         const localZ = global.z - record.brickCoord.z * brickDepth;
         const localY = global.y - record.brickCoord.y * brickHeight;
         const localX = global.x - record.brickCoord.x * brickWidth;
-        const atlasZ = slot * brickDepth + localZ;
-        const target = ((atlasZ * atlasHeight + localY) * atlasWidth + localX) * 4;
+        const atlasZ = atlasZBase + localZ;
+        const atlasY = atlasYBase + localY;
+        const atlasX = atlasXBase + localX;
+        const target = ((atlasZ * atlasHeight + atlasY) * atlasWidth + atlasX) * 4;
         data[target] = label & 0xff;
         data[target + 1] = (label >>> 8) & 0xff;
         data[target + 2] = (label >>> 16) & 0xff;
@@ -2483,7 +2480,9 @@ export function createVolumeProvider({
       textureFormat: 'rgba',
       sourceChannels: 1,
       data,
-      enabled: true
+      enabled: true,
+      slotGrid: packedLayout.slotGrid,
+      renderStrategy: 'full-resident-packed'
     };
   };
 
@@ -2796,7 +2795,7 @@ export function createVolumeProvider({
         layerKey: layer.layerKey,
         timepoint,
         scaleLevel: scale.level,
-        kind: layer.isSegmentation ? 'segmentation' : 'intensity',
+        kind: 'intensity',
         pageTable,
         histogram,
         width: 1,
@@ -2847,7 +2846,7 @@ export function createVolumeProvider({
         layerKey: layer.layerKey,
         timepoint,
         scaleLevel: scale.level,
-        kind: layer.isSegmentation ? 'segmentation' : 'intensity',
+        kind: 'intensity',
         pageTable,
         histogram,
         width: atlasWidth,
@@ -3028,7 +3027,7 @@ export function createVolumeProvider({
       layerKey: layer.layerKey,
       timepoint,
       scaleLevel: scale.level,
-      kind: layer.isSegmentation ? 'segmentation' : 'intensity',
+      kind: 'intensity',
       pageTable,
       histogram,
       width: atlasWidth,
@@ -3298,6 +3297,87 @@ export function createVolumeProvider({
       );
     }
     return loadSparseBrickByRecord(layer, scale, record, signal);
+  };
+
+  const getSparseSegmentationBrickBySourceIndex = async (
+    layerKey: string,
+    timepoint: number,
+    scaleLevel: number,
+    sourceIndex: number,
+    options?: { signal?: AbortSignal | null }
+  ): Promise<DecodedSparseSegmentationBrick> => {
+    const signal = options?.signal ?? null;
+    throwIfAborted(signal);
+    if (!isValidTimepoint(timepoint)) {
+      throw new Error(`Invalid timepoint: ${timepoint}`);
+    }
+    if (!Number.isInteger(sourceIndex) || sourceIndex < 0) {
+      throw new Error(`Invalid sparse segmentation source index ${sourceIndex}.`);
+    }
+    const layer = layerIndex.get(layerKey);
+    if (!layer) {
+      throw new Error(`Unknown layer key: ${layerKey}`);
+    }
+    if (!isSparseSegmentationLayerManifest(layer.layer)) {
+      throw new Error(`Layer "${layerKey}" is not a sparse segmentation layer.`);
+    }
+    const scale = resolveSparseScaleEntry(layer, scaleLevel);
+    const directory = await loadSparseDirectory(layer, scale, signal);
+    const records = directory.recordsForTimepoint(timepoint);
+    if (sourceIndex >= records.length) {
+      throw new Error(
+        `Sparse segmentation source index ${sourceIndex} is out of bounds for layer ${layerKey} at timepoint ${timepoint}, scale ${scale.level}; occupied brick count is ${records.length}.`
+      );
+    }
+    const record = records[sourceIndex];
+    if (!record) {
+      throw new Error(
+        `Sparse segmentation source index ${sourceIndex} is missing for layer ${layerKey} at timepoint ${timepoint}, scale ${scale.level}.`
+      );
+    }
+    return loadSparseBrickByRecord(layer, scale, record, signal);
+  };
+
+  const getSparseSegmentationBricksBySourceIndex = async (
+    layerKey: string,
+    timepoint: number,
+    scaleLevel: number,
+    sourceIndices: readonly number[],
+    options?: { signal?: AbortSignal | null; concurrency?: number }
+  ): Promise<DecodedSparseSegmentationBrick[]> => {
+    const signal = options?.signal ?? null;
+    throwIfAborted(signal);
+    const results = new Array<DecodedSparseSegmentationBrick>(sourceIndices.length);
+    const configuredConcurrency = Number.isFinite(options?.concurrency)
+      ? Math.max(1, Math.floor(options?.concurrency ?? maxConcurrentPrefetchLoads))
+      : maxConcurrentPrefetchLoads;
+    let nextIndex = 0;
+    const runWorker = async () => {
+      while (true) {
+        throwIfAborted(signal);
+        const index = nextIndex;
+        nextIndex += 1;
+        if (index >= sourceIndices.length) {
+          return;
+        }
+        const sourceIndex = sourceIndices[index];
+        if (typeof sourceIndex !== 'number') {
+          throw new Error(`Invalid sparse segmentation source index at batch position ${index}.`);
+        }
+        results[index] = await getSparseSegmentationBrickBySourceIndex(
+          layerKey,
+          timepoint,
+          scaleLevel,
+          sourceIndex,
+          { signal }
+        );
+      }
+    };
+    const workerCount = Math.min(configuredConcurrency, sourceIndices.length);
+    if (workerCount > 0) {
+      await Promise.all(Array.from({ length: workerCount }, () => runWorker()));
+    }
+    return results;
   };
 
   const querySparseSegmentationLabel = async (
@@ -3962,6 +4042,8 @@ export function createVolumeProvider({
     getBrickAtlas,
     getSparseSegmentationField,
     getSparseSegmentationBrick,
+    getSparseSegmentationBrickBySourceIndex,
+    getSparseSegmentationBricksBySourceIndex,
     querySparseSegmentationLabel,
     extractSparseSegmentationSlice,
     prefetchSparseSegmentationBricks,

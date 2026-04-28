@@ -15,6 +15,13 @@ import {
 import FloatingWindow from '../../widgets/FloatingWindow';
 import type { GlobalRenderControls, LayoutProps, PlaybackControlsProps } from './types';
 import type { ModeToggleState, ViewerSettingsControls } from './hooks/useViewerModeControls';
+import {
+  ViewerWindowButton,
+  ViewerWindowRow,
+  ViewerWindowSelectField,
+  ViewerWindowSlider,
+  ViewerWindowStack,
+} from './window-ui';
 
 const MIN_FPS = 1;
 const MAX_FPS = 30;
@@ -116,206 +123,141 @@ export default function ViewerSettingsWindow({
       onClose={onClose}
     >
       <div className="sidebar sidebar-right">
-        <div className="global-controls">
+        <ViewerWindowStack className="viewer-settings-window">
           {is3dModeAvailable ? (
             <div className="control-group">
               <div className="viewer-mode-row">
-                <button
+                <ViewerWindowButton
                   type="button"
-                  className={blendingMode === 'additive' ? 'viewer-mode-button is-active' : 'viewer-mode-button'}
+                  className="viewer-mode-button"
+                  active={blendingMode === 'additive'}
                   onClick={onBlendingModeToggle}
                   disabled={!hasVolumeData}
                   aria-pressed={blendingMode === 'additive'}
                 >
                   {blendingMode === 'additive' ? 'Additive color blending' : 'Alpha color blending'}
-                </button>
+                </ViewerWindowButton>
               </div>
             </div>
           ) : null}
 
           {showRenderingQualityControl ? (
-            <div className="control-group control-group--slider">
-              <label htmlFor="volume-steps-slider">
-                Trilinear quality <span>{renderingQuality}</span>
-              </label>
-              <input
-                id="volume-steps-slider"
-                type="range"
-                min={0.1}
-                max={3}
-                step={0.1}
-                value={renderingQuality}
-                onChange={(event) => onRenderingQualityChange(Number(event.target.value))}
-              />
-            </div>
+            <ViewerWindowSlider
+              id="volume-steps-slider"
+              label="Trilinear quality"
+              valueLabel={renderingQuality}
+              min={0.1}
+              max={3}
+              step={0.1}
+              value={renderingQuality}
+              onChange={(event) => onRenderingQualityChange(Number(event.target.value))}
+            />
           ) : null}
 
-          <div className="control-group">
-            <label htmlFor="desktop-render-resolution-select">
-              Render resolution <span>{formatPixelRatioCap(selectedRenderResolutionPixelRatioCap)}x</span>
-            </label>
-            <select
-              id="desktop-render-resolution-select"
-              value={desktopRenderResolution}
-              onChange={(event) => onDesktopRenderResolutionChange(event.target.value as DesktopRenderResolution)}
-            >
-              {DESKTOP_RENDER_RESOLUTION_OPTIONS.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.label} ({formatPixelRatioCap(option.pixelRatioCap)}x)
-                </option>
-              ))}
-            </select>
-          </div>
+          <ViewerWindowSelectField
+            id="desktop-render-resolution-select"
+            label={
+              <>
+                Render resolution <span>{formatPixelRatioCap(selectedRenderResolutionPixelRatioCap)}x</span>
+              </>
+            }
+            value={desktopRenderResolution}
+            onChange={(event) => onDesktopRenderResolutionChange(event.target.value as DesktopRenderResolution)}
+          >
+            {DESKTOP_RENDER_RESOLUTION_OPTIONS.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label} ({formatPixelRatioCap(option.pixelRatioCap)}x)
+              </option>
+            ))}
+          </ViewerWindowSelectField>
 
-          {is3dModeAvailable ? (
-            <div className="control-group control-group--slider">
-              <label htmlFor="fps-slider">frames per second</label>
-              <div className="double-range-input">
-                <input
-                  id="fps-slider"
-                  type="range"
-                  min={MIN_FPS}
-                  max={MAX_FPS}
-                  step={1}
-                  value={fps}
-                  onChange={(event) => onFpsChange(clampFps(Number(event.target.value)))}
-                  disabled={volumeTimepointCount <= 1}
-                />
-                <input
-                  type="number"
-                  min={MIN_FPS}
-                  max={MAX_FPS}
-                  value={fps}
-                  onChange={(event) => onFpsChange(clampFps(Number(event.target.value)))}
-                  disabled={volumeTimepointCount <= 1}
-                />
-              </div>
-            </div>
-          ) : (
-            <div className="control-group control-group--slider">
-              <label htmlFor="fps-slider">
-                frames per second <span>{fps}</span>
-              </label>
-              <input
-                id="fps-slider"
-                type="range"
-                min={MIN_FPS}
-                max={MAX_FPS}
-                step={1}
-                value={fps}
-                onChange={(event) => onFpsChange(clampFps(Number(event.target.value)))}
-                disabled={volumeTimepointCount <= 1}
-              />
-            </div>
-          )}
+          <ViewerWindowSlider
+            id="fps-slider"
+            label="frames per second"
+            valueLabel={fps}
+            min={MIN_FPS}
+            max={MAX_FPS}
+            step={1}
+            value={fps}
+            onChange={(event) => onFpsChange(clampFps(Number(event.target.value)))}
+            disabled={volumeTimepointCount <= 1}
+          />
 
-          <div className="control-group control-group--slider">
-            <label htmlFor="playback-buffer-slider">playback buffer frames</label>
-            <div className="double-range-input">
-              <input
-                id="playback-buffer-slider"
-                type="range"
-                min={MIN_PLAYBACK_BUFFER_FRAMES}
-                max={playbackBufferSliderMax}
-                step={1}
-                value={displayedPlaybackBufferFrames}
-                onChange={(event) => onPlaybackBufferFramesChange(clampPlaybackBufferFrames(Number(event.target.value)))}
-                disabled={volumeTimepointCount <= 1}
-              />
-              <input
-                type="number"
-                min={MIN_PLAYBACK_BUFFER_FRAMES}
-                max={playbackBufferSliderMax}
-                value={displayedPlaybackBufferFrames}
-                onChange={(event) => onPlaybackBufferFramesChange(clampPlaybackBufferFrames(Number(event.target.value)))}
-                disabled={volumeTimepointCount <= 1}
-              />
-            </div>
-          </div>
+          <ViewerWindowSlider
+            id="playback-buffer-slider"
+            label="playback buffer frames"
+            valueLabel={displayedPlaybackBufferFrames}
+            min={MIN_PLAYBACK_BUFFER_FRAMES}
+            max={playbackBufferSliderMax}
+            step={1}
+            value={displayedPlaybackBufferFrames}
+            onChange={(event) => onPlaybackBufferFramesChange(clampPlaybackBufferFrames(Number(event.target.value)))}
+            disabled={volumeTimepointCount <= 1}
+          />
 
           <div className="render-settings-section">
             <span className="control-label control-label--compact">Global MIP / BL</span>
-            <div className="control-group control-group--slider">
-              <label htmlFor="global-mip-early-exit">
-                MIP early exit <span>{formatNormalizedIntensity(mipEarlyExitThreshold)}</span>
-              </label>
-              <input
-                id="global-mip-early-exit"
-                type="range"
-                min={DEFAULT_WINDOW_MIN}
-                max={DEFAULT_WINDOW_MAX}
-                step={0.001}
-                value={mipEarlyExitThreshold}
-                onChange={(event) => onMipEarlyExitThresholdChange(Number(event.target.value))}
+            <ViewerWindowSlider
+              id="global-mip-early-exit"
+              label="MIP early exit"
+              valueLabel={formatNormalizedIntensity(mipEarlyExitThreshold)}
+              min={DEFAULT_WINDOW_MIN}
+              max={DEFAULT_WINDOW_MAX}
+              step={0.001}
+              value={mipEarlyExitThreshold}
+              onChange={(event) => onMipEarlyExitThresholdChange(Number(event.target.value))}
+              disabled={globalRenderControlsDisabled}
+            />
+            <ViewerWindowRow>
+              <ViewerWindowSlider
+                id="global-bl-density"
+                label="BL density"
+                valueLabel={formatBlControlValue(blDensityScale)}
+                min={0}
+                max={8}
+                step={0.05}
+                value={blDensityScale}
+                onChange={(event) => onBlDensityScaleChange(Number(event.target.value))}
                 disabled={globalRenderControlsDisabled}
               />
-            </div>
-            <div className="control-row">
-              <div className="control-group control-group--slider">
-                <label htmlFor="global-bl-density">
-                  BL density <span>{formatBlControlValue(blDensityScale)}</span>
-                </label>
-                <input
-                  id="global-bl-density"
-                  type="range"
-                  min={0}
-                  max={8}
-                  step={0.05}
-                  value={blDensityScale}
-                  onChange={(event) => onBlDensityScaleChange(Number(event.target.value))}
-                  disabled={globalRenderControlsDisabled}
-                />
-              </div>
-              <div className="control-group control-group--slider">
-                <label htmlFor="global-bl-background-cutoff">
-                  BL cutoff <span>{formatNormalizedIntensity(blBackgroundCutoff)}</span>
-                </label>
-                <input
-                  id="global-bl-background-cutoff"
-                  type="range"
-                  min={0}
-                  max={1}
-                  step={0.005}
-                  value={blBackgroundCutoff}
-                  onChange={(event) => onBlBackgroundCutoffChange(Number(event.target.value))}
-                  disabled={globalRenderControlsDisabled}
-                />
-              </div>
-            </div>
-            <div className="control-row">
-              <div className="control-group control-group--slider">
-                <label htmlFor="global-bl-opacity">
-                  BL opacity <span>{formatBlControlValue(blOpacityScale)}</span>
-                </label>
-                <input
-                  id="global-bl-opacity"
-                  type="range"
-                  min={0}
-                  max={8}
-                  step={0.05}
-                  value={blOpacityScale}
-                  onChange={(event) => onBlOpacityScaleChange(Number(event.target.value))}
-                  disabled={globalRenderControlsDisabled}
-                />
-              </div>
-              <div className="control-group control-group--slider">
-                <label htmlFor="global-bl-early-exit">
-                  BL early exit <span>{formatNormalizedIntensity(blEarlyExitAlpha)}</span>
-                </label>
-                <input
-                  id="global-bl-early-exit"
-                  type="range"
-                  min={0}
-                  max={1}
-                  step={0.005}
-                  value={blEarlyExitAlpha}
-                  onChange={(event) => onBlEarlyExitAlphaChange(Number(event.target.value))}
-                  disabled={globalRenderControlsDisabled}
-                />
-              </div>
-            </div>
+              <ViewerWindowSlider
+                id="global-bl-background-cutoff"
+                label="BL cutoff"
+                valueLabel={formatNormalizedIntensity(blBackgroundCutoff)}
+                min={0}
+                max={1}
+                step={0.005}
+                value={blBackgroundCutoff}
+                onChange={(event) => onBlBackgroundCutoffChange(Number(event.target.value))}
+                disabled={globalRenderControlsDisabled}
+              />
+            </ViewerWindowRow>
+            <ViewerWindowRow>
+              <ViewerWindowSlider
+                id="global-bl-opacity"
+                label="BL opacity"
+                valueLabel={formatBlControlValue(blOpacityScale)}
+                min={0}
+                max={8}
+                step={0.05}
+                value={blOpacityScale}
+                onChange={(event) => onBlOpacityScaleChange(Number(event.target.value))}
+                disabled={globalRenderControlsDisabled}
+              />
+              <ViewerWindowSlider
+                id="global-bl-early-exit"
+                label="BL early exit"
+                valueLabel={formatNormalizedIntensity(blEarlyExitAlpha)}
+                min={0}
+                max={1}
+                step={0.005}
+                value={blEarlyExitAlpha}
+                onChange={(event) => onBlEarlyExitAlphaChange(Number(event.target.value))}
+                disabled={globalRenderControlsDisabled}
+              />
+            </ViewerWindowRow>
           </div>
-        </div>
+        </ViewerWindowStack>
       </div>
     </FloatingWindow>
   );

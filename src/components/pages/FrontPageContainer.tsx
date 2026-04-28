@@ -9,8 +9,7 @@ import {
 } from '../../shared/storage/preprocessedStorage';
 import type { PreprocessedStorageHandle } from '../../shared/storage/preprocessedStorage';
 import { parseBackgroundMaskValues } from '../../shared/utils/backgroundMask';
-import { detectVolumeDataTypeFromTypedArray, getBytesPerValue } from '../../types/volume';
-import { fromBlob } from 'geotiff';
+import { parseDeskewAngleInput } from '../../shared/utils/deskew';
 import {
   getDirectoryPickerUnavailableMessage,
   inspectDirectoryPickerSupport
@@ -144,13 +143,18 @@ export default function FrontPageContainer({
   const [selectedExperimentType, setSelectedExperimentType] = useState<ExperimentType>('single-3d-volume');
   const [backgroundMaskEnabled, setBackgroundMaskEnabled] = useState(false);
   const [backgroundMaskValuesInput, setBackgroundMaskValuesInput] = useState('');
-  const [renderIn16Bit, setRenderIn16Bit] = useState(false);
+  const [force8BitRender, setForce8BitRender] = useState(false);
+  const [deSkewModeEnabled, setDeSkewModeEnabled] = useState(false);
+  const [skewAngleInput, setSkewAngleInput] = useState('31.5');
+  const [skewAngleUnit, setSkewAngleUnit] = useState<'degrees' | 'radians'>('degrees');
+  const [skewDirection, setSkewDirection] = useState<'X' | 'Y'>('X');
+  const [deSkewMaskVoxels, setDeSkewMaskVoxels] = useState(true);
 
   const createDefaultExportName = useCallback((): string => {
     const now = new Date();
     const stamp = now.toISOString().replace(/[:.]/g, '-');
     const random = Math.random().toString(16).slice(2, 6);
-    return `llsm-viewer-preprocessed-vnext-hes2-${stamp}-${random}`;
+    return `llsm-viewer-preprocessed-isotropic-v1-${stamp}-${random}`;
   }, []);
 
   const ensureZarrDirectoryName = useCallback((name: string): string => {
@@ -235,7 +239,12 @@ export default function FrontPageContainer({
     setSelectedExperimentType('single-3d-volume');
     setBackgroundMaskEnabled(false);
     setBackgroundMaskValuesInput('');
-    setRenderIn16Bit(false);
+    setForce8BitRender(false);
+    setDeSkewModeEnabled(false);
+    setSkewAngleInput('31.5');
+    setSkewAngleUnit('degrees');
+    setSkewDirection('X');
+    setDeSkewMaskVoxels(true);
     onReturnToStart();
   }, [onReturnToStart]);
 
@@ -247,54 +256,29 @@ export default function FrontPageContainer({
     setBackgroundMaskValuesInput(value);
   }, []);
 
-  const handleRenderIn16BitToggle = useCallback((value: boolean) => {
-    setRenderIn16Bit(value);
+  const handleForce8BitRenderToggle = useCallback((value: boolean) => {
+    setForce8BitRender(value);
   }, []);
 
-  const hasAnyHighPrecisionNonSegmentationLayer = useCallback(async (): Promise<boolean> => {
-    const nonSegmentationLayers = channels
-      .map((channel) => channel.volume)
-      .filter((layer): layer is NonNullable<(typeof channels)[number]['volume']> => layer !== null && !layer.isSegmentation);
+  const handleDeSkewModeToggle = useCallback((value: boolean) => {
+    setDeSkewModeEnabled(value);
+  }, []);
 
-    if (nonSegmentationLayers.length === 0) {
-      return false;
-    }
+  const handleSkewAngleInputChange = useCallback((value: string) => {
+    setSkewAngleInput(value.replace(/,/g, '.'));
+  }, []);
 
-    for (const layer of nonSegmentationLayers) {
-      if (layer.sourceDataType && getBytesPerValue(layer.sourceDataType) > 1) {
-        return true;
-      }
-    }
+  const handleSkewAngleUnitChange = useCallback((value: 'degrees' | 'radians') => {
+    setSkewAngleUnit(value);
+  }, []);
 
-    for (const layer of nonSegmentationLayers) {
-      const firstFile = layer.files[0] ?? null;
-      if (!firstFile) {
-        continue;
-      }
-      const tiff = await fromBlob(firstFile);
-      const image = await tiff.getImage(0);
-      const rasterRaw = (await image.readRasters({ interleave: true })) as unknown;
-      if (!ArrayBuffer.isView(rasterRaw)) {
-        continue;
-      }
-      const sourceDataType = detectVolumeDataTypeFromTypedArray(
-        rasterRaw as
-          | Uint8Array
-          | Int8Array
-          | Uint16Array
-          | Int16Array
-          | Uint32Array
-          | Int32Array
-          | Float32Array
-          | Float64Array
-      );
-      if (getBytesPerValue(sourceDataType) > 1) {
-        return true;
-      }
-    }
+  const handleSkewDirectionChange = useCallback((value: 'X' | 'Y') => {
+    setSkewDirection(value);
+  }, []);
 
-    return false;
-  }, [channels]);
+  const handleDeSkewMaskVoxelsToggle = useCallback((value: boolean) => {
+    setDeSkewMaskVoxels(value);
+  }, []);
 
   const backgroundMaskParseResult = useMemo(() => {
     if (!backgroundMaskEnabled) {
@@ -327,14 +311,12 @@ export default function FrontPageContainer({
       return;
     }
 
-    if (renderIn16Bit) {
-      const hasHighPrecisionLayer = await hasAnyHighPrecisionNonSegmentationLayer();
-      if (!hasHighPrecisionLayer) {
-        showInteractionWarning(
-          'Render in 16bit is only useful when at least one non-segmentation layer has source precision above 8 bits. Uncheck "Render in 16bit" to continue.'
-        );
-        return;
-      }
+    const deskewAngleResult = deSkewModeEnabled
+      ? parseDeskewAngleInput(skewAngleInput, skewAngleUnit)
+      : { angleRadians: null, error: null };
+    if (deskewAngleResult.error) {
+      showInteractionWarning(deskewAngleResult.error);
+      return;
     }
 
     setPreprocessSuccessMessage(null);
@@ -473,6 +455,7 @@ export default function FrontPageContainer({
         channels: channelsMetadata,
         trackSets: trackSetsMetadata,
         voxelResolution: voxelResolutionValue,
+        makeDataIsotropic: voxelResolutionInput.correctAnisotropy,
         temporalResolution: temporalResolutionValue,
         movieMode: '3d',
         inputInterpretation: selectedExperimentType,
@@ -481,7 +464,15 @@ export default function FrontPageContainer({
               values: backgroundMaskParseResult.values
             }
           : null,
-        renderIn16Bit,
+        deskew:
+          deSkewModeEnabled && deskewAngleResult.angleRadians !== null
+            ? {
+                angleRadians: deskewAngleResult.angleRadians,
+                direction: skewDirection,
+                maskVoxels: deSkewMaskVoxels
+              }
+            : null,
+        renderIn16Bit: !force8BitRender,
         storage: selectedStorageHandle.storage,
         storageStrategy: PREPROCESS_STORAGE_STRATEGY
       });
@@ -515,17 +506,22 @@ export default function FrontPageContainer({
     backgroundMaskEnabled,
     backgroundMaskParseResult.error,
     backgroundMaskParseResult.values,
-    hasAnyHighPrecisionNonSegmentationLayer,
+    deSkewMaskVoxels,
+    deSkewModeEnabled,
+    force8BitRender,
     isLaunchingViewer,
     isPreprocessingExperiment,
     isPreprocessedImporting,
-    renderIn16Bit,
     setIsExperimentSetupStarted,
     setPreprocessedExperiment,
     showInteractionWarning,
     tracks,
     selectedExperimentType,
+    skewAngleInput,
+    skewAngleUnit,
+    skewDirection,
     temporalResolutionValue,
+    voxelResolutionInput.correctAnisotropy,
     voxelResolutionValue
   ]);
 
@@ -580,8 +576,18 @@ export default function FrontPageContainer({
     backgroundMaskError: backgroundMaskEnabled ? backgroundMaskParseResult.error : null,
     onBackgroundMaskToggle: handleBackgroundMaskToggle,
     onBackgroundMaskValuesInputChange: handleBackgroundMaskValuesInputChange,
-    renderIn16Bit,
-    onRenderIn16BitToggle: handleRenderIn16BitToggle
+    force8BitRender,
+    onForce8BitRenderToggle: handleForce8BitRenderToggle,
+    deSkewModeEnabled,
+    skewAngleInput,
+    skewAngleUnit,
+    skewDirection,
+    deSkewMaskVoxels,
+    onDeSkewModeToggle: handleDeSkewModeToggle,
+    onSkewAngleInputChange: handleSkewAngleInputChange,
+    onSkewAngleUnitChange: handleSkewAngleUnitChange,
+    onSkewDirectionChange: handleSkewDirectionChange,
+    onDeSkewMaskVoxelsToggle: handleDeSkewMaskVoxelsToggle
   };
 
   const preprocessedLoaderProps = {

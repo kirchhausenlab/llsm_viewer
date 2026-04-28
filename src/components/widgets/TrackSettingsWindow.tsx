@@ -1,4 +1,9 @@
 import type { TrackSettingsProps } from '../viewers/viewer-shell/types';
+import {
+  ViewerWindowRow,
+  ViewerWindowSlider,
+  ViewerWindowStack,
+} from '../viewers/viewer-shell/window-ui';
 
 export default function TrackSettingsWindow({
   isFullTrailEnabled,
@@ -12,8 +17,8 @@ export default function TrackSettingsWindow({
   onDrawStartingPointsToggle
 }: TrackSettingsProps) {
   return (
-    <div className="global-controls">
-      <div className="control-row">
+    <ViewerWindowStack className="track-settings-window">
+      <ViewerWindowRow>
         <label className="control-label control-label--compact" htmlFor="track-full-trail-toggle">
           <input
             id="track-full-trail-toggle"
@@ -23,23 +28,19 @@ export default function TrackSettingsWindow({
           />
           Full trail
         </label>
-        <div className="control-group control-group--slider">
-          <label htmlFor="track-trail-length-slider">
-            Trail length <span>{trailLength}</span>
-          </label>
-          <input
-            id="track-trail-length-slider"
-            type="range"
-            min={trailLengthExtent.min}
-            max={trailLengthExtent.max}
-            step={1}
-            value={trailLength}
-            onChange={(event) => onTrailLengthChange(Number(event.target.value))}
-            disabled={isFullTrailEnabled}
-          />
-        </div>
-      </div>
-      <div className="control-row track-marker-controls">
+        <ViewerWindowSlider
+          id="track-trail-length-slider"
+          label="Trail length"
+          valueLabel={trailLength}
+          min={trailLengthExtent.min}
+          max={trailLengthExtent.max}
+          step={1}
+          value={trailLength}
+          onChange={(event) => onTrailLengthChange(Number(event.target.value))}
+          disabled={isFullTrailEnabled}
+        />
+      </ViewerWindowRow>
+      <ViewerWindowRow className="track-marker-controls" align="center">
         <label className="control-label control-label--compact" htmlFor="track-draw-centroids-toggle">
           <input
             id="track-draw-centroids-toggle"
@@ -49,8 +50,8 @@ export default function TrackSettingsWindow({
           />
           Draw centroids
         </label>
-      </div>
-      <div className="control-row track-marker-controls">
+      </ViewerWindowRow>
+      <ViewerWindowRow className="track-marker-controls" align="center">
         <label className="control-label control-label--compact" htmlFor="track-draw-starting-points-toggle">
           <input
             id="track-draw-starting-points-toggle"
@@ -60,7 +61,7 @@ export default function TrackSettingsWindow({
           />
           Draw starting points
         </label>
-      </div>
-    </div>
+      </ViewerWindowRow>
+    </ViewerWindowStack>
   );
 }

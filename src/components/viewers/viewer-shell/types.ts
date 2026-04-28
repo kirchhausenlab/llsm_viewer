@@ -15,9 +15,11 @@ import type { PreprocessedStorageHandle } from '../../../shared/storage/preproce
 import type { PreprocessedManifest } from '../../../shared/utils/preprocessedDataset/types';
 import type { LayerSettings, RenderStyle, SamplingMode } from '../../../state/layerSettings';
 import type { TrackSetState } from '../../../types/channelTracks';
+import type { CameraFaceView, CameraFaceViewMode } from '../../../types/camera';
 import type { FollowedVoxelTarget } from '../../../types/follow';
 import type { HoveredVoxelInfo, HoverSettings, HoverType } from '../../../types/hover';
 import type { NumericRange, TrackColorMode, TrackPoint, TrackSummary } from '../../../types/tracks';
+import type { ViewerTool, ViewerToolDimensionMode } from '../../../types/viewerTool';
 
 export type TopMenuChromeProps = {
   onReturnToLauncher: () => void;
@@ -77,6 +79,16 @@ export type TopMenuProps = TopMenuChromeProps &
     onOpenAnnotate: () => void;
     annotateDisabled?: boolean;
     annotateDisabledTitle?: string;
+    activeViewerTool?: ViewerTool;
+    viewerToolDimensionMode?: ViewerToolDimensionMode;
+    onViewerToolChange?: (tool: ViewerTool) => void;
+    onViewerToolDimensionModeChange?: (mode: ViewerToolDimensionMode) => void;
+    annotationToolsDisabled?: boolean;
+    annotationToolsDisabledTitle?: string;
+    annotationUndoDisabled?: boolean;
+    annotationRedoDisabled?: boolean;
+    onAnnotationUndo?: () => void;
+    onAnnotationRedo?: () => void;
     onOpenExportChannel: () => void;
     onOpenDrawRoiWindow: () => void;
     onOpenRoiManagerWindow: () => void;
@@ -109,6 +121,11 @@ export type TopMenuProps = TopMenuChromeProps &
     onToggle2dView?: () => void;
     twoDViewButtonDisabled?: boolean;
     twoDViewButtonTitle?: string;
+    isVrActive?: boolean;
+    projectionMode?: ModeControlsProps['projectionMode'];
+    onProjectionModeChange?: ModeControlsProps['onProjectionModeChange'];
+    onCameraFaceViewChange?: (face: CameraFaceView, mode: CameraFaceViewMode) => void;
+    deskewModeActive?: boolean;
   };
 
 export type ModeControlsProps = {

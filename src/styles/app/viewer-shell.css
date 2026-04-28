@@ -262,12 +262,8 @@
 
 .controls-help-window__tab {
   border: 1px solid rgba(255, 255, 255, 0.14);
-  border-radius: 999px;
-  padding: 0.4rem 0.8rem;
   background: rgba(18, 24, 36, 0.72);
   color: rgba(236, 243, 255, 0.82);
-  font-weight: 600;
-  letter-spacing: 0.01em;
   transition: border-color 0.2s ease, background-color 0.2s ease, color 0.2s ease, transform 0.2s ease;
 }
 
@@ -361,74 +357,6 @@
 
 .viewer-following-label {
   color: rgba(255, 255, 255, 0.65);
-}
-
-.viewer-mode-button {
-  border: 1px solid rgba(255, 255, 255, 0.25);
-  border-radius: 0.5rem;
-  padding: 0.4rem 0.95rem;
-  background: rgba(12, 16, 24, 0.8);
-  color: rgba(255, 255, 255, 0.9);
-  font-size: var(--overlay-button-font-size);
-  font-weight: 600;
-  cursor: pointer;
-  transition: border-color 0.2s ease, background-color 0.2s ease, transform 0.2s ease;
-}
-
-.viewer-mode-button:hover {
-  border-color: rgba(91, 140, 255, 0.7);
-  background: rgba(91, 140, 255, 0.2);
-  transform: translateY(-1px);
-}
-
-.viewer-mode-button.is-active {
-  border-color: rgba(91, 140, 255, 0.7);
-  background: rgba(91, 140, 255, 0.25);
-}
-
-.viewer-mode-button.is-active:hover {
-  background: rgba(91, 140, 255, 0.35);
-}
-
-.viewer-stop-tracking {
-  border: 1px solid rgba(255, 255, 255, 0.25);
-  border-radius: 0.5rem;
-  padding: 0.4rem 0.95rem;
-  background: rgba(12, 16, 24, 0.8);
-  color: rgba(255, 255, 255, 0.9);
-  font-size: var(--overlay-button-font-size);
-  font-weight: 600;
-  cursor: pointer;
-  transition: border-color 0.2s ease, background-color 0.2s ease, transform 0.2s ease;
-}
-
-.viewer-stop-tracking:hover:not(:disabled) {
-  border-color: rgba(91, 140, 255, 0.7);
-  background: rgba(91, 140, 255, 0.2);
-  transform: translateY(-1px);
-}
-
-.viewer-stop-tracking.is-active {
-  background: #dc2626;
-  border-color: rgba(255, 255, 255, 0.35);
-  color: #ffffff;
-  box-shadow: 0 12px 24px rgba(220, 38, 38, 0.32);
-}
-
-.viewer-stop-tracking.is-active:hover {
-  background: #b91c1c;
-  border-color: rgba(255, 255, 255, 0.45);
-  transform: translateY(-1px);
-}
-
-.viewer-stop-tracking.is-active:focus-visible {
-  outline: 2px solid rgba(255, 255, 255, 0.9);
-  outline-offset: 2px;
-}
-
-.viewer-stop-tracking:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
 }
 
 .viewer canvas {

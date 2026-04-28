@@ -76,7 +76,8 @@ function createProps(isOpen: boolean) {
   assert.equal(rotationSlider.props.value, 0.8);
   assert.equal(perspectiveButton.props['aria-pressed'], true);
   assert.equal(isometricButton.props['aria-pressed'], false);
-  assert.equal(perspectiveButton.props.className, isometricButton.props.className);
+  assert.equal(perspectiveButton.props.className.includes('is-active'), true);
+  assert.equal(isometricButton.props.className.includes('is-active'), false);
 
   act(() => {
     translationSlider.props.onChange({ target: { value: '2.2' } });

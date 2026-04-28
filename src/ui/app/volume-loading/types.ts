@@ -87,5 +87,5 @@ export type RouteLayerVolumesState = {
   playbackLayerKeys: string[];
   playbackResidencyDecisionByLayerKey: Record<string, ResidencyDecision>;
   playbackAtlasScaleLevelByLayerKey: Record<string, number>;
-  handleLaunchViewer: (options?: LaunchViewerOptions) => Promise<void>;
+  handleLaunchViewer: (options?: LaunchViewerOptions) => Promise<boolean>;
 };

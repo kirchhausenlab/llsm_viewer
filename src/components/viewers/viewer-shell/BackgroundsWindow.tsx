@@ -1,6 +1,11 @@
 import { normalizeHexColor } from '../../../shared/colorMaps/layerColors';
 import FloatingWindow from '../../widgets/FloatingWindow';
 import type { BackgroundSettingsProps, Position } from './types';
+import {
+  ViewerWindowButton,
+  ViewerWindowSegmentedControl,
+  ViewerWindowStack,
+} from './window-ui';
 
 export type BackgroundsWindowProps = {
   layout: {
@@ -63,38 +68,28 @@ export default function BackgroundsWindow({
       onClose={onClose}
     >
       <div className="sidebar sidebar-right">
-        <div className="global-controls backgrounds-window__options" role="group" aria-label="Viewer backgrounds">
-          <button
+        <ViewerWindowStack className="backgrounds-window__options" role="group" aria-label="Viewer backgrounds">
+          <ViewerWindowButton
             id="viewer-background-reset"
             type="button"
             onClick={onResetToDefault}
             disabled={isResetDisabled}
           >
             Reset to Default
-          </button>
+          </ViewerWindowButton>
 
           <div className="backgrounds-window__row backgrounds-window__row--mode">
             <span className="backgrounds-window__label">Background:</span>
-            <div className="viewer-mode-row backgrounds-window__mode-row" role="group" aria-label="Background mode">
-              <button
-                id="viewer-background-mode-default"
-                type="button"
-                className={mode === 'default' ? 'viewer-mode-button is-active' : 'viewer-mode-button'}
-                aria-pressed={mode === 'default'}
-                onClick={() => onModeChange('default')}
-              >
-                Default
-              </button>
-              <button
-                id="viewer-background-mode-custom"
-                type="button"
-                className={mode === 'custom' ? 'viewer-mode-button is-active' : 'viewer-mode-button'}
-                aria-pressed={mode === 'custom'}
-                onClick={() => onModeChange('custom')}
-              >
-                Custom
-              </button>
-            </div>
+            <ViewerWindowSegmentedControl
+              className="viewer-mode-row backgrounds-window__mode-row"
+              ariaLabel="Background mode"
+              value={mode}
+              onChange={onModeChange}
+              options={[
+                { value: 'default', id: 'viewer-background-mode-default', content: 'Default' },
+                { value: 'custom', id: 'viewer-background-mode-custom', content: 'Custom' },
+              ]}
+            />
           </div>
 
           <div className="backgrounds-window__row">
@@ -151,7 +146,7 @@ export default function BackgroundsWindow({
               />
             </label>
           </div>
-        </div>
+        </ViewerWindowStack>
       </div>
     </FloatingWindow>
   );

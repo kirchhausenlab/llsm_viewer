@@ -49,7 +49,24 @@ function buildBaseProps() {
       onVoxelResolutionAxisChange: noop,
       onVoxelResolutionUnitChange: noop,
       onVoxelResolutionTimeUnitChange: noop,
-      onVoxelResolutionAnisotropyToggle: noop
+      onVoxelResolutionAnisotropyToggle: noop,
+      backgroundMaskEnabled: false,
+      backgroundMaskValuesInput: '',
+      backgroundMaskError: null,
+      onBackgroundMaskToggle: noop,
+      onBackgroundMaskValuesInputChange: noop,
+      force8BitRender: false,
+      onForce8BitRenderToggle: noop,
+      deSkewModeEnabled: false,
+      skewAngleInput: '31.5',
+      skewAngleUnit: 'degrees' as const,
+      skewDirection: 'X' as const,
+      deSkewMaskVoxels: true,
+      onDeSkewModeToggle: noop,
+      onSkewAngleInputChange: noop,
+      onSkewAngleUnitChange: noop,
+      onSkewDirectionChange: noop,
+      onDeSkewMaskVoxelsToggle: noop
     },
     preprocessedLoader: {
       isOpen: false,
@@ -237,7 +254,7 @@ test('front page preprocessed mode renders launch action', () => {
           totalVolumeCount: 5,
           manifest: {
             dataset: {
-              voxelResolution: { x: 0.2, y: 0.2, z: 0.8, unit: 'μm', correctAnisotropy: false },
+              voxelResolution: { x: 0.2, y: 0.2, z: 0.8, unit: 'μm' },
               temporalResolution: { interval: 2, unit: 's' }
             }
           },

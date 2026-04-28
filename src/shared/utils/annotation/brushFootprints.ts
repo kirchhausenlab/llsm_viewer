@@ -1,4 +1,4 @@
-import type { AnnotateDimensionMode } from '../../../types/annotation';
+import type { AnnotateBrushShape, AnnotateDimensionMode } from '../../../types/annotation';
 
 export type BrushOffset = {
   dx: number;
@@ -17,10 +17,11 @@ function normalizeRadius(radius: number): number {
 
 export function computeAnnotationBrushOffsets(
   radius: number,
-  mode: AnnotateDimensionMode
+  mode: AnnotateDimensionMode,
+  shape: AnnotateBrushShape = 'circle'
 ): BrushOffset[] {
   const safeRadius = normalizeRadius(radius);
-  const key = `${mode}:${safeRadius}`;
+  const key = `${mode}:${shape}:${safeRadius}`;
   const cached = footprintCache.get(key);
   if (cached) {
     return cached;
@@ -37,7 +38,7 @@ export function computeAnnotationBrushOffsets(
   for (let dz = mode === '2d' ? 0 : -safeRadius + 1; dz <= (mode === '2d' ? 0 : safeRadius - 1); dz += 1) {
     for (let dy = -safeRadius + 1; dy <= safeRadius - 1; dy += 1) {
       for (let dx = -safeRadius + 1; dx <= safeRadius - 1; dx += 1) {
-        if (dx * dx + dy * dy + dz * dz < threshold) {
+        if (shape === 'square' || dx * dx + dy * dy + dz * dz < threshold) {
           offsets.push({ dx, dy, dz });
         }
       }

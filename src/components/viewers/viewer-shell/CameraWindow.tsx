@@ -1,5 +1,19 @@
 import FloatingWindow from '../../widgets/FloatingWindow';
+import { useViewerWindowActionColumnHeight } from './hooks/useViewerWindowActionColumnHeight';
 import type { LayoutProps } from './types';
+import {
+  ViewerWindowButton,
+  ViewerWindowDivider,
+  ViewerWindowEmptyState,
+  ViewerWindowManager,
+  ViewerWindowManagerActions,
+  ViewerWindowManagerItem,
+  ViewerWindowManagerItemLabel,
+  ViewerWindowManagerList,
+  ViewerWindowRow,
+  ViewerWindowSlider,
+  ViewerWindowStack,
+} from './window-ui';
 import type { SavedCameraView } from '../../../types/camera';
 import { CAMERA_WINDOW_WIDTH } from '../../../shared/utils/windowLayout';
 
@@ -94,6 +108,8 @@ export default function CameraWindow({
   onSelectView,
   onClose,
 }: CameraWindowProps) {
+  const { actionsRef, managerStyle } = useViewerWindowActionColumnHeight();
+
   return (
     <FloatingWindow
       title="View selection"
@@ -103,7 +119,7 @@ export default function CameraWindow({
       resetSignal={resetSignal}
       onClose={onClose}
     >
-      <div className="camera-window">
+      <ViewerWindowStack className="camera-window">
         <fieldset className="camera-window-fieldset" disabled={!translationEnabled}>
           <div className="camera-window-grid camera-window-grid--triple">
             {AXES.map((axis) => (
@@ -124,33 +140,31 @@ export default function CameraWindow({
         <fieldset className="camera-window-fieldset" disabled={!rotationEnabled}>
           <div className="camera-window-rotation-list">
             {ROTATION_AXES.map((axis) => (
-              <label key={axis} className="camera-window-slider camera-window-slider--rotation">
-                <span className="camera-window-slider-label">
-                  {axis[0].toUpperCase() + axis.slice(1)} <span>{formatAngle(cameraRotationDraft[axis])}</span>
-                </span>
-                <input
-                  id={`camera-rotation-${axis}`}
-                  type="range"
-                  min={-180}
-                  max={180}
-                  step="0.1"
-                  value={cameraRotationDraft[axis]}
-                  onChange={(event) => onCameraRotationChange(axis, event.target.value)}
-                />
-              </label>
+              <ViewerWindowSlider
+                key={axis}
+                id={`camera-rotation-${axis}`}
+                className="camera-window-slider camera-window-slider--rotation"
+                label={axis[0].toUpperCase() + axis.slice(1)}
+                valueLabel={formatAngle(cameraRotationDraft[axis])}
+                min={-180}
+                max={180}
+                step="0.1"
+                value={cameraRotationDraft[axis]}
+                onChange={(event) => onCameraRotationChange(axis, event.target.value)}
+              />
             ))}
           </div>
         </fieldset>
 
-        <div className="camera-window-row camera-window-row--update">
-          <button type="button" onClick={onApplyCameraUpdate} disabled={!canUpdate}>
+        <ViewerWindowRow className="camera-window-row camera-window-row--update" justify="center">
+          <ViewerWindowButton type="button" onClick={onApplyCameraUpdate} disabled={!canUpdate}>
             Update view
-          </button>
-        </div>
+          </ViewerWindowButton>
+        </ViewerWindowRow>
 
         <div className="camera-window-section">
           <span className="camera-window-section-label camera-window-section-label--centered">Voxel to follow:</span>
-          <div className="camera-window-row camera-window-row--follow">
+          <ViewerWindowRow className="camera-window-row camera-window-row--follow" justify="center">
             <div className="camera-window-follow-inputs">
               {AXES.map((axis) => (
                 <label key={axis} className="camera-window-inline-input">
@@ -167,68 +181,66 @@ export default function CameraWindow({
                 </label>
               ))}
             </div>
-          </div>
-          <div className="camera-window-row camera-window-row--follow-action">
-            <button type="button" onClick={onVoxelFollowButtonClick} disabled={voxelFollowButtonDisabled}>
+          </ViewerWindowRow>
+          <ViewerWindowRow className="camera-window-row camera-window-row--follow-action" justify="center">
+            <ViewerWindowButton type="button" onClick={onVoxelFollowButtonClick} disabled={voxelFollowButtonDisabled}>
               {voxelFollowButtonLabel}
-            </button>
-          </div>
+            </ViewerWindowButton>
+          </ViewerWindowRow>
         </div>
 
-        <div className="camera-window-divider" aria-hidden="true" />
+        <ViewerWindowDivider className="camera-window-divider" aria-hidden="true" />
 
-        <div className="camera-window-library">
-          <div className="roi-manager-list camera-window-views" role="listbox" aria-label="Saved camera views">
+        <ViewerWindowManager className="camera-window-library" style={managerStyle}>
+          <ViewerWindowManagerList className="roi-manager-list camera-window-views" aria-label="Saved camera views">
             {savedViews.length > 0 ? (
               savedViews.map((view) => {
                 const isSelected = selectedViewId === view.id;
                 return (
-                  <button
+                  <ViewerWindowManagerItem
                     key={view.id}
                     type="button"
                     role="listitem"
-                    className={[
-                      'roi-manager-list-item',
-                      'camera-window-view',
-                      isSelected ? 'is-selected' : '',
-                    ]
-                      .filter(Boolean)
-                      .join(' ')}
-                    aria-selected={isSelected}
+                    className="roi-manager-list-item camera-window-view"
+                    selected={isSelected}
                     disabled={!canActivateViews}
                     onClick={() => onSelectView(view.id)}
                   >
-                    <span className="roi-manager-list-item-label camera-window-view-label">{view.label}</span>
-                  </button>
+                    <ViewerWindowManagerItemLabel className="roi-manager-list-item-label camera-window-view-label">
+                      {view.label}
+                    </ViewerWindowManagerItemLabel>
+                  </ViewerWindowManagerItem>
                 );
               })
             ) : (
-              <p className="roi-manager-empty-state camera-window-empty-state">No saved views.</p>
+              <ViewerWindowEmptyState className="roi-manager-empty-state camera-window-empty-state">
+                No saved views.
+              </ViewerWindowEmptyState>
             )}
-          </div>
+          </ViewerWindowManagerList>
 
-          <div className="roi-manager-actions camera-window-actions">
-            <button type="button" onClick={onAddView} disabled={!canAddView}>
+          <ViewerWindowManagerActions className="roi-manager-actions camera-window-actions" ref={actionsRef}>
+            <ViewerWindowButton type="button" onClick={onAddView} disabled={!canAddView}>
               Add
-            </button>
-            <button type="button" onClick={onRemoveView} disabled={!canRemoveView}>
+            </ViewerWindowButton>
+            <ViewerWindowButton type="button" onClick={onRemoveView} disabled={!canRemoveView}>
               Delete
-            </button>
-            <button type="button" onClick={onRenameView} disabled={!canRemoveView}>
+            </ViewerWindowButton>
+            <ViewerWindowButton type="button" onClick={onRenameView} disabled={!canRemoveView}>
               Rename
-            </button>
-            <button type="button" onClick={onSaveViews} disabled={!canSaveViews}>
+            </ViewerWindowButton>
+            <ViewerWindowButton type="button" onClick={onSaveViews} disabled={!canSaveViews}>
               Save
-            </button>
-            <button type="button" onClick={onLoadViews} disabled={!canLoadViews}>
+            </ViewerWindowButton>
+            <ViewerWindowButton type="button" onClick={onLoadViews} disabled={!canLoadViews}>
               Load
-            </button>
-            <button type="button" onClick={onClearViews} disabled={!canClearViews}>
+            </ViewerWindowButton>
+            <ViewerWindowButton type="button" onClick={onClearViews} disabled={!canClearViews}>
               Clear
-            </button>
-          </div>
-        </div>
-      </div>
+            </ViewerWindowButton>
+          </ViewerWindowManagerActions>
+        </ViewerWindowManager>
+      </ViewerWindowStack>
     </FloatingWindow>
   );
 }

@@ -2,26 +2,30 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import type {
   AnnotateBrushMode,
+  AnnotateBrushShape,
   AnnotateDimensionMode,
+  AnnotateHoverMode,
   AnnotateSourceOption,
   EditableSegmentationChannel,
   EditableSegmentationLabel,
+  EditableSegmentationTimepointState,
   LoadedEditableSegmentationCopy,
 } from '../../types/annotation';
 import type { LoadedDatasetLayer } from '../dataset';
 import type { ViewerLayer } from '../../ui/contracts/viewerLayer';
 import type { VolumeBrickAtlas } from '../../core/volumeProvider';
+import type { LayerSettings } from '../../state/layerSettings';
 import {
   buildEditableSegmentationBrickAtlas,
   clearEditableSegmentationChannelInPlace,
   cloneEditableSegmentationChannel,
-  cloneTimepointLabelMap,
+  cloneEditableTimepointStateMap,
   createEditableLoadedDatasetLayer,
   createEditableSegmentationChannel,
   createEditableViewerLayer,
   deleteEditableLabelInPlace,
-  getEditableTimepointLabels,
-  getOrCreateEditableTimepointLabels,
+  getEditableLabelAtIndex,
+  setEditableLabelAtIndex,
   hasEditableLabelVoxels,
   MAX_ANNOTATION_RADIUS,
   MIN_ANNOTATION_RADIUS,
@@ -34,7 +38,7 @@ import {
 type HistorySnapshot = {
   labels: EditableSegmentationLabel[];
   activeLabelIndex: number;
-  timepointLabels: Map<number, Uint32Array>;
+  timepoints: Map<number, EditableSegmentationTimepointState>;
 };
 
 type StrokeHistoryEntry = {
@@ -44,6 +48,10 @@ type StrokeHistoryEntry = {
   indices: Uint32Array;
   before: Uint32Array;
   after: Uint32Array;
+  beforeLabels?: EditableSegmentationLabel[];
+  beforeActiveLabelIndex?: number;
+  afterLabels?: EditableSegmentationLabel[];
+  afterActiveLabelIndex?: number;
 };
 
 type SnapshotHistoryEntry = {
@@ -60,8 +68,13 @@ type StrokeState = {
   timepoint: number;
   mode: AnnotateDimensionMode;
   brushMode: AnnotateBrushMode;
+  brushShape: AnnotateBrushShape;
   radius: number;
   labelId: number;
+  autoCreateLabel: boolean;
+  createdLabel: boolean;
+  beforeLabels: EditableSegmentationLabel[] | null;
+  beforeActiveLabelIndex: number;
   touched: Map<number, number>;
   visitedCenters: Set<number>;
 };
@@ -80,6 +93,15 @@ type UseAnnotateOptions = {
   ) => Promise<LoadedEditableSegmentationCopy>;
   saveEditableChannel: (channel: EditableSegmentationChannel) => Promise<void>;
 };
+
+export type AnnotateCreateChannelOptions = {
+  name?: string;
+  sourceId?: string;
+};
+
+export type AnnotateCreateChannelResult =
+  | { ok: true; channelId: string }
+  | { ok: false; message: string };
 
 export type AnnotateController = {
   available: boolean;
@@ -101,13 +123,16 @@ export type AnnotateController = {
   editableLayerBrickAtlases: Record<string, VolumeBrickAtlas | null>;
   setSelectedSourceId: (value: string) => void;
   setCreationName: (value: string) => void;
-  createChannel: () => Promise<void>;
+  createChannel: (options?: AnnotateCreateChannelOptions) => Promise<AnnotateCreateChannelResult>;
+  deleteActiveChannel: () => void;
   setActiveChannelId: (channelId: string | null) => void;
   setChannelVisible: (channelId: string, visible: boolean) => void;
   setEnabled: (value: boolean) => void;
   setOverlayVisible: (value: boolean) => void;
   setMode: (value: AnnotateDimensionMode) => void;
   setBrushMode: (value: AnnotateBrushMode) => void;
+  setBrushShape: (value: AnnotateBrushShape) => void;
+  setHoverMode: (value: AnnotateHoverMode) => void;
   setRadius: (value: number) => void;
   setActiveLabelIndex: (value: number) => void;
   addLabel: () => void;
@@ -122,7 +147,7 @@ export type AnnotateController = {
   endStroke: () => void;
   resetTool: () => void;
   getEditableLoadedLayers: () => LoadedDatasetLayer[];
-  getEditableViewerLayers: () => ViewerLayer[];
+  getEditableViewerLayers: (layerSettingsByKey?: Record<string, LayerSettings | undefined>) => ViewerLayer[];
   getEditableChannelById: (channelId: string) => EditableSegmentationChannel | null;
 };
 
@@ -143,14 +168,14 @@ function snapshotChannel(channel: EditableSegmentationChannel): HistorySnapshot 
   return {
     labels: cloneLabels(channel.labels),
     activeLabelIndex: channel.activeLabelIndex,
-    timepointLabels: cloneTimepointLabelMap(channel.timepointLabels),
+    timepoints: cloneEditableTimepointStateMap(channel.timepoints),
   };
 }
 
 function restoreSnapshot(channel: EditableSegmentationChannel, snapshot: HistorySnapshot): void {
   channel.labels = cloneLabels(snapshot.labels);
   channel.activeLabelIndex = snapshot.activeLabelIndex;
-  channel.timepointLabels = cloneTimepointLabelMap(snapshot.timepointLabels);
+  channel.timepoints = cloneEditableTimepointStateMap(snapshot.timepoints);
 }
 
 function isNameConflict(name: string, baseChannelNames: Iterable<string>, channels: Iterable<EditableSegmentationChannel>): boolean {
@@ -292,21 +317,21 @@ export function useAnnotate({
     setCanRedo(false);
   }, []);
 
-  const createChannel = useCallback(async () => {
+  const createChannel = useCallback(async (
+    options: AnnotateCreateChannelOptions = {}
+  ): Promise<AnnotateCreateChannelResult> => {
     if (!available) {
-      setMessage(unavailableReason);
-      return;
+      return { ok: false, message: unavailableReason };
     }
-    const name = creationName.trim();
+    const name = (options.name ?? creationName).trim();
     if (!name) {
-      setMessage('Channel name is required.');
-      return;
+      return { ok: false, message: 'Channel name is required.' };
     }
     if (isNameConflict(name, baseChannelNamesRef.current, channelsRef.current.values())) {
-      setMessage('Channel name must be unique.');
-      return;
+      return { ok: false, message: 'Channel name must be unique.' };
     }
-    const source = sourceOptions.find((option) => option.id === selectedSourceId) ?? sourceOptions[0]!;
+    const requestedSourceId = options.sourceId ?? selectedSourceId;
+    const source = sourceOptions.find((option) => option.id === requestedSourceId) ?? sourceOptions[0]!;
     setBusy(true);
     setMessage(null);
     try {
@@ -346,7 +371,7 @@ export function useAnnotate({
             sourceWasEditable: Boolean(source.editableLabelNames),
           },
           labels: loaded.labels,
-          timepointLabels: loaded.timepointLabels,
+          timepoints: loaded.timepoints,
         });
       } else {
         channel = createEditableSegmentationChannel({
@@ -356,6 +381,7 @@ export function useAnnotate({
           dimensions,
           volumeCount,
           createdFrom: { kind: 'empty' },
+          labels: [],
         });
       }
 
@@ -363,10 +389,13 @@ export function useAnnotate({
       setChannelOrder((current) => [...current, channel.channelId]);
       setEditableVisibility((current) => ({ ...current, [channel.channelId]: true }));
       setActiveChannelIdState(channel.channelId);
-      setCreationName(`${name} copy`);
+      setCreationName(name);
+      setSelectedSourceId(source.id);
       markChanged(channel, true);
+      return { ok: true, channelId: channel.channelId };
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : String(error));
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      return { ok: false, message: errorMessage };
     } finally {
       setBusy(false);
     }
@@ -382,9 +411,51 @@ export function useAnnotate({
     volumeCount,
   ]);
 
+  const deleteActiveChannel = useCallback(() => {
+    const channelId = activeChannelId;
+    if (!channelId) {
+      return;
+    }
+    const channel = channelsRef.current.get(channelId);
+    if (!channel) {
+      return;
+    }
+    if (typeof globalThis.confirm === 'function') {
+      const confirmed = globalThis.confirm(`Delete annotation channel "${channel.name}"?`);
+      if (!confirmed) {
+        return;
+      }
+    }
+    channelsRef.current.delete(channelId);
+    undoStackRef.current = undoStackRef.current.filter((entry) => entry.channelId !== channelId);
+    redoStackRef.current = redoStackRef.current.filter((entry) => entry.channelId !== channelId);
+    if (strokeRef.current?.channelId === channelId) {
+      strokeRef.current = null;
+    }
+    setChannelOrder((current) => current.filter((entry) => entry !== channelId));
+    setEditableVisibility((current) => {
+      const next = { ...current };
+      delete next[channelId];
+      return next;
+    });
+    setActiveChannelIdState(null);
+    setMessage(null);
+    scheduleUiUpdate();
+  }, [activeChannelId, scheduleUiUpdate]);
+
   const setActiveChannelId = useCallback((channelId: string | null) => {
-    setActiveChannelIdState(channelId && channelsRef.current.has(channelId) ? channelId : null);
-  }, []);
+    const nextChannelId = channelId && channelsRef.current.has(channelId) ? channelId : null;
+    setActiveChannelIdState((current) => {
+      if (current && current !== nextChannelId) {
+        const previousChannel = channelsRef.current.get(current);
+        if (previousChannel) {
+          previousChannel.enabled = false;
+        }
+      }
+      return nextChannelId;
+    });
+    scheduleUiUpdate();
+  }, [scheduleUiUpdate]);
 
   const setChannelVisible = useCallback((channelId: string, visible: boolean) => {
     setEditableVisibility((current) => ({ ...current, [channelId]: visible }));
@@ -423,6 +494,18 @@ export function useAnnotate({
     }, false);
   }, [updateActiveChannel]);
 
+  const setBrushShape = useCallback((value: AnnotateBrushShape) => {
+    updateActiveChannel((channel) => {
+      channel.brushShape = value;
+    }, false);
+  }, [updateActiveChannel]);
+
+  const setHoverMode = useCallback((value: AnnotateHoverMode) => {
+    updateActiveChannel((channel) => {
+      channel.hoverMode = value;
+    }, false);
+  }, [updateActiveChannel]);
+
   const setRadius = useCallback((value: number) => {
     updateActiveChannel((channel) => {
       channel.radius = clampInt(value, MIN_ANNOTATION_RADIUS, MAX_ANNOTATION_RADIUS);
@@ -456,7 +539,7 @@ export function useAnnotate({
 
   const deleteActiveLabel = useCallback(() => {
     const channel = activeChannelId ? channelsRef.current.get(activeChannelId) ?? null : null;
-    if (!channel) {
+    if (!channel || channel.labels.length === 0) {
       return;
     }
     const labelId = channel.activeLabelIndex + 1;
@@ -473,7 +556,7 @@ export function useAnnotate({
 
   const renameActiveLabel = useCallback(() => {
     const channel = activeChannelId ? channelsRef.current.get(activeChannelId) ?? null : null;
-    if (!channel) {
+    if (!channel || channel.labels.length === 0) {
       return;
     }
     const current = channel.labels[channel.activeLabelIndex]?.name ?? '';
@@ -524,7 +607,13 @@ export function useAnnotate({
 
   const beginStroke = useCallback(() => {
     const channel = activeChannelId ? channelsRef.current.get(activeChannelId) ?? null : null;
-    if (!channel || !channel.enabled || channel.labels.length === 0) {
+    if (!channel || !channel.enabled) {
+      strokeRef.current = null;
+      return;
+    }
+    const isEraserStroke = channel.brushMode === 'eraser';
+    const autoCreateLabel = channel.labels.length === 0;
+    if (autoCreateLabel && isEraserStroke) {
       strokeRef.current = null;
       return;
     }
@@ -533,8 +622,13 @@ export function useAnnotate({
       timepoint: Math.max(0, Math.min(channel.volumeCount - 1, currentTimepointRef.current)),
       mode: channel.mode,
       brushMode: channel.brushMode,
+      brushShape: channel.brushShape,
       radius: channel.radius,
-      labelId: channel.activeLabelIndex + 1,
+      labelId: autoCreateLabel ? 1 : channel.activeLabelIndex + 1,
+      autoCreateLabel,
+      createdLabel: false,
+      beforeLabels: autoCreateLabel ? cloneLabels(channel.labels) : null,
+      beforeActiveLabelIndex: channel.activeLabelIndex,
       touched: new Map(),
       visitedCenters: new Set(),
     };
@@ -559,9 +653,10 @@ export function useAnnotate({
     }
     stroke.visitedCenters.add(centerIndex);
 
-    const labels = getOrCreateEditableTimepointLabels(channel, stroke.timepoint);
-    const nextLabel = stroke.brushMode === 'eraser' ? 0 : stroke.labelId;
-    for (const { dx, dy, dz } of computeAnnotationBrushOffsets(stroke.radius, stroke.mode)) {
+    const isEraserStroke = stroke.brushMode === 'eraser';
+    const nextLabel = isEraserStroke ? 0 : stroke.labelId;
+    let changed = false;
+    for (const { dx, dy, dz } of computeAnnotationBrushOffsets(stroke.radius, stroke.mode, stroke.brushShape)) {
       const x = safeX + dx;
       const y = safeY + dy;
       const z = safeZ + dz;
@@ -569,16 +664,27 @@ export function useAnnotate({
         continue;
       }
       const index = (z * height + y) * width + x;
-      const previous = labels[index] ?? 0;
+      const previous = getEditableLabelAtIndex(channel, stroke.timepoint, index);
+      if (isEraserStroke && previous !== stroke.labelId) {
+        continue;
+      }
       if (previous === nextLabel) {
         continue;
       }
       if (!stroke.touched.has(index)) {
         stroke.touched.set(index, previous);
       }
-      labels[index] = nextLabel;
+      if (stroke.autoCreateLabel && !stroke.createdLabel) {
+        channel.labels.push({ name: '' });
+        channel.activeLabelIndex = 0;
+        stroke.createdLabel = true;
+      }
+      const result = setEditableLabelAtIndex(channel, stroke.timepoint, index, nextLabel);
+      changed = changed || result.changed;
     }
-    markChanged(channel, true);
+    if (changed) {
+      markChanged(channel, true);
+    }
   }, [markChanged]);
 
   const endStroke = useCallback(() => {
@@ -588,15 +694,14 @@ export function useAnnotate({
       return;
     }
     const channel = channelsRef.current.get(stroke.channelId);
-    const labels = channel ? getEditableTimepointLabels(channel, stroke.timepoint) : null;
-    if (!channel || !labels) {
+    if (!channel) {
       return;
     }
     const indices: number[] = [];
     const before: number[] = [];
     const after: number[] = [];
     for (const [index, previous] of stroke.touched.entries()) {
-      const current = labels[index] ?? 0;
+      const current = getEditableLabelAtIndex(channel, stroke.timepoint, index);
       if (current === previous) {
         continue;
       }
@@ -614,6 +719,14 @@ export function useAnnotate({
       indices: Uint32Array.from(indices),
       before: Uint32Array.from(before),
       after: Uint32Array.from(after),
+      ...(stroke.createdLabel && stroke.beforeLabels
+        ? {
+            beforeLabels: cloneLabels(stroke.beforeLabels),
+            beforeActiveLabelIndex: stroke.beforeActiveLabelIndex,
+            afterLabels: cloneLabels(channel.labels),
+            afterActiveLabelIndex: channel.activeLabelIndex,
+          }
+        : {}),
     });
     markChanged(channel, true);
   }, [markChanged, pushHistory]);
@@ -626,10 +739,17 @@ export function useAnnotate({
     if (entry.kind === 'snapshot') {
       restoreSnapshot(channel, direction === 'undo' ? entry.before : entry.after);
     } else {
-      const labels = getOrCreateEditableTimepointLabels(channel, entry.timepoint);
+      if (direction === 'redo' && entry.afterLabels) {
+        channel.labels = cloneLabels(entry.afterLabels);
+        channel.activeLabelIndex = entry.afterActiveLabelIndex ?? 0;
+      }
       const source = direction === 'undo' ? entry.before : entry.after;
       for (let index = 0; index < entry.indices.length; index += 1) {
-        labels[entry.indices[index] ?? 0] = source[index] ?? 0;
+        setEditableLabelAtIndex(channel, entry.timepoint, entry.indices[index] ?? 0, source[index] ?? 0);
+      }
+      if (direction === 'undo' && entry.beforeLabels) {
+        channel.labels = cloneLabels(entry.beforeLabels);
+        channel.activeLabelIndex = entry.beforeActiveLabelIndex ?? 0;
       }
     }
     markChanged(channel, true);
@@ -680,12 +800,13 @@ export function useAnnotate({
   );
 
   const getEditableViewerLayers = useCallback(
-    () =>
+    (layerSettingsByKey?: Record<string, LayerSettings | undefined>) =>
       channels.map((channel) =>
         createEditableViewerLayer({
           channel,
           visible: editableVisibility[channel.channelId] ?? true,
           brickAtlas: editableLayerBrickAtlases[channel.layerKey] ?? null,
+          settings: layerSettingsByKey?.[channel.layerKey],
         })
       ),
     [channels, editableLayerBrickAtlases, editableVisibility]
@@ -716,12 +837,15 @@ export function useAnnotate({
     setSelectedSourceId,
     setCreationName,
     createChannel,
+    deleteActiveChannel,
     setActiveChannelId,
     setChannelVisible,
     setEnabled,
     setOverlayVisible,
     setMode,
     setBrushMode,
+    setBrushShape,
+    setHoverMode,
     setRadius,
     setActiveLabelIndex,
     addLabel,

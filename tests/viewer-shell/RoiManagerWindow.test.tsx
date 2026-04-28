@@ -6,8 +6,16 @@ import RoiManagerWindow from '../../src/components/viewers/viewer-shell/RoiManag
 
 console.log('Starting RoiManagerWindow tests');
 
+function findByClass(renderer: TestRenderer.ReactTestRenderer, className: string) {
+  return renderer.root.findAll(
+    (node) => typeof node.props.className === 'string' && node.props.className.split(/\s+/).includes(className),
+  );
+}
+
 (() => {
   const selectCalls: Array<{ roiId: string; additive: boolean | undefined }> = [];
+  let propertiesCalls = 0;
+  const showAllChanges: boolean[] = [];
   const renderer = TestRenderer.create(
     <RoiManagerWindow
       initialPosition={{ x: 0, y: 0 }}
@@ -58,10 +66,15 @@ console.log('Starting RoiManagerWindow tests');
       onDelete={() => {}}
       onRename={() => {}}
       onUpdate={() => {}}
+      onProperties={() => {
+        propertiesCalls += 1;
+      }}
       onMeasure={() => {}}
       onSave={() => {}}
       onLoad={() => {}}
-      onShowAllChange={() => {}}
+      onShowAllChange={(value) => {
+        showAllChanges.push(value);
+      }}
       onClose={() => {}}
     />
   );
@@ -73,15 +86,23 @@ console.log('Starting RoiManagerWindow tests');
   assert.equal(roiButtons[0]!.props.className.includes('is-selected'), false);
   assert.equal(roiButtons[1]!.props.className.includes('is-active'), true);
   assert.equal(roiButtons[2]!.props.className.includes('is-selected'), true);
+  assert.equal(roiButtons[0]!.props.title, 'ROI 1');
+  assert.equal(roiButtons[1]!.props.title, 'ROI 2');
+  assert.equal(roiButtons[2]!.props.title, 'ROI 3');
 
-  const badges = renderer.root.findAllByProps({ className: 'roi-manager-selection-badge' });
-  const activeBadges = renderer.root.findAllByProps({ className: 'roi-manager-selection-badge is-active' });
+  const badges = findByClass(renderer, 'roi-manager-selection-badge')
+    .filter((node) => node.type === 'span' && !node.props.className.includes('is-active'));
+  const activeBadges = findByClass(renderer, 'roi-manager-selection-badge')
+    .filter((node) => node.type === 'span' && node.props.className.includes('is-active'));
   assert.deepEqual(activeBadges.map((badge) => badge.children.join('')), ['1']);
   assert.deepEqual(badges.map((badge) => badge.children.join('')), ['2']);
   assert.equal(
     renderer.root.findAll((node) => node.type === 'button' && node.children.join('') === 'Properties').length,
-    0,
+    1,
   );
+  const showAllCheckbox = renderer.root.findByProps({ id: 'roi-manager-show-all-toggle' });
+  assert.equal(showAllCheckbox.props.type, 'checkbox');
+  assert.equal(showAllCheckbox.props.checked, false);
 
   act(() => {
     roiButtons[0]!.props.onClick({ shiftKey: false });
@@ -89,11 +110,19 @@ console.log('Starting RoiManagerWindow tests');
   act(() => {
     roiButtons[2]!.props.onClick({ shiftKey: true });
   });
+  act(() => {
+    renderer.root.find((node) => node.type === 'button' && node.children.join('') === 'Properties').props.onClick();
+  });
+  act(() => {
+    showAllCheckbox.props.onChange({ target: { checked: true } });
+  });
 
   assert.deepEqual(selectCalls, [
     { roiId: 'roi-1', additive: false },
     { roiId: 'roi-3', additive: true },
   ]);
+  assert.equal(propertiesCalls, 1);
+  assert.deepEqual(showAllChanges, [true]);
 
   renderer.unmount();
 })();

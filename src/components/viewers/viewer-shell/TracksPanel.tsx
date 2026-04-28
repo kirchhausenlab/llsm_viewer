@@ -10,6 +10,7 @@ import { createDefaultTrackSetState } from '../../../hooks/tracks/useTrackStylin
 import FloatingWindow from '../../widgets/FloatingWindow';
 import TrackSettingsWindow from '../../widgets/TrackSettingsWindow';
 import type { LayoutProps, TrackDefaults, TrackSettingsProps, TracksPanelProps } from './types';
+import { ViewerWindowButton, ViewerWindowSlider } from './window-ui';
 
 export type TracksPanelWindowProps = TracksPanelProps & {
   layout: Pick<
@@ -132,14 +133,14 @@ export default function TracksPanel({
               {activeTrackSet ? (
                 <div className="track-current-row">
                   <span className="track-current-title">{activeTrackSet.name || 'Tracks'}</span>
-                  <button
+                  <ViewerWindowButton
                     type="button"
                     className="track-order-toggle track-current-visibility-button"
                     onClick={() => onTrackVisibilityAllChange(activeTrackSet.id, !activeTrackSetVisible)}
                     title={activeTrackSetVisible ? 'Hide current track set' : 'Show current track set'}
                   >
                     {activeTrackSetVisible ? 'Hide' : 'Show'}
-                  </button>
+                  </ViewerWindowButton>
                 </div>
               ) : null}
               {trackSets.map((trackSet) => {
@@ -191,13 +192,11 @@ export default function TracksPanel({
                     <div className="track-panel-body">
                       <div className="track-filters">
                         <div className="track-length-filter">
-                          <label htmlFor={`track-length-${trackSet.id}`}>
-                            Min length <span>{pendingMinimumTrackLength}</span>
-                          </label>
                           <div className="track-length-input-row">
-                            <input
+                            <ViewerWindowSlider
                               id={`track-length-${trackSet.id}`}
-                              type="range"
+                              label="Min length"
+                              valueLabel={pendingMinimumTrackLength}
                               min={trackLengthBounds.min}
                               max={trackLengthBounds.max}
                               step={0.1}
@@ -205,47 +204,39 @@ export default function TracksPanel({
                               onChange={(event) => onMinimumTrackLengthChange(Number(event.target.value))}
                               disabled={!hasSetTracks}
                             />
-                            <button
+                            <ViewerWindowButton
                               type="button"
                               className="track-length-apply"
                               onClick={onMinimumTrackLengthApply}
                               disabled={!hasSetTracks || pendingMinimumTrackLength === minimumTrackLength}
                             >
                               Apply
-                            </button>
+                            </ViewerWindowButton>
                           </div>
                         </div>
                         <div className="track-slider-row">
-                          <div className="slider-control">
-                            <label htmlFor={`track-opacity-${trackSet.id}`}>
-                              Opacity <span>{Math.round(opacity * 100)}%</span>
-                            </label>
-                            <input
-                              id={`track-opacity-${trackSet.id}`}
-                              type="range"
-                              min={0}
-                              max={1}
-                              step={0.05}
-                              value={opacity}
-                              onChange={(event) => onTrackOpacityChange(trackSet.id, Number(event.target.value))}
-                              disabled={tracksForSet.length === 0}
-                            />
-                          </div>
-                          <div className="slider-control">
-                            <label htmlFor={`track-linewidth-${trackSet.id}`}>
-                              Thickness <span>{lineWidth.toFixed(1)}</span>
-                            </label>
-                            <input
-                              id={`track-linewidth-${trackSet.id}`}
-                              type="range"
-                              min={0.5}
-                              max={5}
-                              step={0.1}
-                              value={lineWidth}
-                              onChange={(event) => onTrackLineWidthChange(trackSet.id, Number(event.target.value))}
-                              disabled={tracksForSet.length === 0}
-                            />
-                          </div>
+                          <ViewerWindowSlider
+                            id={`track-opacity-${trackSet.id}`}
+                            label="Opacity"
+                            valueLabel={`${Math.round(opacity * 100)}%`}
+                            min={0}
+                            max={1}
+                            step={0.05}
+                            value={opacity}
+                            onChange={(event) => onTrackOpacityChange(trackSet.id, Number(event.target.value))}
+                            disabled={tracksForSet.length === 0}
+                          />
+                          <ViewerWindowSlider
+                            id={`track-linewidth-${trackSet.id}`}
+                            label="Thickness"
+                            valueLabel={lineWidth.toFixed(1)}
+                            min={0.5}
+                            max={5}
+                            step={0.1}
+                            value={lineWidth}
+                            onChange={(event) => onTrackLineWidthChange(trackSet.id, Number(event.target.value))}
+                            disabled={tracksForSet.length === 0}
+                          />
                         </div>
                       </div>
                       <div className="track-color-control">
@@ -313,15 +304,16 @@ export default function TracksPanel({
                           <span className="track-list-summary">
                             Shown tracks: <strong>{summary.visible}</strong>
                           </span>
-                          <button
+                          <ViewerWindowButton
                             type="button"
                             className={orderMode === 'length' ? 'track-order-toggle is-active' : 'track-order-toggle'}
+                            active={orderMode === 'length'}
                             onClick={() => onTrackOrderToggle(trackSet.id)}
                             disabled={tracksForSet.length === 0}
                             aria-pressed={orderMode === 'length'}
                           >
                             {orderMode === 'length' ? 'Order by ID' : 'Order by length'}
-                          </button>
+                          </ViewerWindowButton>
                         </div>
                         {tracksForSet.length > 0 ? (
                           <div className="track-list" role="group" aria-label={`${trackSet.name ?? 'Tracks'} visibility`}>
@@ -369,14 +361,15 @@ export default function TracksPanel({
                                     </span>
                                   </button>
                                   {shouldShowFollowButton ? (
-                                    <button
+                                    <ViewerWindowButton
                                       type="button"
                                       className={isFollowed ? 'track-follow-button is-active' : 'track-follow-button'}
+                                      active={isFollowed}
                                       onClick={() => onTrackFollow(track.id)}
                                       aria-pressed={isFollowed}
                                     >
                                       {isFollowed ? 'Following' : 'Follow'}
-                                    </button>
+                                    </ViewerWindowButton>
                                   ) : (
                                     <span className="track-follow-placeholder" aria-hidden="true" />
                                   )}

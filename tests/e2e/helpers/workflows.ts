@@ -17,6 +17,7 @@ export type ChannelFixtureSetup = {
 type LaunchSetupOptions = {
   voxelResolution: { x: string; y: string; z: string };
   renderIn16Bit?: boolean;
+  force8BitRender?: boolean;
 };
 
 export const STANDARD_VOXEL_RESOLUTION = { x: '1', y: '1', z: '1' } as const;
@@ -40,8 +41,8 @@ export async function launchViewerFromChannelFixtures(
   await page.getByLabel('X:').fill(voxelResolution.x);
   await page.getByLabel('Y:').fill(voxelResolution.y);
   await page.getByLabel('Z:').fill(voxelResolution.z);
-  if (options.renderIn16Bit) {
-    await page.getByRole('checkbox', { name: 'Render in 16bit' }).check();
+  if (options.force8BitRender || options.renderIn16Bit === false) {
+    await page.getByRole('checkbox', { name: 'Force 8bit render (performance)' }).check();
   }
 
   const channelSection = page

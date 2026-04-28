@@ -529,8 +529,6 @@ type VolumeUniforms = {
   u_cameraNearFar: { value: Vector2 };
   u_roiOcclusionDepthTexture: { value: DataTexture | null };
   u_roiOcclusionViewport: { value: Vector2 };
-  u_segmentationLabels: { value: Data3DTexture | null };
-  u_segmentationVolumeSize: { value: Vector3 };
   u_segmentationBrickAtlasData: { value: Data3DTexture | null };
   u_backgroundMaskEnabled: { value: number };
   u_backgroundMask: { value: Data3DTexture | null };
@@ -602,8 +600,6 @@ const uniforms = {
   u_cameraNearFar: { value: new Vector2(0.0001, 1000) },
   u_roiOcclusionDepthTexture: { value: null as DataTexture | null },
   u_roiOcclusionViewport: { value: new Vector2(1, 1) },
-  u_segmentationLabels: { value: null as Data3DTexture | null },
-  u_segmentationVolumeSize: { value: new Vector3(1, 1, 1) },
   u_segmentationBrickAtlasData: { value: null as Data3DTexture | null },
   u_backgroundMaskEnabled: { value: 0 },
   u_backgroundMask: { value: null as Data3DTexture | null },
@@ -698,8 +694,6 @@ const volumeRenderFragmentShader = /* glsl */ `
     uniform vec2 u_cameraNearFar;
     uniform sampler2D u_roiOcclusionDepthTexture;
     uniform vec2 u_roiOcclusionViewport;
-    uniform sampler3D u_segmentationLabels;
-    uniform vec3 u_segmentationVolumeSize;
     uniform sampler3D u_segmentationBrickAtlasData;
     uniform sampler2D u_segmentationPalette;
     uniform float u_backgroundMaskEnabled;
@@ -1615,7 +1609,7 @@ const volumeRenderFragmentShader = /* glsl */ `
       #if defined(VOLUME_SOURCE_ATLAS)
         return max(u_brickVolumeSize, vec3(1.0));
       #else
-        return max(u_segmentationVolumeSize, vec3(1.0));
+        return vec3(1.0);
       #endif
     }
 
@@ -2655,6 +2649,12 @@ const volumeRenderFragmentShader = /* glsl */ `
         gl_FragColor = vec4(0.0);
         return;
       }
+
+#if defined(VOLUME_SEGMENTATION_EXACT_BATCH_PASS) && __VERSION__ >= 300
+      gl_FragDepth = volume_texcoords_to_clip_depth(hitLoc);
+#elif defined(VOLUME_SEGMENTATION_EXACT_BATCH_PASS) && defined(GL_EXT_frag_depth)
+      gl_FragDepthEXT = volume_texcoords_to_clip_depth(hitLoc);
+#endif
 
       vec4 color = segmentation_color_from_label_bytes(hitLabelBytes);
       vec3 V = normalize(view_ray);

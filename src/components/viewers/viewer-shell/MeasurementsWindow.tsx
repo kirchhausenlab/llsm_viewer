@@ -1,4 +1,10 @@
 import FloatingWindow from '../../widgets/FloatingWindow';
+import {
+  ViewerWindowButton,
+  ViewerWindowEmptyState,
+  ViewerWindowRow,
+  ViewerWindowStack,
+} from './window-ui';
 import type { LayoutProps } from './types';
 import type { RoiMeasurementMetricKey, RoiMeasurementSettings, RoiMeasurementsSnapshot } from '../../../types/roiMeasurements';
 import { ROI_MEASUREMENT_METRIC_ORDER } from '../../../types/roiMeasurements';
@@ -55,15 +61,15 @@ export default function MeasurementsWindow({
       className="floating-window--measurements"
       onClose={onClose}
     >
-      <div className="measurements-window">
-        <div className="measurements-window-actions">
-          <button type="button" onClick={onOpenSettings}>
+      <ViewerWindowStack className="measurements-window">
+        <ViewerWindowRow className="measurements-window-actions" justify="end" wrap>
+          <ViewerWindowButton type="button" onClick={onOpenSettings}>
             Set measurements
-          </button>
-          <button type="button" onClick={onSave}>
+          </ViewerWindowButton>
+          <ViewerWindowButton type="button" onClick={onSave}>
             Save
-          </button>
-        </div>
+          </ViewerWindowButton>
+        </ViewerWindowRow>
 
         <div className="measurements-channel-row" role="group" aria-label="Displayed channels">
           {snapshot.channels.map((channel) => {
@@ -121,9 +127,9 @@ export default function MeasurementsWindow({
             </table>
           </div>
         ) : (
-          <p className="measurements-empty-state">No channels selected.</p>
+          <ViewerWindowEmptyState className="measurements-empty-state">No channels selected.</ViewerWindowEmptyState>
         )}
-      </div>
+      </ViewerWindowStack>
     </FloatingWindow>
   );
 }

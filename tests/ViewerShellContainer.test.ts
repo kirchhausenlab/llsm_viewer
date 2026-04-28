@@ -31,7 +31,6 @@ function createViewerShellContainerProps(): ViewerShellContainerProps {
         expectedVolumes: 0
       },
       tracks: {
-        trackScale: { x: 1, y: 1, z: 1 },
         tracks: [],
         trackSetStates: {},
         trackOpacityByTrackSet: {},

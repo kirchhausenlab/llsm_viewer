@@ -7,7 +7,7 @@ import { buildDefaultViewerPropWorldState } from '../../src/components/viewers/v
 import type { ViewerProp } from '../../src/types/viewerProps.ts';
 
 const TOTAL_TIMEPOINTS = 8;
-const VOXEL_RESOLUTION = { x: 2, y: 2, z: 4, unit: 'μm', correctAnisotropy: false } as const;
+const VOXEL_RESOLUTION = { x: 2, y: 2, z: 4, unit: 'μm' } as const;
 
 function withConfirmMock<T>(impl: (message: string) => boolean, test: () => T): T {
   const previous = (globalThis as typeof globalThis & { confirm?: typeof globalThis.confirm }).confirm;
@@ -17,6 +17,18 @@ function withConfirmMock<T>(impl: (message: string) => boolean, test: () => T): 
   } finally {
     (globalThis as typeof globalThis & { confirm?: typeof globalThis.confirm }).confirm = previous;
   }
+}
+
+function findByClassToken(renderer: TestRenderer.ReactTestRenderer, classToken: string) {
+  return renderer.root.findAll((node) => {
+    const className = node.props.className;
+    return typeof className === 'string' && className.split(/\s+/).includes(classToken);
+  })[0] ?? null;
+}
+
+function hasClassToken(node: TestRenderer.ReactTestInstance, classToken: string) {
+  const className = node.props.className;
+  return typeof className === 'string' && className.split(/\s+/).includes(classToken);
 }
 
 function createProp(): ViewerProp {
@@ -179,18 +191,19 @@ function createProp(): ViewerProp {
   );
 
   const buttons = renderer.root.findAllByType('button');
-  const actionRow = renderer.root.findByProps({ className: 'control-row props-window-action-row' });
-  const selectRow = renderer.root.findByProps({ className: 'control-row props-window-select-row' });
+  const actionRow = findByClassToken(renderer, 'props-window-action-row');
+  const selectRow = findByClassToken(renderer, 'props-window-select-row');
   const newPropButton = buttons.find((button) => button.props.children === 'New prop');
   assert.equal(newPropButton, undefined);
   const addNewPropButton = buttons.find((button) => button.props.children === 'Add new prop');
   assert.ok(addNewPropButton);
   assert.equal(buttons.some((button) => button.props.children === 'Add prop'), false);
   assert.equal(buttons.some((button) => button.props.children === 'On-screen'), true);
-  assert.equal(actionRow.children[0].props.children, 'Add new prop');
-  assert.equal(selectRow.children[0].props.className, 'props-window-select');
-  assert.equal(selectRow.children[1].props.children, 'Delete');
-  assert.equal(selectRow.children[2].props.children, 'Hide');
+  assert.ok(actionRow?.findAll((node) => node.type === 'button' && node.props.children === 'Add new prop').length);
+  assert.ok(selectRow?.findAll((node) => hasClassToken(node, 'props-window-select')).length);
+  assert.ok(selectRow?.findAll((node) => node.type === 'select' && node.props.id === 'props-selected-prop').length);
+  assert.ok(selectRow?.findAll((node) => node.type === 'button' && node.props.children === 'Delete').length);
+  assert.ok(selectRow?.findAll((node) => node.type === 'button' && node.props.children === 'Hide').length);
 
   const spans = renderer.root.findAllByType('span');
   assert.equal(spans.some((span) => span.props.children === 'Size:'), true);
@@ -284,8 +297,8 @@ function createProp(): ViewerProp {
   const buttons = renderer.root.findAllByType('button');
   assert.equal(buttons.some((button) => button.props.children === 'On-world'), true);
   assert.equal(buttons.some((button) => button.props.children === 'World-facing'), true);
-  const flipRow = renderer.root.findByProps({ className: 'viewer-mode-row props-flip-row' });
-  assert.equal(flipRow.children[2].props.children, 'Reset');
+  const flipRow = findByClassToken(renderer, 'props-flip-row');
+  assert.ok(flipRow?.findAll((node) => node.type === 'button' && node.props.children === 'Reset').length);
 
   const resetButton = buttons.find((button) => button.props.children === 'Reset');
   assert.ok(resetButton);
@@ -593,7 +606,7 @@ function createProp(): ViewerProp {
     false
   );
   assert.equal(
-    renderer.root.findAllByProps({ className: 'control-row props-editor-mode-row props-editor-span-2' }).length,
+    renderer.root.findAll((node) => hasClassToken(node, 'props-editor-mode-row')).length,
     0
   );
 

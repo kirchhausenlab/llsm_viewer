@@ -140,6 +140,7 @@ export type VolumeViewerLifecycleOptionGroups = {
     | 'followedTrackIdRef'
     | 'updateVoxelHover'
     | 'isRoiDrawToolActiveRef'
+    | 'isRoiMoveToolActiveRef'
     | 'isRoiDrawPreviewActiveRef'
     | 'isRoiMoveInteractionActiveRef'
     | 'isRoiMoveActiveRef'

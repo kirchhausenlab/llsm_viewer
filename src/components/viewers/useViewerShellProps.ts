@@ -53,7 +53,6 @@ function mapVolumeViewerProps({
     onRegisterVolumeStepScaleChange: viewerPanels.onRegisterVolumeStepScaleChange,
     onCameraNavigationSample: viewerPanels.onCameraNavigationSample,
     onRegisterReset: viewerPanels.onRegisterReset,
-    trackScale: viewerPanels.tracks.trackScale,
     tracks: viewerPanels.tracks.tracks,
     compiledTrackPayloadByTrackSet: viewerPanels.tracks.compiledTrackPayloadByTrackSet,
     onRequireTrackPayloads: viewerPanels.tracks.onRequireTrackPayloads,

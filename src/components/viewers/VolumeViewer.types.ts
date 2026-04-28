@@ -17,7 +17,7 @@ import type { ViewerLayer } from '../../ui/contracts/viewerLayer';
 import type { FollowedVoxelTarget } from '../../types/follow';
 import type { HoveredVoxelInfo, HoverSettings } from '../../types/hover';
 import type { AnnotationStrokeHandlers } from '../../types/annotation';
-import type { RoiDefinition, RoiDimensionMode, RoiTool, SavedRoi } from '../../types/roi';
+import type { RoiAlignment, RoiDefinition, RoiDimensionMode, RoiTool, SavedRoi } from '../../types/roi';
 import type {
   CompiledTrackSetPayload,
   CompiledTrackSummary,
@@ -35,6 +35,7 @@ import type {
   CameraWindowController,
   CameraWindowState,
 } from '../../types/camera';
+import type { SparseSegmentationExactBatchRenderState } from './volume-viewer/sparseSegmentationExactBatchedRenderer';
 import type {
   DesktopViewState,
   DesktopViewStateMap,
@@ -177,19 +178,20 @@ export type DesktopViewerBackgroundConfig = {
 };
 
 export type ViewerRoiConfig = {
-  isDrawWindowOpen: boolean;
+  isDrawToolActive: boolean;
+  isMoveToolActive: boolean;
   tool: RoiTool;
   dimensionMode: RoiDimensionMode;
   selectedZIndex: number;
-  twoDCurrentZEnabled: boolean;
-  twoDStartZIndex: number;
   defaultColor: string;
+  defaultAlignment: RoiAlignment;
+  deskew: { angleRadians: number; direction: 'X' | 'Y' } | null;
   workingRoi: RoiDefinition | null;
   savedRois: SavedRoi[];
   activeSavedRoiId: string | null;
   editingSavedRoiId: string | null;
   showAllSavedRois: boolean;
-  onWorkingRoiChange: (roi: RoiDefinition | null) => void;
+  onWorkingRoiChange: (roi: RoiDefinition | null, options?: { detach?: boolean }) => void;
   onSavedRoiActivate: (roiId: string) => void;
 };
 
@@ -254,7 +256,6 @@ export type VolumeViewerProps = {
       | (() => VolumeViewerCaptureTarget | HTMLCanvasElement | null)
       | null,
   ) => void;
-  trackScale: { x: number; y: number; z: number };
   tracks: CompiledTrackSummary[];
   compiledTrackPayloadByTrackSet: ReadonlyMap<string, CompiledTrackSetPayload>;
   onRequireTrackPayloads?: (trackSetIds: Iterable<string>) => void;
@@ -329,6 +330,25 @@ export type VolumeResources = {
   brickAtlasSlotGrid?: { x: number; y: number; z: number } | null;
   brickAtlasBuildVersion?: number;
   usesPrepackedPlaybackResidentAtlas?: boolean;
+  sparseSegmentationRenderDiagnostics?: {
+    strategy: 'full-resident-packed' | 'exact-batched';
+    reason?: 'texture-limit' | 'memory-budget' | 'page-table-limit' | 'allocation-limit' | null;
+    scaleLevel: number;
+    occupiedBrickCount: number;
+    requiredBrickCount: number;
+    residentBrickCount: number;
+    missingOccupiedBrickCount: number;
+    slotGrid: { x: number; y: number; z: number } | null;
+    atlasSize: { width: number; height: number; depth: number } | null;
+    atlasBytes: number;
+    max3DTextureSize: number | null;
+    maxTextureSize: number | null;
+    budgetBytes: number;
+    batchCount: number;
+    currentBatchIndex: number | null;
+    presentationState: 'loading' | 'complete' | 'stale' | 'error';
+  } | null;
+  sparseSegmentationExactBatchState?: SparseSegmentationExactBatchRenderState | null;
   backgroundMaskSourceToken?: object | null;
   proxyGeometrySignature?: string | null;
   playbackWarmupForLayerKey?: string | null;

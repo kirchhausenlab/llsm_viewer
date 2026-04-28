@@ -1,7 +1,14 @@
+import type { CSSProperties } from 'react';
+
 import FloatingWindow from '../../widgets/FloatingWindow';
+import {
+  ViewerWindowRow,
+  ViewerWindowSlider,
+  ViewerWindowStack,
+} from './window-ui';
 import type { LayoutProps } from './types';
-import type { RoiDefinition, RoiDimensionMode, RoiTool } from '../../../types/roi';
-import { ROI_COLOR_SWATCHES } from '../../../types/roi';
+import type { RoiAlignment, RoiDefinition, RoiDimensionMode } from '../../../types/roi';
+import { normalizeRoiAlignment, ROI_COLOR_SWATCHES } from '../../../types/roi';
 import { fromUserFacingVoxelIndex, toUserFacingVoxelIndex } from '../../../shared/utils/voxelIndex';
 
 type DrawRoiWindowProps = {
@@ -14,48 +21,17 @@ type DrawRoiWindowProps = {
     height: number;
     depth: number;
   };
-  tool: RoiTool;
   dimensionMode: RoiDimensionMode;
-  selectedZIndex: number;
   currentRoiName: string;
-  roiAttachmentState: 'none' | 'unsaved' | 'saved';
   currentColor: string;
+  currentAlignment: RoiAlignment;
+  glassAlignmentEnabled: boolean;
   workingRoi: RoiDefinition | null;
-  twoDCurrentZEnabled: boolean;
-  twoDStartZIndex: number;
-  onToolChange: (tool: RoiTool) => void;
-  onDimensionModeChange: (mode: RoiDimensionMode) => void;
   onColorChange: (color: string) => void;
-  onTwoDCurrentZEnabledChange: (enabled: boolean) => void;
-  onTwoDStartZIndexChange: (value: number) => void;
+  onAlignmentChange: (alignment: RoiAlignment) => void;
   onUpdateWorkingRoi: (updater: (current: RoiDefinition) => RoiDefinition) => void;
-  onClearOrDetach: () => void;
   onClose: () => void;
 };
-
-function LineIcon() {
-  return (
-    <svg viewBox="0 0 24 24" className="roi-tool-icon" aria-hidden="true">
-      <path d="M5 18 19 6" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-    </svg>
-  );
-}
-
-function RectangleIcon() {
-  return (
-    <svg viewBox="0 0 24 24" className="roi-tool-icon" aria-hidden="true">
-      <rect x="5" y="5" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" rx="1" />
-    </svg>
-  );
-}
-
-function EllipseIcon() {
-  return (
-    <svg viewBox="0 0 24 24" className="roi-tool-icon" aria-hidden="true">
-      <ellipse cx="12" cy="12" rx="7" ry="5.5" fill="none" stroke="currentColor" strokeWidth="2" />
-    </svg>
-  );
-}
 
 type AxisKey = keyof RoiDefinition['start'];
 
@@ -69,42 +45,64 @@ const clampCoordinate = (value: number, axis: AxisKey, volumeDimensions: DrawRoi
   return Math.min(max, Math.max(0, Math.round(value)));
 };
 
+function AxesGuideIcon() {
+  return (
+    <svg
+      className="viewer-top-menu-overlay-icon"
+      viewBox="0 0 24 24"
+      aria-hidden="true"
+      focusable="false"
+    >
+      <path d="M6 18h12" />
+      <path d="m15 15 3 3-3 3" />
+      <path d="M6 18V6" />
+      <path d="m3 9 3-3 3 3" />
+      <path d="M6 18 17 7" />
+      <path d="M13 7h4v4" />
+    </svg>
+  );
+}
+
+function GlassGuideIcon() {
+  return (
+    <svg
+      className="viewer-top-menu-overlay-icon"
+      viewBox="0 0 24 24"
+      aria-hidden="true"
+      focusable="false"
+    >
+      <path d="M8 4.5h10l-3 15H5l3-15Z" />
+      <path d="m10 7.5 5.4 0" />
+      <path d="m8.6 12.2 5.4 0" />
+      <path d="m6.8 17 5.4 0" />
+    </svg>
+  );
+}
+
 export default function DrawRoiWindow({
   initialPosition,
   windowMargin,
   controlWindowWidth,
   resetSignal,
   volumeDimensions,
-  tool,
   dimensionMode,
-  selectedZIndex,
   currentRoiName,
-  roiAttachmentState,
   currentColor,
+  currentAlignment,
+  glassAlignmentEnabled,
   workingRoi,
-  twoDCurrentZEnabled,
-  twoDStartZIndex,
-  onToolChange,
-  onDimensionModeChange,
   onColorChange,
-  onTwoDCurrentZEnabledChange,
-  onTwoDStartZIndexChange,
+  onAlignmentChange,
   onUpdateWorkingRoi,
-  onClearOrDetach,
   onClose,
 }: DrawRoiWindowProps) {
-  const hasAttachedRoi = workingRoi !== null;
-  const effectiveTool = workingRoi?.shape ?? tool;
   const effectiveDimensionMode = workingRoi?.mode ?? dimensionMode;
   const isTwoDMode = effectiveDimensionMode === '2d';
-  const actionButtonLabel = roiAttachmentState === 'saved' ? 'Detach' : 'Clear';
-  const actionButtonDisabled = roiAttachmentState === 'none';
+  const effectiveAlignment = workingRoi
+    ? normalizeRoiAlignment(workingRoi.alignment)
+    : normalizeRoiAlignment(currentAlignment);
 
   const handlePointCoordinateChange = (pointKey: 'start' | 'end', axis: AxisKey, nextValue: number) => {
-    if (!workingRoi && axis === 'z' && pointKey === 'start' && isTwoDMode) {
-      onTwoDStartZIndexChange(nextValue);
-      return;
-    }
     if (!workingRoi) {
       return;
     }
@@ -129,154 +127,41 @@ export default function DrawRoiWindow({
 
   return (
     <FloatingWindow
-      title="Draw ROI"
+      title="ROI properties"
       initialPosition={initialPosition}
       width={`min(${controlWindowWidth}px, calc(100vw - ${windowMargin * 2}px))`}
       resetSignal={resetSignal}
       className="floating-window--draw-roi"
       onClose={onClose}
     >
-      <div className="global-controls draw-roi-window">
-        <div className="control-row draw-roi-toolbar">
-          <div
-            className="draw-roi-segmented-control draw-roi-segmented-control--mode"
-            role="group"
-            aria-label="ROI dimension"
-          >
-            {(['2d', '3d'] as const).map((mode) => {
-              const isSelected = effectiveDimensionMode === mode;
-              return (
-                <button
-                  key={mode}
-                  type="button"
-                  className={isSelected ? 'draw-roi-segment-button is-active' : 'draw-roi-segment-button'}
-                  aria-pressed={isSelected}
-                  disabled={hasAttachedRoi}
-                  onClick={() => onDimensionModeChange(mode)}
-                >
-                  {mode.toUpperCase()}
-                </button>
-              );
-            })}
-          </div>
-
-          <div
-            className="draw-roi-segmented-control draw-roi-segmented-control--shape"
-            role="group"
-            aria-label="ROI drawing tool"
-          >
-            <button
-              type="button"
-              className={
-                effectiveTool === 'line'
-                  ? 'draw-roi-segment-button draw-roi-tool-button is-active'
-                  : 'draw-roi-segment-button draw-roi-tool-button'
-              }
-              aria-pressed={effectiveTool === 'line'}
-              aria-label="Line"
-              disabled={hasAttachedRoi}
-              onClick={() => onToolChange('line')}
-              title="Line"
-            >
-              <LineIcon />
-            </button>
-            <button
-              type="button"
-              className={
-                effectiveTool === 'rectangle'
-                  ? 'draw-roi-segment-button draw-roi-tool-button is-active'
-                  : 'draw-roi-segment-button draw-roi-tool-button'
-              }
-              aria-pressed={effectiveTool === 'rectangle'}
-              aria-label="Rectangle"
-              disabled={hasAttachedRoi}
-              onClick={() => onToolChange('rectangle')}
-              title="Rectangle"
-            >
-              <RectangleIcon />
-            </button>
-            <button
-              type="button"
-              className={
-                effectiveTool === 'ellipse'
-                  ? 'draw-roi-segment-button draw-roi-tool-button is-active'
-                  : 'draw-roi-segment-button draw-roi-tool-button'
-              }
-              aria-pressed={effectiveTool === 'ellipse'}
-              aria-label="Ellipse"
-              disabled={hasAttachedRoi}
-              onClick={() => onToolChange('ellipse')}
-              title="Ellipse"
-            >
-              <EllipseIcon />
-            </button>
-          </div>
-        </div>
-
+      <ViewerWindowStack className="draw-roi-window">
         <div className="draw-roi-sliders" role="group" aria-label="ROI coordinates">
           <div className="draw-roi-name-row">
             <span>{currentRoiName}</span>
-            <button
-              type="button"
-              className="draw-roi-action-button"
-              disabled={actionButtonDisabled}
-              onClick={onClearOrDetach}
-            >
-              {actionButtonLabel}
-            </button>
           </div>
-          {(['x', 'y', 'z'] as const).map((axis) => (
-            <div key={axis} className="control-row draw-roi-slider-row">
-              {(['start', 'end'] as const).map((pointKey) => {
-                if (axis === 'z' && pointKey === 'end' && isTwoDMode) {
+          {(['x', 'y', 'z'] as const).flatMap((axis) => {
+            if (axis === 'z' && isTwoDMode) {
+              return [];
+            }
+            return (
+              <ViewerWindowRow key={axis} className="draw-roi-slider-row">
+                {(['start', 'end'] as const).map((pointKey) => {
+                  const max =
+                    axis === 'x'
+                      ? Math.max(0, volumeDimensions.width - 1)
+                      : axis === 'y'
+                        ? Math.max(0, volumeDimensions.height - 1)
+                        : Math.max(0, volumeDimensions.depth - 1);
+                  const value = workingRoi ? workingRoi[pointKey][axis] : 0;
+                  const disabled = !workingRoi;
+
                   return (
-                    <div
-                      key="two-d-current-z"
-                      className="control-group control-group--slider draw-roi-slider-group draw-roi-slider-group--toggle"
-                    >
-                      <label htmlFor="draw-roi-current-z-toggle" className="draw-roi-checkbox-row">
-                        <input
-                          id="draw-roi-current-z-toggle"
-                          type="checkbox"
-                          checked={twoDCurrentZEnabled}
-                          onChange={(event) => onTwoDCurrentZEnabledChange(event.target.checked)}
-                        />
-                        <span>Current Z</span>
-                      </label>
-                    </div>
-                  );
-                }
-
-                const max =
-                  axis === 'x'
-                    ? Math.max(0, volumeDimensions.width - 1)
-                    : axis === 'y'
-                      ? Math.max(0, volumeDimensions.height - 1)
-                      : Math.max(0, volumeDimensions.depth - 1);
-                const value = (() => {
-                  if (axis === 'z' && pointKey === 'start' && isTwoDMode) {
-                    if (twoDCurrentZEnabled) {
-                      return workingRoi?.start.z ?? selectedZIndex;
-                    }
-                    return workingRoi?.start.z ?? twoDStartZIndex;
-                  }
-                  return workingRoi ? workingRoi[pointKey][axis] : 0;
-                })();
-                const disabled = (() => {
-                  if (axis === 'z' && pointKey === 'start' && isTwoDMode) {
-                    return twoDCurrentZEnabled;
-                  }
-                  return !workingRoi;
-                })();
-
-                return (
-                  <div key={`${pointKey}-${axis}`} className="control-group control-group--slider draw-roi-slider-group">
-                    <label htmlFor={`draw-roi-${pointKey}-${axis}-slider`}>
-                      {axis.toUpperCase()} {pointKey === 'start' ? 'Start' : 'End'} <span>{toUserFacingVoxelIndex(value)}</span>
-                    </label>
-                    <input
+                    <ViewerWindowSlider
+                      key={`${pointKey}-${axis}`}
                       id={`draw-roi-${pointKey}-${axis}-slider`}
-                      type="range"
+                      className="draw-roi-slider-group"
+                      label={`${axis.toUpperCase()} ${pointKey === 'start' ? 'Start' : 'End'}`}
+                      valueLabel={toUserFacingVoxelIndex(value)}
                       min={1}
                       max={max + 1}
                       step={1}
@@ -286,11 +171,56 @@ export default function DrawRoiWindow({
                         handlePointCoordinateChange(pointKey, axis, fromUserFacingVoxelIndex(Number(event.target.value)))
                       }
                     />
-                  </div>
-                );
-              })}
-            </div>
-          ))}
+                  );
+                })}
+              </ViewerWindowRow>
+            );
+          })}
+          {!isTwoDMode ? (
+            <ViewerWindowRow className="draw-roi-alignment-row" align="center">
+              <span className="draw-roi-alignment-label">Alignment:</span>
+              <div
+                className="viewer-top-menu-segmented-control viewer-top-menu-segmented-control--overlay draw-roi-alignment-control"
+                role="group"
+                aria-label="ROI alignment"
+                style={{ '--viewer-top-menu-segment-count': 2 } as CSSProperties}
+              >
+                <button
+                  type="button"
+                  className={
+                    effectiveAlignment === 'axes'
+                      ? 'viewer-top-menu-segment-button is-active'
+                      : 'viewer-top-menu-segment-button'
+                  }
+                  aria-label="Axes"
+                  aria-pressed={effectiveAlignment === 'axes'}
+                  title="Axes"
+                  onClick={() => onAlignmentChange('axes')}
+                >
+                  <AxesGuideIcon />
+                </button>
+                <button
+                  type="button"
+                  className={
+                    effectiveAlignment === 'glass'
+                      ? 'viewer-top-menu-segment-button is-active'
+                      : 'viewer-top-menu-segment-button'
+                  }
+                  aria-label="Glass"
+                  aria-pressed={effectiveAlignment === 'glass'}
+                  title={glassAlignmentEnabled ? 'Glass' : 'Glass alignment requires de-skew metadata.'}
+                  disabled={!glassAlignmentEnabled}
+                  onClick={() => {
+                    if (glassAlignmentEnabled) {
+                      onAlignmentChange('glass');
+                    }
+                  }}
+                >
+                  <GlassGuideIcon />
+                </button>
+              </div>
+            </ViewerWindowRow>
+          ) : null}
         </div>
 
         <div className="draw-roi-color-section">
@@ -332,7 +262,7 @@ export default function DrawRoiWindow({
             </div>
           </div>
         </div>
-      </div>
+      </ViewerWindowStack>
     </FloatingWindow>
   );
 }

@@ -77,6 +77,25 @@ console.log('Starting gpuBrickResidencyPacking tests');
 
 (() => {
   const pageTable = {
+    chunkShape: [32, 32, 32] as [number, number, number],
+    occupiedBrickCount: 765,
+    scaleLevel: 0,
+  };
+  const layout = resolveFullGpuBrickResidencyLayout({
+    pageTable,
+    textureComponents: 4,
+    max3DTextureSize: 16_384,
+  });
+  assert.ok(layout, 'expected ap2_iso-style scale-0 sparse segmentation bricks to fit as a packed layout');
+  assert.notDeepEqual(layout.atlasSize, { width: 32, height: 32, depth: 24_480 });
+  assert.ok(layout.atlasSize.width <= 16_384);
+  assert.ok(layout.atlasSize.height <= 16_384);
+  assert.ok(layout.atlasSize.depth <= 16_384);
+  assert.ok(layout.slotGrid.x > 1 || layout.slotGrid.y > 1);
+})();
+
+(() => {
+  const pageTable = {
     chunkShape: [2, 2, 2] as [number, number, number],
     occupiedBrickCount: 2,
     scaleLevel: 1,
