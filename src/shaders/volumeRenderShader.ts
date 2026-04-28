@@ -2656,6 +2656,12 @@ const volumeRenderFragmentShader = /* glsl */ `
         return;
       }
 
+#if defined(VOLUME_SEGMENTATION_EXACT_BATCH_PASS) && __VERSION__ >= 300
+      gl_FragDepth = volume_texcoords_to_clip_depth(hitLoc);
+#elif defined(VOLUME_SEGMENTATION_EXACT_BATCH_PASS) && defined(GL_EXT_frag_depth)
+      gl_FragDepthEXT = volume_texcoords_to_clip_depth(hitLoc);
+#endif
+
       vec4 color = segmentation_color_from_label_bytes(hitLabelBytes);
       vec3 V = normalize(view_ray);
       if (length(V) <= EPSILON) {

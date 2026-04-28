@@ -87,6 +87,7 @@ import {
   hasExplicitMaxBrickUploadsPerUpdate,
   resolveMaxBrickUploadsPerUpdate,
   resolveRendererMax3DTextureSize,
+  resolveRendererMaxTextureSize,
   updateGpuBrickResidency
 } from './gpuBrickResidency';
 import {
@@ -94,6 +95,15 @@ import {
   clearGpuBrickResidencyWorkerState,
   getOrStartGpuBrickResidencyWorkerBuild,
 } from './gpuBrickResidencyWorker';
+import {
+  areSparseSegmentationExactBatchStatesEquivalent,
+  createSparseSegmentationExactBatchRenderState,
+  disposeSparseSegmentationExactBatchRenderState,
+} from './sparseSegmentationExactBatchedRenderer';
+import {
+  planSparseSegmentationRender,
+  type SparseSegmentationRenderStrategy,
+} from './sparseSegmentationRenderPlanner';
 
 function isPlaybackFrameCacheEligibleLayer(layer: ManagedViewerLayer): boolean {
   if (!layer.visible) {
@@ -222,6 +232,8 @@ type BrickTextureBindingState = {
   brickAtlasSlotGrid?: { x: number; y: number; z: number } | null;
   brickAtlasBuildVersion?: number;
   usesPrepackedPlaybackResidentAtlas?: boolean;
+  sparseSegmentationRenderDiagnostics?: VolumeResources['sparseSegmentationRenderDiagnostics'];
+  sparseSegmentationExactBatchState?: VolumeResources['sparseSegmentationExactBatchState'];
   playbackWarmupForLayerKey?: string | null;
   playbackWarmupReady?: boolean | null;
   gpuBrickResidencyMetrics?: VolumeResources['gpuBrickResidencyMetrics'];
@@ -284,6 +296,11 @@ const ADAPTIVE_LOD_SCALE_LINEAR = 0.35;
 const ADAPTIVE_LOD_MAX_LINEAR = 0.75;
 const CAMERA_RESIDENCY_EPSILON_SQ = 0.25;
 const MAX_SKIP_HIERARCHY_LEVELS = 12;
+const DEFAULT_SPARSE_SEGMENTATION_MAX_3D_TEXTURE_SIZE = 4096;
+const DEFAULT_SPARSE_SEGMENTATION_MAX_TEXTURE_SIZE = 4096;
+const DEFAULT_SPARSE_SEGMENTATION_GPU_ATLAS_BYTES = 512 * 1024 * 1024;
+const DEFAULT_SPARSE_SEGMENTATION_SINGLE_ALLOCATION_BYTES = 512 * 1024 * 1024;
+const DEFAULT_SPARSE_SEGMENTATION_SAFETY_MARGIN_BYTES = 0;
 const LOD0_FLAGS = getLod0FeatureFlags();
 const sharedBackgroundMaskTextureCache = new WeakMap<object, {
   texture: THREE.Data3DTexture;
@@ -293,6 +310,60 @@ const brickAtlasIndexDataCache = new WeakMap<VolumeBrickPageTable, Float32Array>
 const normalizedUint16TextureDataCache = new WeakMap<Uint16Array, Float32Array>();
 const segmentationPaletteTextureCache = new Map<string, THREE.DataTexture>();
 const packedSegmentationTextureDataCache = new WeakMap<Uint16Array, Uint8Array>();
+
+function resolveNumericEnvValue(name: string): number {
+  const fromImportMeta = Number((import.meta as { env?: Record<string, unknown> })?.env?.[name] ?? Number.NaN);
+  if (Number.isFinite(fromImportMeta)) {
+    return fromImportMeta;
+  }
+  const fromProcessEnv =
+    typeof process !== 'undefined' && process?.env ? Number(process.env[name] ?? Number.NaN) : Number.NaN;
+  return fromProcessEnv;
+}
+
+function resolvePositiveIntegerEnvValue(name: string, fallback: number): number {
+  const configured = resolveNumericEnvValue(name);
+  if (!Number.isFinite(configured) || configured <= 0) {
+    return fallback;
+  }
+  return Math.max(1, Math.floor(configured));
+}
+
+function resolveNonnegativeIntegerEnvValue(name: string, fallback: number): number {
+  const configured = resolveNumericEnvValue(name);
+  if (!Number.isFinite(configured) || configured < 0) {
+    return fallback;
+  }
+  return Math.floor(configured);
+}
+
+function resolveSparseSegmentationRenderBudget(
+  max3DTextureSize: number | null | undefined,
+  maxTextureSize: number | null | undefined,
+) {
+  return {
+    max3DTextureSize:
+      max3DTextureSize && Number.isFinite(max3DTextureSize) && max3DTextureSize > 0
+        ? Math.floor(max3DTextureSize)
+        : DEFAULT_SPARSE_SEGMENTATION_MAX_3D_TEXTURE_SIZE,
+    maxTextureSize:
+      maxTextureSize && Number.isFinite(maxTextureSize) && maxTextureSize > 0
+        ? Math.floor(maxTextureSize)
+        : DEFAULT_SPARSE_SEGMENTATION_MAX_TEXTURE_SIZE,
+    maxAtlasBytes: resolvePositiveIntegerEnvValue(
+      'VITE_MAX_SPARSE_SEGMENTATION_ATLAS_BYTES',
+      DEFAULT_SPARSE_SEGMENTATION_GPU_ATLAS_BYTES,
+    ),
+    maxSingleAllocationBytes: resolvePositiveIntegerEnvValue(
+      'VITE_MAX_SPARSE_SEGMENTATION_SINGLE_ALLOCATION_BYTES',
+      DEFAULT_SPARSE_SEGMENTATION_SINGLE_ALLOCATION_BYTES,
+    ),
+    safetyMarginBytes: resolveNonnegativeIntegerEnvValue(
+      'VITE_SPARSE_SEGMENTATION_GPU_SAFETY_MARGIN_BYTES',
+      DEFAULT_SPARSE_SEGMENTATION_SAFETY_MARGIN_BYTES,
+    ),
+  };
+}
 
 function createEmptyBrickTextureBindingState(playbackWarmupForLayerKey: string | null = null): BrickTextureBindingState {
   return {
@@ -321,6 +392,8 @@ function createEmptyBrickTextureBindingState(playbackWarmupForLayerKey: string |
     brickAtlasSlotGrid: null,
     brickAtlasBuildVersion: 0,
     usesPrepackedPlaybackResidentAtlas: false,
+    sparseSegmentationRenderDiagnostics: null,
+    sparseSegmentationExactBatchState: null,
     playbackWarmupForLayerKey,
     playbackWarmupReady: null,
     gpuBrickResidencyMetrics: null,
@@ -770,6 +843,7 @@ function createByte3dTexture(
   texture.internalFormat = null;
   applyByteTextureFilter(texture, filterMode);
   texture.unpackAlignment = 1;
+  texture.colorSpace = THREE.NoColorSpace;
   texture.needsUpdate = true;
   return texture;
 }
@@ -1248,6 +1322,7 @@ export function updateOrCreateByte3dTexture(
       existing.format = format;
       existing.type = nextType;
       existing.internalFormat = nextInternalFormat;
+      existing.colorSpace = THREE.NoColorSpace;
       applyByteTextureFilter(existing, filterMode);
       if (!hasSharedBuffer || forceNeedsUpdate) {
         existing.needsUpdate = true;
@@ -1496,12 +1571,14 @@ function buildBrickSubcellTextureDataFromAtlas({
   pageTable,
   atlasData,
   atlasSize,
+  slotGrid,
   textureFormat,
   max3DTextureSize,
 }: {
   pageTable: VolumeBrickPageTable;
   atlasData: TextureSourceArray;
   atlasSize: { width: number; height: number; depth: number };
+  slotGrid?: { x: number; y: number; z: number } | null;
   textureFormat: TextureFormat;
   max3DTextureSize: number | null | undefined;
 }): BrickSubcellTextureBuildResult | null {
@@ -1520,6 +1597,17 @@ function buildBrickSubcellTextureDataFromAtlas({
   const chunkDepth = Math.max(1, pageTable.chunkShape[0]);
   const chunkHeight = Math.max(1, pageTable.chunkShape[1]);
   const chunkWidth = Math.max(1, pageTable.chunkShape[2]);
+  const safeSlotGrid = slotGrid
+    ? {
+        x: Math.max(1, Math.floor(slotGrid.x)),
+        y: Math.max(1, Math.floor(slotGrid.y)),
+        z: Math.max(1, Math.floor(slotGrid.z)),
+      }
+    : { x: 1, y: 1, z: Math.max(1, Math.ceil(atlasDepth / chunkDepth)) };
+  const atlasChunkWidth = atlasWidth / safeSlotGrid.x;
+  const atlasChunkHeight = atlasHeight / safeSlotGrid.y;
+  const atlasChunkDepth = atlasDepth / safeSlotGrid.z;
+  const slotsPerLayer = safeSlotGrid.x * safeSlotGrid.y;
   return buildBrickSubcellTextureData({
     pageTable,
     components,
@@ -1529,16 +1617,24 @@ function buildBrickSubcellTextureDataFromAtlas({
       if (sourceIndex < 0) {
         return 0;
       }
-      const atlasZ = sourceIndex * chunkDepth + localZ;
+      const slotZ = Math.floor(sourceIndex / slotsPerLayer);
+      const withinLayer = sourceIndex - slotZ * slotsPerLayer;
+      const slotY = Math.floor(withinLayer / safeSlotGrid.x);
+      const slotX = withinLayer - slotY * safeSlotGrid.x;
+      const atlasX = slotX * atlasChunkWidth + localX;
+      const atlasY = slotY * atlasChunkHeight + localY;
+      const atlasZ = slotZ * atlasChunkDepth + localZ;
       if (
         atlasZ < 0 || atlasZ >= atlasDepth ||
+        atlasY < 0 || atlasY >= atlasHeight ||
+        atlasX < 0 || atlasX >= atlasWidth ||
         localY < 0 || localY >= chunkHeight ||
         localX < 0 || localX >= chunkWidth
       ) {
         return 0;
       }
       const sourceOffset =
-        (((atlasZ * atlasHeight + localY) * atlasWidth + localX) * components) + component;
+        (((Math.floor(atlasZ) * atlasHeight + Math.floor(atlasY)) * atlasWidth + Math.floor(atlasX)) * components) + component;
       return atlasData[sourceOffset] ?? 0;
     },
   });
@@ -1895,6 +1991,21 @@ function disposeBrickAtlasDataTexture(resource: BrickTextureBindingState & objec
   clearGpuBrickResidencyWorkerState(resource);
 }
 
+function clearSparseSegmentationExactBatchState(resource: BrickTextureBindingState & object): void {
+  disposeSparseSegmentationExactBatchRenderState(resource.sparseSegmentationExactBatchState);
+  resource.sparseSegmentationExactBatchState = null;
+  const material = (resource as { mesh?: { material?: unknown } }).mesh?.material;
+  const materialList = Array.isArray(material) ? material : material ? [material] : [];
+  for (const entry of materialList) {
+    if (!(entry instanceof THREE.ShaderMaterial) || !entry.defines?.VOLUME_SEGMENTATION_EXACT_BATCH_PASS) {
+      continue;
+    }
+    delete entry.defines.VOLUME_SEGMENTATION_EXACT_BATCH_PASS;
+    entry.depthWrite = false;
+    entry.needsUpdate = true;
+  }
+}
+
 function disposeBrickPageTableTextures(resource: BrickTextureBindingState & object): void {
   resource.brickOccupancyTexture?.dispose();
   resource.brickMinTexture?.dispose();
@@ -1911,6 +2022,7 @@ function disposeBrickPageTableTextures(resource: BrickTextureBindingState & obje
   resource.skipHierarchyTexture = null;
   resource.skipHierarchySourcePageTable = null;
   resource.skipHierarchyLevelCount = 0;
+  clearSparseSegmentationExactBatchState(resource);
   resource.brickMetadataSourcePageTable = null;
   resource.brickAtlasIndexSourcePageTable = null;
   resource.brickAtlasBaseSourcePageTable = null;
@@ -1958,6 +2070,9 @@ function transferBrickTextureBindingState(
   target.brickAtlasSlotGrid = source.brickAtlasSlotGrid ?? null;
   target.brickAtlasBuildVersion = source.brickAtlasBuildVersion ?? 0;
   target.usesPrepackedPlaybackResidentAtlas = source.usesPrepackedPlaybackResidentAtlas ?? false;
+  target.sparseSegmentationRenderDiagnostics = source.sparseSegmentationRenderDiagnostics ?? null;
+  target.sparseSegmentationExactBatchState = source.sparseSegmentationExactBatchState ?? null;
+  source.sparseSegmentationExactBatchState = null;
   target.playbackWarmupReady = source.playbackWarmupReady ?? null;
   target.gpuBrickResidencyMetrics = source.gpuBrickResidencyMetrics ?? null;
   target.brickSkipDiagnostics = source.brickSkipDiagnostics ?? null;
@@ -2272,7 +2387,9 @@ function applyBrickPageTableUniforms(
     atlasData?: TextureSourceArray;
     atlasFormat?: TextureFormat;
     atlasSize?: { width: number; height: number; depth: number };
+    atlasSlotGrid?: { x: number; y: number; z: number } | null;
     max3DTextureSize?: number | null;
+    maxTextureSize?: number | null;
     viewPriority?: {
       projectionMode: ViewerProjectionMode;
       cameraPosition: THREE.Vector3 | null;
@@ -2520,10 +2637,12 @@ function applyBrickPageTableUniforms(
     options?.atlasData ??
     options?.textureData ??
     null;
-  const atlasTextureFilterMode = resolveAtlasTextureFilterMode(uniforms);
+  const atlasTextureFilterMode = options?.isSegmentation ? 'nearest' : resolveAtlasTextureFilterMode(uniforms);
   const atlasFormat = normalizedAtlasUpload.format ?? normalizedTextureUpload.format;
   const atlasSize = options?.atlasSize;
+  const providedAtlasSlotGrid = options?.atlasSlotGrid ?? null;
   const max3DTextureSize = options?.max3DTextureSize ?? null;
+  const maxTextureSize = options?.maxTextureSize ?? null;
   const viewPriority = options?.viewPriority ?? null;
   const forceFullResidency = options?.forceFullResidency ?? false;
   const shouldUseAsyncFullResidencyBuild = forceFullResidency && Boolean(resource.playbackWarmupForLayerKey);
@@ -2533,13 +2652,109 @@ function applyBrickPageTableUniforms(
       byteAtlasData &&
       atlasFormat &&
       atlasSize &&
-      resolvedPageTable.scaleLevel > 0
+      resolvedPageTable.scaleLevel > 0 &&
+      !providedAtlasSlotGrid
     );
+  let exactBatchPlan: Extract<SparseSegmentationRenderStrategy, { kind: 'exact-batched' }> | null = null;
+
+  if (options?.isSegmentation && atlasSize && normalizedAtlasUpload.data && atlasFormat) {
+    const budget = resolveSparseSegmentationRenderBudget(max3DTextureSize, maxTextureSize);
+    const plan = planSparseSegmentationRender({
+      pageTable: resolvedPageTable,
+      labelBytesPerVoxel: 4,
+      budget,
+    });
+    if (plan.kind === 'exact-batched') {
+      exactBatchPlan = plan;
+      resource.sparseSegmentationRenderDiagnostics = {
+        strategy: 'exact-batched',
+        reason: plan.reason,
+        scaleLevel: resolvedPageTable.scaleLevel,
+        occupiedBrickCount: resolvedPageTable.occupiedBrickCount,
+        requiredBrickCount: resolvedPageTable.occupiedBrickCount,
+        residentBrickCount: 0,
+        missingOccupiedBrickCount: resolvedPageTable.occupiedBrickCount,
+        slotGrid: plan.batchSlotGrid,
+        atlasSize: plan.batchAtlasSize,
+        atlasBytes: plan.estimatedBytesPerBatch,
+        max3DTextureSize: budget.max3DTextureSize,
+        maxTextureSize: budget.maxTextureSize,
+        budgetBytes: budget.maxAtlasBytes,
+        batchCount: plan.batchCount,
+        currentBatchIndex: null,
+        presentationState: 'loading',
+      };
+    } else {
+      clearSparseSegmentationExactBatchState(resource);
+      const plannedSlotGrid = providedAtlasSlotGrid ?? plan.slotGrid;
+      const actualSlotGrid = {
+        x: Math.max(1, Math.floor(plannedSlotGrid.x)),
+        y: Math.max(1, Math.floor(plannedSlotGrid.y)),
+        z: Math.max(1, Math.floor(plannedSlotGrid.z)),
+      };
+      const physicalSlotCapacity = actualSlotGrid.x * actualSlotGrid.y * actualSlotGrid.z;
+      let invalidOccupiedSlotCount = 0;
+      for (let index = 0; index < resolvedPageTable.brickAtlasIndices.length; index += 1) {
+        const atlasIndex = resolvedPageTable.brickAtlasIndices[index] ?? -1;
+        if (atlasIndex < 0) {
+          continue;
+        }
+        if (atlasIndex >= physicalSlotCapacity) {
+          invalidOccupiedSlotCount += 1;
+        }
+      }
+      if (invalidOccupiedSlotCount > 0) {
+        resource.sparseSegmentationRenderDiagnostics = {
+          strategy: 'full-resident-packed',
+          reason: null,
+          scaleLevel: resolvedPageTable.scaleLevel,
+          occupiedBrickCount: resolvedPageTable.occupiedBrickCount,
+          requiredBrickCount: resolvedPageTable.occupiedBrickCount,
+          residentBrickCount: Math.max(0, resolvedPageTable.occupiedBrickCount - invalidOccupiedSlotCount),
+          missingOccupiedBrickCount: invalidOccupiedSlotCount,
+          slotGrid: actualSlotGrid,
+          atlasSize,
+          atlasBytes: normalizedAtlasUpload.data.byteLength,
+          max3DTextureSize: budget.max3DTextureSize,
+          maxTextureSize: budget.maxTextureSize,
+          budgetBytes: budget.maxAtlasBytes,
+          batchCount: 0,
+          currentBatchIndex: null,
+          presentationState: 'error',
+        };
+        throw new Error(
+          `[sparse-segmentation] packed atlas slot grid ${actualSlotGrid.x}x${actualSlotGrid.y}x${actualSlotGrid.z} cannot address ${invalidOccupiedSlotCount} occupied bricks for layer ${resolvedPageTable.layerKey}.`
+        );
+      }
+
+      resource.sparseSegmentationRenderDiagnostics = {
+        strategy: 'full-resident-packed',
+        reason: null,
+        scaleLevel: resolvedPageTable.scaleLevel,
+        occupiedBrickCount: resolvedPageTable.occupiedBrickCount,
+        requiredBrickCount: resolvedPageTable.occupiedBrickCount,
+        residentBrickCount: resolvedPageTable.occupiedBrickCount,
+        missingOccupiedBrickCount: 0,
+        slotGrid: actualSlotGrid,
+        atlasSize,
+        atlasBytes: normalizedAtlasUpload.data.byteLength,
+        max3DTextureSize: budget.max3DTextureSize,
+        maxTextureSize: budget.maxTextureSize,
+        budgetBytes: budget.maxAtlasBytes,
+        batchCount: 0,
+        currentBatchIndex: null,
+        presentationState: 'complete',
+      };
+    }
+  } else {
+    clearSparseSegmentationExactBatchState(resource);
+    resource.sparseSegmentationRenderDiagnostics = null;
+  }
 
   let atlasIndexData = atlasIndexTextureDataFromPageTable(resolvedPageTable);
   let atlasBuild: BrickAtlasBuildResult | null = null;
   let atlasTexturesDirty = false;
-  let atlasSlotGrid = { x: 1, y: 1, z: Math.max(1, resolvedPageTable.occupiedBrickCount) };
+  let atlasSlotGrid = providedAtlasSlotGrid ?? { x: 1, y: 1, z: Math.max(1, resolvedPageTable.occupiedBrickCount) };
   let asyncFullResidencyPending = false;
   const canReuseCurrentFullResidencyAtlas =
     Boolean(
@@ -2794,6 +3009,7 @@ function applyBrickPageTableUniforms(
             pageTable: resolvedPageTable,
             atlasData: options.atlasData,
             atlasSize: options.atlasSize,
+            slotGrid: providedAtlasSlotGrid ?? undefined,
             textureFormat: atlasFormat,
             max3DTextureSize: options.max3DTextureSize,
           })
@@ -2861,7 +3077,57 @@ function applyBrickPageTableUniforms(
   brickSubcellGridUniform.set(brickSubcellGrid.x, brickSubcellGrid.y, brickSubcellGrid.z);
   resource.playbackWarmupReady = null;
 
+  if (exactBatchPlan && normalizedAtlasUpload.data instanceof Uint8Array && atlasSize && atlasFormat) {
+    const chunkDepth = Math.max(1, resolvedPageTable.chunkShape[0]);
+    const sourceSlotGrid =
+      providedAtlasSlotGrid ??
+      {
+        x: 1,
+        y: 1,
+        z: Math.max(1, Math.ceil(atlasSize.depth / chunkDepth)),
+      };
+    const exactBatchSource = {
+      pageTable: resolvedPageTable,
+      sourceAtlasData: normalizedAtlasUpload.data,
+      sourceAtlasSize: atlasSize,
+      sourceSlotGrid,
+      textureFormat: atlasFormat,
+      plan: exactBatchPlan,
+    };
+    if (!areSparseSegmentationExactBatchStatesEquivalent(resource.sparseSegmentationExactBatchState, exactBatchSource)) {
+      clearSparseSegmentationExactBatchState(resource);
+      resource.sparseSegmentationExactBatchState = createSparseSegmentationExactBatchRenderState(exactBatchSource);
+    }
+    disposeBrickAtlasDataTexture(resource);
+    resource.brickAtlasSourceToken =
+      typeof atlasSourceToken === 'object' && atlasSourceToken !== null ? atlasSourceToken : null;
+    resource.brickAtlasSourceData = normalizedAtlasUpload.data;
+    resource.brickAtlasSourceFormat = atlasFormat;
+    resource.brickAtlasSourcePageTable = resolvedPageTable;
+    resource.brickAtlasSlotGrid = exactBatchPlan.batchSlotGrid;
+    resource.usesPrepackedPlaybackResidentAtlas = false;
+    resource.gpuBrickResidencyMetrics = {
+      layerKey: resolvedPageTable.layerKey,
+      timepoint: resolvedPageTable.timepoint,
+      scaleLevel: resolvedPageTable.scaleLevel,
+      residentBricks: 0,
+      totalBricks: resolvedPageTable.occupiedBrickCount,
+      residentBytes: exactBatchPlan.estimatedBytesPerBatch,
+      budgetBytes: resolveSparseSegmentationRenderBudget(max3DTextureSize, maxTextureSize).maxAtlasBytes,
+      uploads: 0,
+      evictions: 0,
+      pendingBricks: resolvedPageTable.occupiedBrickCount,
+      prioritizedBricks: resolvedPageTable.occupiedBrickCount,
+      scheduledUploads: exactBatchPlan.batchSlotCapacity,
+      lastCameraDistance: null,
+    };
+    bindFallbackBrickAtlasUniforms();
+    resource.playbackWarmupReady = true;
+    return;
+  }
+
   if (options?.preferDirectVolumeSampling) {
+    clearSparseSegmentationExactBatchState(resource);
     disposeBrickAtlasDataTexture(resource);
     bindFallbackBrickAtlasUniforms();
     resource.playbackWarmupReady = resolvePlaybackWarmupReady(resource);
@@ -2971,13 +3237,40 @@ function applyBrickPageTableUniforms(
     })();
   }
 
-  if (!shouldUseGpuResidency && atlasBuild && atlasBuild.enabled) {
+  if (!shouldUseGpuResidency && atlasBuild && atlasBuild.enabled && !providedAtlasSlotGrid) {
     const chunkDepth = Math.max(1, resolvedPageTable.chunkShape[0]);
     const slotGridZ = Math.max(1, Math.ceil(atlasBuild.depth / chunkDepth));
     atlasSlotGrid = { x: 1, y: 1, z: slotGridZ };
   }
 
   if (!atlasBuild || !atlasBuild.enabled) {
+    if (options?.isSegmentation && resolvedPageTable.occupiedBrickCount > 0) {
+      resource.sparseSegmentationRenderDiagnostics = {
+        strategy: 'full-resident-packed',
+        reason: null,
+        scaleLevel: resolvedPageTable.scaleLevel,
+        occupiedBrickCount: resolvedPageTable.occupiedBrickCount,
+        requiredBrickCount: resolvedPageTable.occupiedBrickCount,
+        residentBrickCount: 0,
+        missingOccupiedBrickCount: resolvedPageTable.occupiedBrickCount,
+        slotGrid: null,
+        atlasSize: null,
+        atlasBytes: 0,
+        max3DTextureSize:
+          max3DTextureSize && Number.isFinite(max3DTextureSize) && max3DTextureSize > 0
+            ? Math.floor(max3DTextureSize)
+            : null,
+        maxTextureSize:
+          maxTextureSize && Number.isFinite(maxTextureSize) && maxTextureSize > 0 ? Math.floor(maxTextureSize) : null,
+        budgetBytes: resolveSparseSegmentationRenderBudget(max3DTextureSize, maxTextureSize).maxAtlasBytes,
+        batchCount: 0,
+        currentBatchIndex: null,
+        presentationState: 'error',
+      };
+      throw new Error(
+        `[sparse-segmentation] unable to build a complete brick atlas for layer ${resolvedPageTable.layerKey} at timepoint ${resolvedPageTable.timepoint}, scale ${resolvedPageTable.scaleLevel}.`
+      );
+    }
     disposeBrickAtlasDataTexture(resource);
     bindFallbackBrickAtlasUniforms();
     return;
@@ -2989,6 +3282,30 @@ function applyBrickPageTableUniforms(
       options?.max3DTextureSize
     )
   ) {
+    if (options?.isSegmentation) {
+      const budget = resolveSparseSegmentationRenderBudget(max3DTextureSize, maxTextureSize);
+      resource.sparseSegmentationRenderDiagnostics = {
+        strategy: 'full-resident-packed',
+        reason: 'texture-limit',
+        scaleLevel: resolvedPageTable.scaleLevel,
+        occupiedBrickCount: resolvedPageTable.occupiedBrickCount,
+        requiredBrickCount: resolvedPageTable.occupiedBrickCount,
+        residentBrickCount: 0,
+        missingOccupiedBrickCount: resolvedPageTable.occupiedBrickCount,
+        slotGrid: atlasSlotGrid,
+        atlasSize: { width: atlasBuild.width, height: atlasBuild.height, depth: atlasBuild.depth },
+        atlasBytes: atlasBuild.data.byteLength,
+        max3DTextureSize: budget.max3DTextureSize,
+        maxTextureSize: budget.maxTextureSize,
+        budgetBytes: budget.maxAtlasBytes,
+        batchCount: 0,
+        currentBatchIndex: null,
+        presentationState: 'error',
+      };
+      throw new Error(
+        `[sparse-segmentation] planned brick atlas ${atlasBuild.width}x${atlasBuild.height}x${atlasBuild.depth} exceeds MAX_3D_TEXTURE_SIZE ${String(options?.max3DTextureSize ?? 'unknown')} for layer ${resolvedPageTable.layerKey} at timepoint ${resolvedPageTable.timepoint}, scale ${resolvedPageTable.scaleLevel}.`
+      );
+    }
     disposeBrickAtlasDataTexture(resource);
     bindFallbackBrickAtlasUniforms();
     return;
@@ -3319,6 +3636,7 @@ export function useVolumeResources({
 
     const seenKeys = new Set<string>();
     const max3DTextureSize = resolveRendererMax3DTextureSize(rendererRef);
+    const maxTextureSize = resolveRendererMaxTextureSize(rendererRef);
     const safeZClipFront =
       Number.isFinite(zClipFrontFraction)
         ? Math.min(1, Math.max(0, zClipFrontFraction))
@@ -3384,7 +3702,9 @@ export function useVolumeResources({
               height: warmupBrickAtlas.height,
               depth: warmupBrickAtlas.depth,
             },
+            atlasSlotGrid: warmupBrickAtlas.slotGrid ?? null,
             max3DTextureSize,
+            maxTextureSize,
             forceFullResidency: true,
             isSegmentation: layer.isSegmentation,
             onAsyncFullResidencyPacked: notifyPlaybackFrameGpuCacheChanged,
@@ -3572,7 +3892,9 @@ export function useVolumeResources({
           atlasData: brickAtlas.data,
           atlasFormat: directAtlasFormat,
           atlasSize,
+          atlasSlotGrid: brickAtlas.slotGrid ?? null,
           max3DTextureSize,
+          maxTextureSize,
           viewPriority: {
             projectionMode: viewProjectionMode,
             cameraPosition: localCameraPosition,
@@ -3898,7 +4220,9 @@ export function useVolumeResources({
                   atlasData: brickAtlas.data,
                   atlasFormat: directAtlasFormat ?? undefined,
                   atlasSize: { width: brickAtlas.width, height: brickAtlas.height, depth: brickAtlas.depth },
+                  atlasSlotGrid: brickAtlas.slotGrid ?? null,
                   max3DTextureSize,
+                  maxTextureSize,
                   viewPriority: residencyViewPriority,
                   forceFullResidency: playbackPinnedResidency || !isPlaybackWarmup,
                   isSegmentation: layer.isSegmentation,
@@ -3996,6 +4320,8 @@ export function useVolumeResources({
                   kind: brickAtlas.kind,
                   pageTable,
                   atlasData: brickAtlas.data,
+                  atlasSize: { width: brickAtlas.width, height: brickAtlas.height, depth: brickAtlas.depth },
+                  slotGrid: brickAtlas.slotGrid ?? null,
                   textureFormat: brickAtlas.textureFormat,
                   sourceChannels: brickAtlas.sourceChannels,
                   dataType: brickAtlas.dataType,
@@ -4141,7 +4467,9 @@ export function useVolumeResources({
                   atlasData: brickAtlas.data,
                   atlasFormat: directAtlasFormat ?? undefined,
                   atlasSize: { width: brickAtlas.width, height: brickAtlas.height, depth: brickAtlas.depth },
+                  atlasSlotGrid: brickAtlas.slotGrid ?? null,
                   max3DTextureSize,
+                  maxTextureSize,
                   forceFullResidency: playbackPinnedResidency || !isPlaybackWarmup,
                   isSegmentation: layer.isSegmentation,
                   onAsyncFullResidencyPacked: notifyAsyncFullResidencyPacked,
@@ -4312,7 +4640,9 @@ export function useVolumeResources({
                     atlasData: brickAtlas.data,
                     atlasFormat: directAtlasFormat ?? undefined,
                     atlasSize: { width: brickAtlas.width, height: brickAtlas.height, depth: brickAtlas.depth },
+                    atlasSlotGrid: brickAtlas.slotGrid ?? null,
                     max3DTextureSize,
+                    maxTextureSize,
                     viewPriority: residencyViewPriority,
                     forceFullResidency:
                       Boolean(resources.playbackPinnedResidency) ||
@@ -4488,7 +4818,9 @@ export function useVolumeResources({
                   atlasData: brickAtlas.data,
                   atlasFormat: directAtlasFormat ?? undefined,
                   atlasSize: { width: brickAtlas.width, height: brickAtlas.height, depth: brickAtlas.depth },
+                  atlasSlotGrid: brickAtlas.slotGrid ?? null,
                   max3DTextureSize,
+                  maxTextureSize,
                   forceFullResidency:
                     Boolean(resources.playbackPinnedResidency) ||
                     !(resources.preferIncrementalResidency ?? false),
@@ -4533,6 +4865,8 @@ export function useVolumeResources({
 	                kind: brickAtlas.kind,
 	                pageTable,
 	                atlasData: brickAtlas.data,
+                  atlasSize: { width: brickAtlas.width, height: brickAtlas.height, depth: brickAtlas.depth },
+                  slotGrid: brickAtlas.slotGrid ?? null,
 	                textureFormat: brickAtlas.textureFormat,
 	                sourceChannels: brickAtlas.sourceChannels,
 	                dataType: brickAtlas.dataType,
@@ -4770,6 +5104,7 @@ export function useVolumeResources({
           dataTextureSample,
           atlasTexture,
           brickAtlasSlotGrid: resource.brickAtlasSlotGrid ?? null,
+          sparseSegmentationRenderDiagnostics: resource.sparseSegmentationRenderDiagnostics ?? null,
           hierarchyTexture,
           occupancyTexture,
           atlasIndexTexture,

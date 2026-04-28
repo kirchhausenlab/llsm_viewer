@@ -9,6 +9,8 @@ type BrickAtlasSampleSource = {
   kind: 'intensity' | 'segmentation';
   pageTable: Pick<VolumeBrickPageTable, 'gridShape' | 'chunkShape' | 'volumeShape' | 'brickAtlasIndices'>;
   atlasData: Uint8Array | Uint16Array | Float32Array;
+  atlasSize?: { width: number; height: number; depth: number } | null;
+  slotGrid?: { x: number; y: number; z: number } | null;
   textureFormat: VolumeBrickAtlasTextureFormat;
   sourceChannels: number;
   dataType: 'uint8' | 'uint16';
@@ -86,18 +88,71 @@ function sampleBrickAtlasVoxelValue(
   const localX = clampedX - brickX * chunkWidth;
   const localY = clampedY - brickY * chunkHeight;
   const localZ = clampedZ - brickZ * chunkDepth;
-  const atlasZ = atlasIndex * chunkDepth + localZ;
-  const atlasPlaneStride = chunkWidth * chunkHeight * textureChannels;
-  if (atlasPlaneStride <= 0) {
+  const hasExplicitSlotGrid = Boolean(source.slotGrid);
+  const slotGrid = hasExplicitSlotGrid && source.slotGrid
+    ? {
+        x: Math.max(1, Math.floor(source.slotGrid.x)),
+        y: Math.max(1, Math.floor(source.slotGrid.y)),
+        z: Math.max(1, Math.floor(source.slotGrid.z)),
+      }
+    : { x: 1, y: 1, z: 1 };
+  const atlasWidth = Math.max(1, source.atlasSize?.width ?? chunkWidth * slotGrid.x);
+  const atlasHeight = Math.max(1, source.atlasSize?.height ?? chunkHeight * slotGrid.y);
+  const atlasDepth = Math.max(
+    1,
+    source.atlasSize?.depth ?? Math.floor(source.atlasData.length / Math.max(1, atlasWidth * atlasHeight * textureChannels))
+  );
+  if (!hasExplicitSlotGrid) {
+    slotGrid.z = Math.max(1, Math.ceil(atlasDepth / chunkDepth));
+  }
+  const atlasChunkWidth = atlasWidth / slotGrid.x;
+  const atlasChunkHeight = atlasHeight / slotGrid.y;
+  const atlasChunkDepth = atlasDepth / slotGrid.z;
+  const slotsPerLayer = slotGrid.x * slotGrid.y;
+  const slotZ = Math.floor(atlasIndex / slotsPerLayer);
+  const withinLayer = atlasIndex - slotZ * slotsPerLayer;
+  const slotY = Math.floor(withinLayer / slotGrid.x);
+  const slotX = withinLayer - slotY * slotGrid.x;
+  const atlasX = Math.floor(slotX * atlasChunkWidth + localX);
+  const atlasY = Math.floor(slotY * atlasChunkHeight + localY);
+  const atlasZ = Math.floor(slotZ * atlasChunkDepth + localZ);
+  if (atlasWidth <= 0 || atlasHeight <= 0 || atlasDepth <= 0) {
     return 0;
   }
-  const atlasDepth = Math.floor(source.atlasData.length / atlasPlaneStride);
-  if (atlasZ < 0 || atlasZ >= atlasDepth) {
+  if (
+    atlasX < 0 ||
+    atlasX >= atlasWidth ||
+    atlasY < 0 ||
+    atlasY >= atlasHeight ||
+    atlasZ < 0 ||
+    atlasZ >= atlasDepth
+  ) {
     return 0;
   }
 
-  const atlasVoxelOffset = (((atlasZ * chunkHeight + localY) * chunkWidth + localX) * textureChannels) + textureChannel;
+  const atlasVoxelOffset = (((atlasZ * atlasHeight + atlasY) * atlasWidth + atlasX) * textureChannels) + textureChannel;
   return source.atlasData[atlasVoxelOffset] ?? 0;
+}
+
+function sampleBrickAtlasSegmentationLabel(
+  source: BrickAtlasSampleSource,
+  voxelX: number,
+  voxelY: number,
+  voxelZ: number,
+): number {
+  if (source.textureFormat === 'rgba' && source.dataType === 'uint8') {
+    const b0 = sampleBrickAtlasVoxelValue(source, voxelX, voxelY, voxelZ, 0);
+    const b1 = sampleBrickAtlasVoxelValue(source, voxelX, voxelY, voxelZ, 1);
+    const b2 = sampleBrickAtlasVoxelValue(source, voxelX, voxelY, voxelZ, 2);
+    const b3 = sampleBrickAtlasVoxelValue(source, voxelX, voxelY, voxelZ, 3);
+    return (b0 + b1 * 0x100 + b2 * 0x10000 + b3 * 0x1000000) >>> 0;
+  }
+  if (source.textureFormat === 'rg' && source.dataType === 'uint8') {
+    const b0 = sampleBrickAtlasVoxelValue(source, voxelX, voxelY, voxelZ, 0);
+    const b1 = sampleBrickAtlasVoxelValue(source, voxelX, voxelY, voxelZ, 1);
+    return b0 + b1 * 0x100;
+  }
+  return sampleBrickAtlasVoxelValue(source, voxelX, voxelY, voxelZ, 0);
 }
 
 export function sampleBrickAtlasAtVoxel(
@@ -107,7 +162,7 @@ export function sampleBrickAtlasAtVoxel(
   voxelZ: number,
 ): { normalizedValues: number[]; rawValues: number[] } {
   if (source.kind === 'segmentation') {
-    const label = sampleBrickAtlasVoxelValue(source, voxelX, voxelY, voxelZ, 0);
+    const label = sampleBrickAtlasSegmentationLabel(source, voxelX, voxelY, voxelZ);
     return {
       normalizedValues: [label > 0 ? 1 : 0],
       rawValues: [label],
@@ -343,7 +398,7 @@ export function sampleBrickAtlasLabelAtNormalizedPosition(
   const voxelX = Math.round(clampValue(coords.x * volumeWidth, 0, volumeWidth - 1));
   const voxelY = Math.round(clampValue(coords.y * volumeHeight, 0, volumeHeight - 1));
   const voxelZ = Math.round(clampValue(coords.z * volumeDepth, 0, volumeDepth - 1));
-  return sampleBrickAtlasVoxelValue(source, voxelX, voxelY, voxelZ, 0);
+  return sampleBrickAtlasSegmentationLabel(source, voxelX, voxelY, voxelZ);
 }
 
 export function sampleVolumeLabelAtNormalizedPosition(

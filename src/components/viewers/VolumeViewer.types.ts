@@ -35,6 +35,7 @@ import type {
   CameraWindowController,
   CameraWindowState,
 } from '../../types/camera';
+import type { SparseSegmentationExactBatchRenderState } from './volume-viewer/sparseSegmentationExactBatchedRenderer';
 import type {
   DesktopViewState,
   DesktopViewStateMap,
@@ -328,6 +329,25 @@ export type VolumeResources = {
   brickAtlasSlotGrid?: { x: number; y: number; z: number } | null;
   brickAtlasBuildVersion?: number;
   usesPrepackedPlaybackResidentAtlas?: boolean;
+  sparseSegmentationRenderDiagnostics?: {
+    strategy: 'full-resident-packed' | 'exact-batched';
+    reason?: 'texture-limit' | 'memory-budget' | 'page-table-limit' | 'allocation-limit' | null;
+    scaleLevel: number;
+    occupiedBrickCount: number;
+    requiredBrickCount: number;
+    residentBrickCount: number;
+    missingOccupiedBrickCount: number;
+    slotGrid: { x: number; y: number; z: number } | null;
+    atlasSize: { width: number; height: number; depth: number } | null;
+    atlasBytes: number;
+    max3DTextureSize: number | null;
+    maxTextureSize: number | null;
+    budgetBytes: number;
+    batchCount: number;
+    currentBatchIndex: number | null;
+    presentationState: 'loading' | 'complete' | 'stale' | 'error';
+  } | null;
+  sparseSegmentationExactBatchState?: SparseSegmentationExactBatchRenderState | null;
   backgroundMaskSourceToken?: object | null;
   proxyGeometrySignature?: string | null;
   playbackWarmupForLayerKey?: string | null;

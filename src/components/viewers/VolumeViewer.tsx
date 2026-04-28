@@ -41,6 +41,10 @@ import { useVolumeViewerRefSync } from './volume-viewer/useVolumeViewerRefSync';
 import { useVolumeViewerSurfaceBinding } from './volume-viewer/useVolumeViewerSurfaceBinding';
 import { useVolumeViewerTransformBindings } from './volume-viewer/useVolumeViewerTransformBindings';
 import { resolveVolumeViewerVrRuntime } from './volume-viewer/volumeViewerVrRuntime';
+import {
+  hideSparseSegmentationExactBatchResources,
+  renderSparseSegmentationExactBatches,
+} from './volume-viewer/sparseSegmentationExactBatchedRenderer';
 import { XR_DEPTH_FAR, XR_DEPTH_NEAR } from './volume-viewer/vr/constants';
 import {
   resolvePlaybackWarmupGateWaitMs,
@@ -122,6 +126,55 @@ function summarizeGpuResidency(resources: Map<string, VolumeResources>) {
     evictions,
     pendingBricks,
     scheduledUploads
+  };
+}
+
+function summarizeSparseSegmentationRendering(resources: Map<string, VolumeResources>) {
+  let layerCount = 0;
+  let completeLayers = 0;
+  let requiredBrickCount = 0;
+  let residentBrickCount = 0;
+  let missingBrickCount = 0;
+  let atlasBytes = 0;
+  let budgetBytes = 0;
+  let batchCount = 0;
+  const strategies = new Set<string>();
+  const presentationStates = new Set<string>();
+
+  for (const resource of resources.values()) {
+    const diagnostics = resource.sparseSegmentationRenderDiagnostics;
+    if (!diagnostics) {
+      continue;
+    }
+    layerCount += 1;
+    if (diagnostics.presentationState === 'complete') {
+      completeLayers += 1;
+    }
+    strategies.add(diagnostics.strategy);
+    presentationStates.add(diagnostics.presentationState);
+    requiredBrickCount += diagnostics.requiredBrickCount;
+    residentBrickCount += diagnostics.residentBrickCount;
+    missingBrickCount += diagnostics.missingOccupiedBrickCount;
+    atlasBytes += diagnostics.atlasBytes;
+    budgetBytes += diagnostics.budgetBytes;
+    batchCount += diagnostics.batchCount;
+  }
+
+  if (layerCount === 0) {
+    return null;
+  }
+
+  return {
+    layerCount,
+    completeLayers,
+    strategy: Array.from(strategies).sort().join('+'),
+    presentationState: Array.from(presentationStates).sort().join('+'),
+    requiredBrickCount,
+    residentBrickCount,
+    missingBrickCount,
+    atlasBytes,
+    budgetBytes,
+    batchCount,
   };
 }
 
@@ -705,6 +758,7 @@ function VolumeViewer({
   const isAdditiveBlending = blendingMode === 'additive';
   const preservedViewStateRef = useRef(createEmptyDesktopViewStateMap());
   const gpuResidencySummary = summarizeGpuResidency(resourcesRef.current);
+  const sparseSegmentationRenderSummary = summarizeSparseSegmentationRendering(resourcesRef.current);
   const residencyDecisionSummary = useMemo(
     () =>
       layers
@@ -981,6 +1035,7 @@ function VolumeViewer({
         (resource) =>
           resource.mode === '3d' &&
           resource.renderStyle === RENDER_STYLE_BL &&
+          !resource.sparseSegmentationExactBatchState &&
           resource.roiBlOcclusionAlphaMesh
       );
 
@@ -1651,13 +1706,23 @@ function VolumeViewer({
       renderer.autoClear = false;
       renderBackgroundPass(renderer, camera);
 
+      const restoreExactBatchedVisibility = hideSparseSegmentationExactBatchResources(resourcesRef.current.values());
       if (roiGroup) {
         roiGroup.visible = false;
       }
-      renderer.render(scene, camera);
-      if (roiGroup) {
-        roiGroup.visible = previousRoiVisibility;
+      try {
+        renderer.render(scene, camera);
+      } finally {
+        restoreExactBatchedVisibility();
+        if (roiGroup) {
+          roiGroup.visible = previousRoiVisibility;
+        }
       }
+      renderSparseSegmentationExactBatches({
+        renderer,
+        camera,
+        resources: resourcesRef.current.values(),
+      });
 
       renderRoiBlOcclusionPass(renderer, camera);
 
@@ -2051,6 +2116,18 @@ function VolumeViewer({
                 <li className="runtime-diagnostics-item">
                   <span className="runtime-diagnostics-label">Residency reason</span>
                   <span className="runtime-diagnostics-value">{residencyRationaleSummary}</span>
+                </li>
+              ) : null}
+              {sparseSegmentationRenderSummary ? (
+                <li className="runtime-diagnostics-item">
+                  <span className="runtime-diagnostics-label">Sparse segmentation</span>
+                  <span className="runtime-diagnostics-value">
+                    {sparseSegmentationRenderSummary.strategy} {sparseSegmentationRenderSummary.presentationState},{' '}
+                    {sparseSegmentationRenderSummary.residentBrickCount}/
+                    {sparseSegmentationRenderSummary.requiredBrickCount} bricks,{' '}
+                    {formatChunkBytesAsMb(sparseSegmentationRenderSummary.atlasBytes)} /{' '}
+                    {formatChunkBytesAsMb(sparseSegmentationRenderSummary.budgetBytes)}
+                  </span>
                 </li>
               ) : null}
               {gpuResidencySummary ? (

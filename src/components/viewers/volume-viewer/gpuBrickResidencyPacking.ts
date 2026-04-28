@@ -1,4 +1,5 @@
 import type { VolumeBrickPageTable } from '../../../core/volumeProvider';
+import { resolvePackedBrickSlotGridLayout } from '../../../shared/utils/sparseSegmentationAtlasLayout';
 
 export type FullGpuBrickResidencyLayout = {
   slotGrid: { x: number; y: number; z: number };
@@ -38,12 +39,15 @@ function resolveBrickAtlasSlotLayout({
   const safeChunkWidth = Math.max(1, Math.floor(chunkWidth));
   const safeChunkHeight = Math.max(1, Math.floor(chunkHeight));
   const safeChunkDepth = Math.max(1, Math.floor(chunkDepth));
-  const safeMax3D =
-    max3DTextureSize && Number.isFinite(max3DTextureSize) && max3DTextureSize > 0
-      ? Math.max(1, Math.floor(max3DTextureSize))
-      : null;
+  const layout = resolvePackedBrickSlotGridLayout({
+    slotCount: normalizedSlotCapacity,
+    brickWidth: safeChunkWidth,
+    brickHeight: safeChunkHeight,
+    brickDepth: safeChunkDepth,
+    max3DTextureSize,
+  });
 
-  if (!safeMax3D) {
+  if (!layout) {
     const slotGridX = 1;
     const slotGridY = 1;
     const slotGridZ = normalizedSlotCapacity;
@@ -58,28 +62,14 @@ function resolveBrickAtlasSlotLayout({
     };
   }
 
-  const maxSlotsX = Math.max(1, Math.floor(safeMax3D / safeChunkWidth));
-  const maxSlotsY = Math.max(1, Math.floor(safeMax3D / safeChunkHeight));
-  const maxSlotsZ = Math.max(1, Math.floor(safeMax3D / safeChunkDepth));
-  let slotGridX = Math.min(maxSlotsX, normalizedSlotCapacity);
-  let slotGridY = Math.min(maxSlotsY, Math.max(1, Math.ceil(normalizedSlotCapacity / slotGridX)));
-  let slotGridZ = Math.max(1, Math.ceil(normalizedSlotCapacity / (slotGridX * slotGridY)));
-  if (slotGridZ > maxSlotsZ) {
-    slotGridZ = maxSlotsZ;
-    const requiredPlaneSlots = Math.max(1, Math.ceil(normalizedSlotCapacity / slotGridZ));
-    slotGridX = Math.min(maxSlotsX, requiredPlaneSlots);
-    slotGridY = Math.min(maxSlotsY, Math.max(1, Math.ceil(requiredPlaneSlots / slotGridX)));
-  }
-  const allocatedSlotCapacity = Math.max(1, slotGridX * slotGridY * slotGridZ);
-
   return {
-    slotGridX,
-    slotGridY,
-    slotGridZ,
-    allocatedSlotCapacity,
-    atlasWidth: safeChunkWidth * slotGridX,
-    atlasHeight: safeChunkHeight * slotGridY,
-    atlasDepth: safeChunkDepth * slotGridZ,
+    slotGridX: layout.slotGrid.x,
+    slotGridY: layout.slotGrid.y,
+    slotGridZ: layout.slotGrid.z,
+    allocatedSlotCapacity: layout.allocatedSlotCapacity,
+    atlasWidth: layout.atlasSize.width,
+    atlasHeight: layout.atlasSize.height,
+    atlasDepth: layout.atlasSize.depth,
   };
 }
 

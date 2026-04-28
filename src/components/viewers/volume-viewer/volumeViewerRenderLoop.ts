@@ -5,6 +5,10 @@ import type { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import type { VolumeResources } from '../VolumeViewer.types';
 import type { CameraWindowState } from '../../../types/camera';
 import {
+  hideSparseSegmentationExactBatchResources,
+  renderSparseSegmentationExactBatches,
+} from './sparseSegmentationExactBatchedRenderer';
+import {
   computeProjectedPixelsPerUnit,
   getProjectionModeForCamera,
   type DesktopViewerCamera,
@@ -256,15 +260,28 @@ export function createVolumeViewerRenderLoop({
     const previousRoiVisibility = roiGroup?.visible ?? false;
     const previousAutoClear = renderer.autoClear;
     renderer.autoClear = false;
-    renderBackgroundPass?.(renderer, camera);
-    if (roiGroup) {
-      roiGroup.visible = false;
+    try {
+      renderBackgroundPass?.(renderer, camera);
+      const restoreExactBatchedVisibility = hideSparseSegmentationExactBatchResources(resources.values());
+      try {
+        if (roiGroup) {
+          roiGroup.visible = false;
+        }
+        renderer.render(scene, camera);
+      } finally {
+        restoreExactBatchedVisibility();
+        if (roiGroup) {
+          roiGroup.visible = previousRoiVisibility;
+        }
+      }
+      renderSparseSegmentationExactBatches({
+        renderer,
+        camera,
+        resources: resources.values(),
+      });
+      renderRoiBlOcclusionPass?.(renderer, camera);
+    } finally {
+      renderer.autoClear = previousAutoClear;
     }
-    renderer.render(scene, camera);
-    if (roiGroup) {
-      roiGroup.visible = previousRoiVisibility;
-    }
-    renderRoiBlOcclusionPass?.(renderer, camera);
-    renderer.autoClear = previousAutoClear;
   };
 }

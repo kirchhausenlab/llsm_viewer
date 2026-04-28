@@ -278,6 +278,20 @@ export function useVolumeHover({
         resource?.brickAtlasSourceData ??
         null;
       const targetAtlasTextureFormat = targetLayer?.brickAtlas?.textureFormat ?? null;
+      const targetAtlasSize = targetLayer?.brickAtlas
+        ? {
+            width: targetLayer.brickAtlas.width,
+            height: targetLayer.brickAtlas.height,
+            depth: targetLayer.brickAtlas.depth,
+          }
+        : resource?.brickAtlasDataTexture instanceof THREE.Data3DTexture
+          ? {
+              width: resource.brickAtlasDataTexture.image.width,
+              height: resource.brickAtlasDataTexture.image.height,
+              depth: resource.brickAtlasDataTexture.image.depth,
+            }
+          : null;
+      const targetAtlasSlotGrid = targetLayer?.brickAtlas?.slotGrid ?? resource?.brickAtlasSlotGrid ?? null;
       const targetSourceChannels =
         targetVolume?.channels ??
         targetLayer?.channels ??
@@ -297,6 +311,8 @@ export function useVolumeHover({
               kind: (targetLayer.isSegmentation ? 'segmentation' : 'intensity') as 'segmentation' | 'intensity',
               pageTable: targetAtlasPageTable,
               atlasData: targetAtlasData,
+              atlasSize: targetAtlasSize,
+              slotGrid: targetAtlasSlotGrid,
               textureFormat: targetAtlasTextureFormat,
               sourceChannels: targetSourceChannels,
               dataType: targetLayer?.storedDataType ?? (targetLayer?.isSegmentation ? 'uint16' : 'uint8'),
@@ -632,12 +648,28 @@ export function useVolumeHover({
                       layerResource?.brickAtlasSourceData ??
                       null;
                     const layerAtlasTextureFormat = layer.brickAtlas?.textureFormat ?? null;
+                    const layerAtlasSize = layer.brickAtlas
+                      ? {
+                          width: layer.brickAtlas.width,
+                          height: layer.brickAtlas.height,
+                          depth: layer.brickAtlas.depth,
+                        }
+                      : layerResource?.brickAtlasDataTexture instanceof THREE.Data3DTexture
+                        ? {
+                            width: layerResource.brickAtlasDataTexture.image.width,
+                            height: layerResource.brickAtlasDataTexture.image.height,
+                            depth: layerResource.brickAtlasDataTexture.image.depth,
+                          }
+                        : null;
+                    const layerAtlasSlotGrid = layer.brickAtlas?.slotGrid ?? layerResource?.brickAtlasSlotGrid ?? null;
                     return layerAtlasPageTable && layerAtlasData && layerAtlasTextureFormat
                       ? sampleBrickAtlasLabelAtNormalizedPosition(
                           {
                             kind: (layer.isSegmentation ? 'segmentation' : 'intensity') as 'segmentation' | 'intensity',
                             pageTable: layerAtlasPageTable,
                             atlasData: layerAtlasData,
+                            atlasSize: layerAtlasSize,
+                            slotGrid: layerAtlasSlotGrid,
                             textureFormat: layerAtlasTextureFormat,
                             sourceChannels: layer.channels ?? layer.brickAtlas?.sourceChannels ?? 1,
                             dataType: layer.storedDataType ?? (layer.isSegmentation ? 'uint16' : 'uint8'),
@@ -670,11 +702,27 @@ export function useVolumeHover({
               null;
             const layerAtlasTextureFormat = layer.brickAtlas?.textureFormat ?? null;
             if (layerAtlasPageTable && layerAtlasData && layerAtlasTextureFormat) {
+              const layerAtlasSize = layer.brickAtlas
+                ? {
+                    width: layer.brickAtlas.width,
+                    height: layer.brickAtlas.height,
+                    depth: layer.brickAtlas.depth,
+                  }
+                : layerResource?.brickAtlasDataTexture instanceof THREE.Data3DTexture
+                  ? {
+                      width: layerResource.brickAtlasDataTexture.image.width,
+                      height: layerResource.brickAtlasDataTexture.image.height,
+                      depth: layerResource.brickAtlasDataTexture.image.depth,
+                    }
+                  : null;
+              const layerAtlasSlotGrid = layer.brickAtlas?.slotGrid ?? layerResource?.brickAtlasSlotGrid ?? null;
               const atlasSample = sampleBrickAtlasAtVoxel(
                 {
                   kind: (layer.isSegmentation ? 'segmentation' : 'intensity') as 'segmentation' | 'intensity',
                   pageTable: layerAtlasPageTable,
                   atlasData: layerAtlasData,
+                  atlasSize: layerAtlasSize,
+                  slotGrid: layerAtlasSlotGrid,
                   textureFormat: layerAtlasTextureFormat,
                   sourceChannels:
                     layer.channels ??
