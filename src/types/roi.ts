@@ -4,6 +4,7 @@ import { toUserFacingVoxelIndex } from '../shared/utils/voxelIndex';
 export type RoiTool = 'line' | 'rectangle' | 'ellipse';
 export type RoiDimensionMode = '2d' | '3d';
 export type RoiShape = RoiTool;
+export type RoiAlignment = 'axes' | 'glass';
 
 export type RoiPoint = {
   x: number;
@@ -17,6 +18,7 @@ export type RoiDefinition = {
   start: RoiPoint;
   end: RoiPoint;
   color: string;
+  alignment?: RoiAlignment;
 };
 
 export type SavedRoi = RoiDefinition & {
@@ -31,6 +33,7 @@ export type RoiColorOption = {
 
 export const ROI_COLOR_SWATCHES: readonly RoiColorOption[] = GRAYSCALE_COLOR_SWATCHES;
 export const DEFAULT_ROI_COLOR = '#facc15';
+export const DEFAULT_ROI_ALIGNMENT: RoiAlignment = 'axes';
 
 const clampInteger = (value: number, min: number, max: number) =>
   Math.min(max, Math.max(min, Math.round(value)));
@@ -39,6 +42,10 @@ const padCoordinate = (value: number, width: number) => String(value).padStart(w
 
 export function normalizeRoiColor(color: string | null | undefined, fallback: string = DEFAULT_ROI_COLOR) {
   return normalizeHexColor(color, fallback).toUpperCase();
+}
+
+export function normalizeRoiAlignment(alignment: RoiAlignment | null | undefined): RoiAlignment {
+  return alignment === 'glass' ? 'glass' : DEFAULT_ROI_ALIGNMENT;
 }
 
 export function cloneRoiPoint(point: RoiPoint): RoiPoint {
@@ -50,12 +57,14 @@ export function cloneRoiPoint(point: RoiPoint): RoiPoint {
 }
 
 export function cloneRoiDefinition(roi: RoiDefinition): RoiDefinition {
+  const alignment = normalizeRoiAlignment(roi.alignment);
   return {
     shape: roi.shape,
     mode: roi.mode,
     start: cloneRoiPoint(roi.start),
     end: cloneRoiPoint(roi.end),
     color: normalizeRoiColor(roi.color),
+    ...(roi.mode === '3d' && alignment !== DEFAULT_ROI_ALIGNMENT ? { alignment } : {}),
   };
 }
 

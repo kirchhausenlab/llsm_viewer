@@ -7,9 +7,14 @@ import type {
 
 export type AnnotateBrushMode = 'brush' | 'eraser';
 export type AnnotateDimensionMode = '2d' | '3d';
+export type AnnotateBrushShape = 'circle' | 'square';
+export type AnnotateHoverMode = '2d' | '3d';
 
 export type AnnotationStrokeHandlers = {
   enabled: boolean;
+  hoverMode?: AnnotateHoverMode;
+  selectedZIndex?: number;
+  dimensions?: { width: number; height: number; depth: number } | null;
   onStrokeStart: () => void;
   onStrokeApply: (coords: { x: number; y: number; z: number }) => void;
   onStrokeEnd: () => void;
@@ -67,6 +72,8 @@ export type EditableSegmentationChannel = {
   activeLabelIndex: number;
   mode: AnnotateDimensionMode;
   brushMode: AnnotateBrushMode;
+  brushShape: AnnotateBrushShape;
+  hoverMode: AnnotateHoverMode;
   radius: number;
   overlayVisible: boolean;
   enabled: boolean;

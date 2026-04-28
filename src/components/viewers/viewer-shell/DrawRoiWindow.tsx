@@ -1,3 +1,5 @@
+import type { CSSProperties } from 'react';
+
 import FloatingWindow from '../../widgets/FloatingWindow';
 import {
   ViewerWindowRow,
@@ -5,8 +7,8 @@ import {
   ViewerWindowStack,
 } from './window-ui';
 import type { LayoutProps } from './types';
-import type { RoiDefinition, RoiDimensionMode } from '../../../types/roi';
-import { ROI_COLOR_SWATCHES } from '../../../types/roi';
+import type { RoiAlignment, RoiDefinition, RoiDimensionMode } from '../../../types/roi';
+import { normalizeRoiAlignment, ROI_COLOR_SWATCHES } from '../../../types/roi';
 import { fromUserFacingVoxelIndex, toUserFacingVoxelIndex } from '../../../shared/utils/voxelIndex';
 
 type DrawRoiWindowProps = {
@@ -22,8 +24,11 @@ type DrawRoiWindowProps = {
   dimensionMode: RoiDimensionMode;
   currentRoiName: string;
   currentColor: string;
+  currentAlignment: RoiAlignment;
+  glassAlignmentEnabled: boolean;
   workingRoi: RoiDefinition | null;
   onColorChange: (color: string) => void;
+  onAlignmentChange: (alignment: RoiAlignment) => void;
   onUpdateWorkingRoi: (updater: (current: RoiDefinition) => RoiDefinition) => void;
   onClose: () => void;
 };
@@ -40,6 +45,40 @@ const clampCoordinate = (value: number, axis: AxisKey, volumeDimensions: DrawRoi
   return Math.min(max, Math.max(0, Math.round(value)));
 };
 
+function AxesGuideIcon() {
+  return (
+    <svg
+      className="viewer-top-menu-overlay-icon"
+      viewBox="0 0 24 24"
+      aria-hidden="true"
+      focusable="false"
+    >
+      <path d="M6 18h12" />
+      <path d="m15 15 3 3-3 3" />
+      <path d="M6 18V6" />
+      <path d="m3 9 3-3 3 3" />
+      <path d="M6 18 17 7" />
+      <path d="M13 7h4v4" />
+    </svg>
+  );
+}
+
+function GlassGuideIcon() {
+  return (
+    <svg
+      className="viewer-top-menu-overlay-icon"
+      viewBox="0 0 24 24"
+      aria-hidden="true"
+      focusable="false"
+    >
+      <path d="M8 4.5h10l-3 15H5l3-15Z" />
+      <path d="m10 7.5 5.4 0" />
+      <path d="m8.6 12.2 5.4 0" />
+      <path d="m6.8 17 5.4 0" />
+    </svg>
+  );
+}
+
 export default function DrawRoiWindow({
   initialPosition,
   windowMargin,
@@ -49,13 +88,19 @@ export default function DrawRoiWindow({
   dimensionMode,
   currentRoiName,
   currentColor,
+  currentAlignment,
+  glassAlignmentEnabled,
   workingRoi,
   onColorChange,
+  onAlignmentChange,
   onUpdateWorkingRoi,
   onClose,
 }: DrawRoiWindowProps) {
   const effectiveDimensionMode = workingRoi?.mode ?? dimensionMode;
   const isTwoDMode = effectiveDimensionMode === '2d';
+  const effectiveAlignment = workingRoi
+    ? normalizeRoiAlignment(workingRoi.alignment)
+    : normalizeRoiAlignment(currentAlignment);
 
   const handlePointCoordinateChange = (pointKey: 'start' | 'end', axis: AxisKey, nextValue: number) => {
     if (!workingRoi) {
@@ -131,6 +176,51 @@ export default function DrawRoiWindow({
               </ViewerWindowRow>
             );
           })}
+          {!isTwoDMode ? (
+            <ViewerWindowRow className="draw-roi-alignment-row" align="center">
+              <span className="draw-roi-alignment-label">Alignment:</span>
+              <div
+                className="viewer-top-menu-segmented-control viewer-top-menu-segmented-control--overlay draw-roi-alignment-control"
+                role="group"
+                aria-label="ROI alignment"
+                style={{ '--viewer-top-menu-segment-count': 2 } as CSSProperties}
+              >
+                <button
+                  type="button"
+                  className={
+                    effectiveAlignment === 'axes'
+                      ? 'viewer-top-menu-segment-button is-active'
+                      : 'viewer-top-menu-segment-button'
+                  }
+                  aria-label="Axes"
+                  aria-pressed={effectiveAlignment === 'axes'}
+                  title="Axes"
+                  onClick={() => onAlignmentChange('axes')}
+                >
+                  <AxesGuideIcon />
+                </button>
+                <button
+                  type="button"
+                  className={
+                    effectiveAlignment === 'glass'
+                      ? 'viewer-top-menu-segment-button is-active'
+                      : 'viewer-top-menu-segment-button'
+                  }
+                  aria-label="Glass"
+                  aria-pressed={effectiveAlignment === 'glass'}
+                  title={glassAlignmentEnabled ? 'Glass' : 'Glass alignment requires de-skew metadata.'}
+                  disabled={!glassAlignmentEnabled}
+                  onClick={() => {
+                    if (glassAlignmentEnabled) {
+                      onAlignmentChange('glass');
+                    }
+                  }}
+                >
+                  <GlassGuideIcon />
+                </button>
+              </div>
+            </ViewerWindowRow>
+          ) : null}
         </div>
 
         <div className="draw-roi-color-section">

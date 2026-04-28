@@ -15,6 +15,7 @@ console.log('Starting useViewerRoiState tests');
 
   assert.equal(hook.result.tool, 'line');
   assert.equal(hook.result.dimensionMode, '2d');
+  assert.equal(hook.result.defaultAlignment, 'axes');
   assert.equal(hook.result.defaultColor, '#FACC15');
   assert.equal(hook.result.workingRoi, null);
   assert.equal(hook.result.savedRois.length, 0);
@@ -23,23 +24,27 @@ console.log('Starting useViewerRoiState tests');
   hook.act(() => {
     hook.result.setTool('line');
     hook.result.setDimensionMode('3d');
+    hook.result.setDefaultAlignment('glass');
     hook.result.setWorkingRoi({
       shape: 'line',
       mode: '3d',
       start: { x: 3, y: 12, z: 9 },
       end: { x: 3, y: 12, z: 9 },
       color: '#00ff00',
+      alignment: 'glass',
     }, { detach: true });
   });
 
   assert.equal(hook.result.tool, 'line');
   assert.equal(hook.result.dimensionMode, '3d');
+  assert.equal(hook.result.defaultAlignment, 'glass');
   assert.deepEqual(hook.result.workingRoi, {
     shape: 'line',
     mode: '3d',
     start: { x: 3, y: 12, z: 9 },
     end: { x: 3, y: 12, z: 9 },
     color: '#00FF00',
+    alignment: 'glass',
   });
 
   let firstSaved = null;
@@ -70,6 +75,7 @@ console.log('Starting useViewerRoiState tests');
     start: { x: 3, y: 12, z: 9 },
     end: { x: 3, y: 12, z: 9 },
     color: '#00FF00',
+    alignment: 'glass',
   });
 
   hook.act(() => {
@@ -84,6 +90,7 @@ console.log('Starting useViewerRoiState tests');
     start: { x: 3, y: 12, z: 9 },
     end: { x: 7, y: 15, z: 11 },
     color: '#123456',
+    alignment: 'glass',
   });
 
   hook.act(() => {
@@ -151,6 +158,7 @@ console.log('Starting useViewerRoiState tests');
     start: { x: 3, y: 12, z: 9 },
     end: { x: 7, y: 15, z: 11 },
     color: '#123456',
+    alignment: 'glass',
   });
   assert.equal(hook.result.defaultColor, '#123456');
 

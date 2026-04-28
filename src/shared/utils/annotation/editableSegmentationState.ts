@@ -34,6 +34,7 @@ import {
 
 export const DEFAULT_ANNOTATION_BRICK_SIZE: SparseSegmentationBrickSize = [32, 32, 32];
 export const MIN_ANNOTATION_RADIUS = 1;
+export const DEFAULT_ANNOTATION_RADIUS = 5;
 export const MAX_ANNOTATION_RADIUS = 10;
 
 type EditableSkipHierarchyLevel = VolumeBrickPageTable['skipHierarchy']['levels'][number];
@@ -153,7 +154,7 @@ export function createEditableSegmentationChannel({
   dimensions,
   volumeCount,
   createdFrom,
-  labels = [{ name: '' }],
+  labels,
   timepoints,
   timepointLabels,
 }: {
@@ -173,11 +174,13 @@ export function createEditableSegmentationChannel({
     name,
     dimensions,
     volumeCount: Math.max(1, Math.floor(volumeCount)),
-    labels: labels.length > 0 ? cloneLabels(labels) : [{ name: '' }],
+    labels: labels === undefined ? [{ name: '' }] : cloneLabels(labels),
     activeLabelIndex: 0,
     mode: '3d',
     brushMode: 'brush',
-    radius: MIN_ANNOTATION_RADIUS,
+    brushShape: 'circle',
+    hoverMode: '3d',
+    radius: DEFAULT_ANNOTATION_RADIUS,
     overlayVisible: true,
     enabled: false,
     dirty: true,
@@ -650,7 +653,7 @@ export function hasEditableLabelVoxels(channel: EditableSegmentationChannel, lab
 
 export function deleteEditableLabelInPlace(channel: EditableSegmentationChannel, labelIndex: number): void {
   if (channel.labels.length <= 1) {
-    channel.labels = [{ name: '' }];
+    channel.labels = [];
     channel.activeLabelIndex = 0;
     for (const state of channel.timepoints.values()) {
       state.bricks.clear();
@@ -706,7 +709,7 @@ export function deleteEditableLabelInPlace(channel: EditableSegmentationChannel,
 
 export function clearEditableSegmentationChannelInPlace(channel: EditableSegmentationChannel): void {
   channel.timepoints.clear();
-  channel.labels = [{ name: '' }];
+  channel.labels = [];
   channel.activeLabelIndex = 0;
 }
 

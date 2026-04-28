@@ -2,7 +2,9 @@ import { useCallback, useMemo, useState, type CSSProperties } from 'react';
 
 import FloatingWindow from '../../widgets/FloatingWindow';
 import type { AnnotateController } from '../../../hooks/annotation/useAnnotate';
+import type { AnnotateBrushShape, AnnotateHoverMode } from '../../../types/annotation';
 import { createSegmentationSeed } from '../../../shared/utils/appHelpers';
+import { DEFAULT_ANNOTATION_RADIUS } from '../../../shared/utils/annotation/editableSegmentationState';
 import { hashSparseSegmentationLabelColor } from '../../../shared/utils/preprocessedDataset/sparseSegmentation';
 import { useViewerWindowActionColumnHeight } from './hooks/useViewerWindowActionColumnHeight';
 import type { LayoutProps } from './types';
@@ -20,6 +22,7 @@ import {
   ViewerWindowMessage,
   ViewerWindowRow,
   ViewerWindowSelect,
+  ViewerWindowSegmentedControl,
   ViewerWindowSlider,
   ViewerWindowStack,
   ViewerWindowValue,
@@ -51,6 +54,22 @@ function resolveLabelColor(layerKey: string, labelId: number): string {
   return `rgb(${r}, ${g}, ${b})`;
 }
 
+function CircleBrushShapeIcon() {
+  return (
+    <svg className="annotate-brush-shape-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+      <circle cx="12" cy="12" r="6.5" />
+    </svg>
+  );
+}
+
+function SquareBrushShapeIcon() {
+  return (
+    <svg className="annotate-brush-shape-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+      <rect x="6" y="6" width="12" height="12" />
+    </svg>
+  );
+}
+
 export default function AnnotateWindow({
   initialPosition,
   windowMargin,
@@ -61,7 +80,9 @@ export default function AnnotateWindow({
   onClose,
 }: AnnotateWindowProps) {
   const active = controller.activeChannel;
-  const radius = active?.radius ?? 1;
+  const radius = active?.radius ?? DEFAULT_ANNOTATION_RADIUS;
+  const brushShape = active?.brushShape ?? 'circle';
+  const hoverMode = active?.hoverMode ?? '3d';
   const canEditSelectedChannel = Boolean(
     active &&
     selectedChannel?.editable &&
@@ -177,7 +198,29 @@ export default function AnnotateWindow({
               </ViewerWindowValue>
             </ViewerWindowFieldRow>
 
-            <ViewerWindowRow className="annotate-radius-row">
+            <ViewerWindowRow className="annotate-radius-row" align="center">
+              <ViewerWindowSegmentedControl<AnnotateBrushShape>
+                ariaLabel="Brush shape"
+                value={brushShape}
+                onChange={controller.setBrushShape}
+                className="annotate-brush-shape-control"
+                buttonClassName="annotate-brush-shape-button"
+                disabled={!canEditSelectedChannel}
+                options={[
+                  {
+                    value: 'square',
+                    content: <SquareBrushShapeIcon />,
+                    ariaLabel: 'Square',
+                    title: 'Square',
+                  },
+                  {
+                    value: 'circle',
+                    content: <CircleBrushShapeIcon />,
+                    ariaLabel: 'Circle',
+                    title: 'Circle',
+                  },
+                ]}
+              />
               <ViewerWindowSlider
                 id="annotate-radius-slider"
                 className="annotate-slider-group"
@@ -191,6 +234,20 @@ export default function AnnotateWindow({
                 disabled={!canEditSelectedChannel}
               />
             </ViewerWindowRow>
+
+            <ViewerWindowFieldRow label="Hover:" className="annotate-hover-row">
+              <ViewerWindowSegmentedControl<AnnotateHoverMode>
+                ariaLabel="Annotation hover mode"
+                value={hoverMode}
+                onChange={controller.setHoverMode}
+                className="annotate-hover-control"
+                disabled={!canEditSelectedChannel}
+                options={[
+                  { value: '2d', content: '2D', ariaLabel: '2D', title: '2D' },
+                  { value: '3d', content: '3D', ariaLabel: '3D', title: '3D' },
+                ]}
+              />
+            </ViewerWindowFieldRow>
 
             <ViewerWindowDivider />
 
@@ -228,10 +285,10 @@ export default function AnnotateWindow({
                 <ViewerWindowButton type="button" onClick={controller.addLabel} disabled={!canEditSelectedChannel}>
                   Add
                 </ViewerWindowButton>
-                <ViewerWindowButton type="button" onClick={controller.deleteActiveLabel} disabled={!canEditSelectedChannel}>
+                <ViewerWindowButton type="button" onClick={controller.deleteActiveLabel} disabled={!canEditSelectedChannel || !selectedLabel}>
                   Delete
                 </ViewerWindowButton>
-                <ViewerWindowButton type="button" onClick={controller.renameActiveLabel} disabled={!canEditSelectedChannel}>
+                <ViewerWindowButton type="button" onClick={controller.renameActiveLabel} disabled={!canEditSelectedChannel || !selectedLabel}>
                   Rename
                 </ViewerWindowButton>
                 <ViewerWindowButton type="button" onClick={() => void controller.saveActiveChannel()} disabled={!canEditSelectedChannel || controller.busy}>

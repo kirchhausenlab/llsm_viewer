@@ -1,7 +1,16 @@
 import type { NormalizedVolume } from '../../core/volumeProcessing';
 import { isIntensityVolume } from '../../core/volumeProcessing';
 import type { SavedRoi } from '../../types/roi';
+import { normalizeRoiAlignment } from '../../types/roi';
 import type { BackgroundMaskVolume } from './backgroundMask';
+import {
+  dotRoiGeometryPoint,
+  resolveRoiGeometryBounds,
+  resolveRoiGeometryBasis,
+  subtractRoiGeometryPoint,
+  type RoiGeometryBasis,
+  type RoiGeometryDeskew,
+} from './roiGeometry';
 import type {
   RoiMeasurementChannelSnapshot,
   RoiMeasurementMetricKey,
@@ -285,7 +294,85 @@ function build2dEllipseValues(roi: SavedRoi, volume: NormalizedVolume, mask: Uin
   return values;
 }
 
-function build3dBoxValues(roi: SavedRoi, volume: NormalizedVolume, mask: Uint8Array | null): number[] {
+function build3dBoxValues(
+  roi: SavedRoi,
+  volume: NormalizedVolume,
+  mask: Uint8Array | null,
+  deskew: RoiGeometryDeskew | null = null,
+): number[] {
+  if (normalizeRoiAlignment(roi.alignment) === 'glass' && deskew) {
+    return build3dOrientedBoxValues(roi, volume, mask, deskew);
+  }
+
+  return build3dAxisAlignedBoxValues(roi, volume, mask);
+}
+
+function resolveOrientedRoiIterationBounds(
+  center: { x: number; y: number; z: number },
+  radius: { x: number; y: number; z: number },
+  basis: RoiGeometryBasis,
+  volume: NormalizedVolume,
+) {
+  const extentX = Math.abs(basis.x.x) * radius.x + Math.abs(basis.y.x) * radius.y + Math.abs(basis.z.x) * radius.z;
+  const extentY = Math.abs(basis.x.y) * radius.x + Math.abs(basis.y.y) * radius.y + Math.abs(basis.z.y) * radius.z;
+  const extentZ = Math.abs(basis.x.z) * radius.x + Math.abs(basis.y.z) * radius.y + Math.abs(basis.z.z) * radius.z;
+  return {
+    minX: Math.max(0, Math.floor(center.x - extentX)),
+    maxX: Math.min(volume.width - 1, Math.ceil(center.x + extentX)),
+    minY: Math.max(0, Math.floor(center.y - extentY)),
+    maxY: Math.min(volume.height - 1, Math.ceil(center.y + extentY)),
+    minZ: Math.max(0, Math.floor(center.z - extentZ)),
+    maxZ: Math.min(volume.depth - 1, Math.ceil(center.z + extentZ)),
+  };
+}
+
+function projectPointIntoRoiBasis(
+  point: { x: number; y: number; z: number },
+  center: { x: number; y: number; z: number },
+  basis: RoiGeometryBasis,
+) {
+  const offset = subtractRoiGeometryPoint(point, center);
+  return {
+    x: dotRoiGeometryPoint(offset, basis.x),
+    y: dotRoiGeometryPoint(offset, basis.y),
+    z: dotRoiGeometryPoint(offset, basis.z),
+  };
+}
+
+function build3dOrientedBoxValues(
+  roi: SavedRoi,
+  volume: NormalizedVolume,
+  mask: Uint8Array | null,
+  deskew: RoiGeometryDeskew | null,
+): number[] {
+  const basis = resolveRoiGeometryBasis(normalizeRoiAlignment(roi.alignment), deskew);
+  const { center, radius } = resolveRoiGeometryBounds(roi.start, roi.end, basis);
+  const bounds = resolveOrientedRoiIterationBounds(center, radius, basis, volume);
+  const values: number[] = [];
+
+  for (let z = bounds.minZ; z <= bounds.maxZ; z += 1) {
+    for (let y = bounds.minY; y <= bounds.maxY; y += 1) {
+      for (let x = bounds.minX; x <= bounds.maxX; x += 1) {
+        const local = projectPointIntoRoiBasis({ x, y, z }, center, basis);
+        if (
+          Math.abs(local.x) - EPSILON > radius.x ||
+          Math.abs(local.y) - EPSILON > radius.y ||
+          Math.abs(local.z) - EPSILON > radius.z
+        ) {
+          continue;
+        }
+        const value = getUnmaskedIntensityScalarAtVoxel(volume, mask, x, y, z);
+        if (value !== null) {
+          values.push(value);
+        }
+      }
+    }
+  }
+
+  return values;
+}
+
+function build3dAxisAlignedBoxValues(roi: SavedRoi, volume: NormalizedVolume, mask: Uint8Array | null): number[] {
   const minX = Math.min(roi.start.x, roi.end.x);
   const maxX = Math.max(roi.start.x, roi.end.x);
   const minY = Math.min(roi.start.y, roi.end.y);
@@ -318,7 +405,49 @@ function build3dBoxValues(roi: SavedRoi, volume: NormalizedVolume, mask: Uint8Ar
   return values;
 }
 
-function build3dEllipsoidValues(roi: SavedRoi, volume: NormalizedVolume, mask: Uint8Array | null): number[] {
+function build3dEllipsoidValues(
+  roi: SavedRoi,
+  volume: NormalizedVolume,
+  mask: Uint8Array | null,
+  deskew: RoiGeometryDeskew | null = null,
+): number[] {
+  if (normalizeRoiAlignment(roi.alignment) === 'glass' && deskew) {
+    return build3dOrientedEllipsoidValues(roi, volume, mask, deskew);
+  }
+
+  return build3dAxisAlignedEllipsoidValues(roi, volume, mask);
+}
+
+function build3dOrientedEllipsoidValues(
+  roi: SavedRoi,
+  volume: NormalizedVolume,
+  mask: Uint8Array | null,
+  deskew: RoiGeometryDeskew | null,
+): number[] {
+  const basis = resolveRoiGeometryBasis(normalizeRoiAlignment(roi.alignment), deskew);
+  const { center, radius } = resolveRoiGeometryBounds(roi.start, roi.end, basis);
+  const bounds = resolveOrientedRoiIterationBounds(center, radius, basis, volume);
+  const values: number[] = [];
+
+  for (let z = bounds.minZ; z <= bounds.maxZ; z += 1) {
+    for (let y = bounds.minY; y <= bounds.maxY; y += 1) {
+      for (let x = bounds.minX; x <= bounds.maxX; x += 1) {
+        const local = projectPointIntoRoiBasis({ x, y, z }, center, basis);
+        if (!isWithinClosedEllipse(local, { x: 0, y: 0, z: 0 }, radius)) {
+          continue;
+        }
+        const value = getUnmaskedIntensityScalarAtVoxel(volume, mask, x, y, z);
+        if (value !== null) {
+          values.push(value);
+        }
+      }
+    }
+  }
+
+  return values;
+}
+
+function build3dAxisAlignedEllipsoidValues(roi: SavedRoi, volume: NormalizedVolume, mask: Uint8Array | null): number[] {
   const minX = Math.min(roi.start.x, roi.end.x);
   const maxX = Math.max(roi.start.x, roi.end.x);
   const minY = Math.min(roi.start.y, roi.end.y);
@@ -409,6 +538,7 @@ export function computeRoiMeasurementValues(
   roi: SavedRoi,
   volume: NormalizedVolume | null,
   backgroundMask?: BackgroundMaskVolume | null,
+  deskew?: RoiGeometryDeskew | null,
 ) {
   if (!volume || !isIntensityVolume(volume)) {
     return createEmptyMetricRecord();
@@ -419,9 +549,9 @@ export function computeRoiMeasurementValues(
   if (roi.shape === 'line') {
     values = buildLineProfileValues(roi, volume, mask);
   } else if (roi.shape === 'rectangle') {
-    values = roi.mode === '2d' ? build2dRectangleValues(roi, volume, mask) : build3dBoxValues(roi, volume, mask);
+    values = roi.mode === '2d' ? build2dRectangleValues(roi, volume, mask) : build3dBoxValues(roi, volume, mask, deskew ?? null);
   } else {
-    values = roi.mode === '2d' ? build2dEllipseValues(roi, volume, mask) : build3dEllipsoidValues(roi, volume, mask);
+    values = roi.mode === '2d' ? build2dEllipseValues(roi, volume, mask) : build3dEllipsoidValues(roi, volume, mask, deskew ?? null);
   }
 
   return computeStatistics(values);
@@ -431,10 +561,12 @@ export function buildRoiMeasurementsSnapshot({
   selectedRois,
   channels,
   timepoint,
+  deskew = null,
 }: {
   selectedRois: SavedRoi[];
   channels: RoiMeasurementChannelSource[];
   timepoint: number;
+  deskew?: RoiGeometryDeskew | null;
 }): RoiMeasurementsSnapshot {
   const snapshotChannels: RoiMeasurementChannelSnapshot[] = channels.map((channel) => ({
     id: channel.id,
@@ -450,7 +582,7 @@ export function buildRoiMeasurementsSnapshot({
         roiName: roi.name,
         channelId: channel.id,
         channelName: channel.name,
-        values: computeRoiMeasurementValues(roi, channel.volume, channel.backgroundMask ?? null),
+        values: computeRoiMeasurementValues(roi, channel.volume, channel.backgroundMask ?? null, deskew),
       });
     });
   });

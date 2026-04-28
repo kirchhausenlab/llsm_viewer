@@ -883,6 +883,7 @@ function VolumeViewer({
   });
   const {
     isDrawToolActiveRef,
+    isMoveToolActiveRef,
     isDrawPreviewActiveRef,
     isRoiMoveInteractionActiveRef,
     isRoiMoveActiveRef,
@@ -1824,6 +1825,7 @@ function VolumeViewer({
       followedTrackIdRef,
       updateVoxelHover,
       isRoiDrawToolActiveRef: isDrawToolActiveRef,
+      isRoiMoveToolActiveRef: isMoveToolActiveRef,
       isRoiDrawPreviewActiveRef: isDrawPreviewActiveRef,
       isRoiMoveInteractionActiveRef,
       isRoiMoveActiveRef,

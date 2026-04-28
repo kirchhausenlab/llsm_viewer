@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
-import type { RoiDefinition, RoiDimensionMode, RoiTool, SavedRoi } from '../../../../types/roi';
+import type { RoiAlignment, RoiDefinition, RoiDimensionMode, RoiTool, SavedRoi } from '../../../../types/roi';
 import {
   cloneRoiDefinition,
   cloneSavedRoi,
+  DEFAULT_ROI_ALIGNMENT,
   DEFAULT_ROI_COLOR,
   formatRoiCentroidName,
+  normalizeRoiAlignment,
   normalizeRoiColor,
 } from '../../../../types/roi';
 
@@ -20,6 +22,7 @@ type UseViewerRoiStateOptions = {
 type UseViewerRoiStateResult = {
   tool: RoiTool;
   dimensionMode: RoiDimensionMode;
+  defaultAlignment: RoiAlignment;
   defaultColor: string;
   workingRoi: RoiDefinition | null;
   savedRois: SavedRoi[];
@@ -29,6 +32,7 @@ type UseViewerRoiStateResult = {
   showAllSavedRois: boolean;
   setTool: (tool: RoiTool) => void;
   setDimensionMode: (mode: RoiDimensionMode) => void;
+  setDefaultAlignment: (alignment: RoiAlignment) => void;
   setDefaultColor: (color: string) => void;
   setWorkingRoi: (roi: RoiDefinition | null, options?: { detach?: boolean }) => void;
   updateWorkingRoi: (updater: (current: RoiDefinition) => RoiDefinition) => void;
@@ -47,6 +51,7 @@ type UseViewerRoiStateResult = {
     editingSavedRoiId: string | null;
     workingRoi: RoiDefinition | null;
     defaultColor: string;
+    defaultAlignment?: RoiAlignment;
     dimensionMode: RoiDimensionMode;
     tool: RoiTool;
   }) => void;
@@ -60,6 +65,7 @@ export function useViewerRoiState({
   const nextRoiIdRef = useRef(1);
   const [tool, setTool] = useState<RoiTool>('line');
   const [dimensionMode, setDimensionMode] = useState<RoiDimensionMode>('2d');
+  const [defaultAlignment, setDefaultAlignmentState] = useState<RoiAlignment>(DEFAULT_ROI_ALIGNMENT);
   const [defaultColor, setDefaultColorState] = useState(() => normalizeRoiColor(DEFAULT_ROI_COLOR));
   const [workingRoi, setWorkingRoiState] = useState<RoiDefinition | null>(null);
   const [savedRois, setSavedRois] = useState<SavedRoi[]>([]);
@@ -70,6 +76,10 @@ export function useViewerRoiState({
 
   const setDefaultColor = useCallback((color: string) => {
     setDefaultColorState(normalizeRoiColor(color));
+  }, []);
+
+  const setDefaultAlignment = useCallback((alignment: RoiAlignment) => {
+    setDefaultAlignmentState(normalizeRoiAlignment(alignment));
   }, []);
 
   const setWorkingRoi = useCallback((roi: RoiDefinition | null, options?: { detach?: boolean }) => {
@@ -96,6 +106,9 @@ export function useViewerRoiState({
 
     setTool((current) => (current === workingRoi.shape ? current : workingRoi.shape));
     setDimensionMode((current) => (current === workingRoi.mode ? current : workingRoi.mode));
+    if (workingRoi.mode === '3d') {
+      setDefaultAlignmentState(normalizeRoiAlignment(workingRoi.alignment));
+    }
   }, [workingRoi]);
 
   const attachSavedRoi = useCallback(
@@ -117,6 +130,9 @@ export function useViewerRoiState({
         const workingCopy = cloneRoiDefinition(nextActiveRoi);
         setWorkingRoiState(workingCopy);
         setDefaultColorState(normalizeRoiColor(nextActiveRoi.color));
+        if (nextActiveRoi.mode === '3d') {
+          setDefaultAlignmentState(normalizeRoiAlignment(nextActiveRoi.alignment));
+        }
         return nextActiveRoi.id;
       });
     },
@@ -185,6 +201,9 @@ export function useViewerRoiState({
     if (promotedRoi) {
       setWorkingRoiState(cloneRoiDefinition(promotedRoi));
       setDefaultColorState(normalizeRoiColor(promotedRoi.color));
+      if (promotedRoi.mode === '3d') {
+        setDefaultAlignmentState(normalizeRoiAlignment(promotedRoi.alignment));
+      }
       setEditingSavedRoiId(promotedRoi.id);
     } else if (editingSavedRoiId === activeSavedRoiId) {
       setEditingSavedRoiId(null);
@@ -227,6 +246,9 @@ export function useViewerRoiState({
     );
     setEditingSavedRoiId(activeSavedRoiId);
     setDefaultColorState(normalizeRoiColor(normalizedWorkingRoi.color));
+    if (normalizedWorkingRoi.mode === '3d') {
+      setDefaultAlignmentState(normalizeRoiAlignment(normalizedWorkingRoi.alignment));
+    }
   }, [activeSavedRoiId, workingRoi]);
 
   const normalizedSavedRois = useMemo(() => savedRois.map((roi) => cloneSavedRoi(roi)), [savedRois]);
@@ -238,6 +260,7 @@ export function useViewerRoiState({
     editingSavedRoiId: string | null;
     workingRoi: RoiDefinition | null;
     defaultColor: string;
+    defaultAlignment?: RoiAlignment;
     dimensionMode: RoiDimensionMode;
     tool: RoiTool;
   }) => {
@@ -247,6 +270,7 @@ export function useViewerRoiState({
     setEditingSavedRoiId(state.editingSavedRoiId);
     setWorkingRoiState(state.workingRoi ? cloneRoiDefinition(state.workingRoi) : null);
     setDefaultColorState(normalizeRoiColor(state.defaultColor));
+    setDefaultAlignmentState(normalizeRoiAlignment(state.defaultAlignment));
     setDimensionMode(state.dimensionMode);
     setTool(state.tool);
   }, []);
@@ -254,6 +278,7 @@ export function useViewerRoiState({
   return {
     tool,
     dimensionMode,
+    defaultAlignment,
     defaultColor,
     workingRoi,
     savedRois: normalizedSavedRois,
@@ -263,6 +288,7 @@ export function useViewerRoiState({
     showAllSavedRois,
     setTool,
     setDimensionMode,
+    setDefaultAlignment,
     setDefaultColor,
     setWorkingRoi,
     updateWorkingRoi,

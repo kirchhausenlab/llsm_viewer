@@ -66,6 +66,29 @@
   stroke-linejoin: round;
 }
 
+.annotate-window .annotate-radius-row {
+  align-items: flex-end;
+  gap: 0.55rem;
+  flex-wrap: nowrap;
+}
+
+.annotate-window .annotate-brush-shape-control,
+.annotate-window .annotate-hover-control {
+  grid-template-columns: repeat(2, 2.25rem);
+}
+
+.annotate-window .annotate-brush-shape-icon {
+  width: 1rem;
+  height: 1rem;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.9;
+}
+
+.annotate-window .annotate-hover-row .viewer-window-field-value {
+  justify-content: flex-start;
+}
+
 .annotate-create-window .annotate-create-form-row,
 .export-channel-window .export-channel-row {
   align-items: center;
@@ -94,7 +117,8 @@
 }
 
 .annotate-window .annotate-slider-group {
-  min-width: 220px;
+  flex: 1 1 0;
+  min-width: 150px;
 }
 
 .export-channel-window .export-channel-row label {

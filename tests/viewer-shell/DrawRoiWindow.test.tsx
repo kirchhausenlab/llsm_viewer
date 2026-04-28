@@ -32,8 +32,11 @@ function createProps(overrides: Partial<React.ComponentProps<typeof DrawRoiWindo
     dimensionMode: '3d' as const,
     currentRoiName: 'Unsaved ROI',
     currentColor: '#FACC15',
+    currentAlignment: 'axes' as const,
+    glassAlignmentEnabled: true,
     workingRoi: createWorkingRoi(),
     onColorChange: () => {},
+    onAlignmentChange: () => {},
     onUpdateWorkingRoi: () => {},
     onClose: () => {},
     ...overrides,
@@ -91,6 +94,11 @@ function findNodeByClassName(renderer: TestRenderer.ReactTestRenderer, className
   assert.ok(colorPickerTrigger);
   assert.ok(colorPickerTrigger.findByProps({ className: 'color-picker-indicator' }));
 
+  const alignmentRow = findNodeByClassName(renderer, 'draw-roi-alignment-row');
+  assert.ok(alignmentRow);
+  assert.equal(alignmentRow.findAllByType('span')[0]?.children.join(''), 'Alignment:');
+  assert.equal(alignmentRow.findByProps({ 'aria-label': 'Glass' }).props.disabled, false);
+
   renderer.unmount();
 })();
 
@@ -120,6 +128,53 @@ function findNodeByClassName(renderer: TestRenderer.ReactTestRenderer, className
   for (const slider of renderer.root.findAll((node) => node.type === 'input' && node.props.type === 'range')) {
     assert.equal(slider.props.disabled, true);
   }
+
+  renderer.unmount();
+})();
+
+(() => {
+  let nextAlignment: string | null = null;
+  const renderer = TestRenderer.create(
+    <DrawRoiWindow
+      {...createProps({
+        currentAlignment: 'glass',
+        glassAlignmentEnabled: false,
+        workingRoi: createWorkingRoi({ alignment: 'glass' }),
+        onAlignmentChange: (alignment) => {
+          nextAlignment = alignment;
+        },
+      })}
+    />,
+  );
+
+  const glassButton = renderer.root.findByProps({ 'aria-label': 'Glass' });
+  assert.equal(glassButton.props.disabled, true);
+  act(() => {
+    glassButton.props.onClick();
+  });
+  assert.equal(nextAlignment, null);
+
+  const axesButton = renderer.root.findByProps({ 'aria-label': 'Axes' });
+  act(() => {
+    axesButton.props.onClick();
+  });
+  assert.equal(nextAlignment, 'axes');
+
+  renderer.unmount();
+})();
+
+(() => {
+  const renderer = TestRenderer.create(
+    <DrawRoiWindow
+      {...createProps({
+        currentAlignment: 'glass',
+        workingRoi: createWorkingRoi(),
+      })}
+    />,
+  );
+
+  assert.equal(renderer.root.findByProps({ 'aria-label': 'Axes' }).props['aria-pressed'], true);
+  assert.equal(renderer.root.findByProps({ 'aria-label': 'Glass' }).props['aria-pressed'], false);
 
   renderer.unmount();
 })();

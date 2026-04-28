@@ -17,7 +17,7 @@ import type { ViewerLayer } from '../../ui/contracts/viewerLayer';
 import type { FollowedVoxelTarget } from '../../types/follow';
 import type { HoveredVoxelInfo, HoverSettings } from '../../types/hover';
 import type { AnnotationStrokeHandlers } from '../../types/annotation';
-import type { RoiDefinition, RoiDimensionMode, RoiTool, SavedRoi } from '../../types/roi';
+import type { RoiAlignment, RoiDefinition, RoiDimensionMode, RoiTool, SavedRoi } from '../../types/roi';
 import type {
   CompiledTrackSetPayload,
   CompiledTrackSummary,
@@ -179,10 +179,13 @@ export type DesktopViewerBackgroundConfig = {
 
 export type ViewerRoiConfig = {
   isDrawToolActive: boolean;
+  isMoveToolActive: boolean;
   tool: RoiTool;
   dimensionMode: RoiDimensionMode;
   selectedZIndex: number;
   defaultColor: string;
+  defaultAlignment: RoiAlignment;
+  deskew: { angleRadians: number; direction: 'X' | 'Y' } | null;
   workingRoi: RoiDefinition | null;
   savedRois: SavedRoi[];
   activeSavedRoiId: string | null;

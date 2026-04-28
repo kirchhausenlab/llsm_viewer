@@ -2,7 +2,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import type {
   AnnotateBrushMode,
+  AnnotateBrushShape,
   AnnotateDimensionMode,
+  AnnotateHoverMode,
   AnnotateSourceOption,
   EditableSegmentationChannel,
   EditableSegmentationLabel,
@@ -46,6 +48,10 @@ type StrokeHistoryEntry = {
   indices: Uint32Array;
   before: Uint32Array;
   after: Uint32Array;
+  beforeLabels?: EditableSegmentationLabel[];
+  beforeActiveLabelIndex?: number;
+  afterLabels?: EditableSegmentationLabel[];
+  afterActiveLabelIndex?: number;
 };
 
 type SnapshotHistoryEntry = {
@@ -62,8 +68,13 @@ type StrokeState = {
   timepoint: number;
   mode: AnnotateDimensionMode;
   brushMode: AnnotateBrushMode;
+  brushShape: AnnotateBrushShape;
   radius: number;
   labelId: number;
+  autoCreateLabel: boolean;
+  createdLabel: boolean;
+  beforeLabels: EditableSegmentationLabel[] | null;
+  beforeActiveLabelIndex: number;
   touched: Map<number, number>;
   visitedCenters: Set<number>;
 };
@@ -120,6 +131,8 @@ export type AnnotateController = {
   setOverlayVisible: (value: boolean) => void;
   setMode: (value: AnnotateDimensionMode) => void;
   setBrushMode: (value: AnnotateBrushMode) => void;
+  setBrushShape: (value: AnnotateBrushShape) => void;
+  setHoverMode: (value: AnnotateHoverMode) => void;
   setRadius: (value: number) => void;
   setActiveLabelIndex: (value: number) => void;
   addLabel: () => void;
@@ -368,6 +381,7 @@ export function useAnnotate({
           dimensions,
           volumeCount,
           createdFrom: { kind: 'empty' },
+          labels: [],
         });
       }
 
@@ -480,6 +494,18 @@ export function useAnnotate({
     }, false);
   }, [updateActiveChannel]);
 
+  const setBrushShape = useCallback((value: AnnotateBrushShape) => {
+    updateActiveChannel((channel) => {
+      channel.brushShape = value;
+    }, false);
+  }, [updateActiveChannel]);
+
+  const setHoverMode = useCallback((value: AnnotateHoverMode) => {
+    updateActiveChannel((channel) => {
+      channel.hoverMode = value;
+    }, false);
+  }, [updateActiveChannel]);
+
   const setRadius = useCallback((value: number) => {
     updateActiveChannel((channel) => {
       channel.radius = clampInt(value, MIN_ANNOTATION_RADIUS, MAX_ANNOTATION_RADIUS);
@@ -513,7 +539,7 @@ export function useAnnotate({
 
   const deleteActiveLabel = useCallback(() => {
     const channel = activeChannelId ? channelsRef.current.get(activeChannelId) ?? null : null;
-    if (!channel) {
+    if (!channel || channel.labels.length === 0) {
       return;
     }
     const labelId = channel.activeLabelIndex + 1;
@@ -530,7 +556,7 @@ export function useAnnotate({
 
   const renameActiveLabel = useCallback(() => {
     const channel = activeChannelId ? channelsRef.current.get(activeChannelId) ?? null : null;
-    if (!channel) {
+    if (!channel || channel.labels.length === 0) {
       return;
     }
     const current = channel.labels[channel.activeLabelIndex]?.name ?? '';
@@ -581,7 +607,13 @@ export function useAnnotate({
 
   const beginStroke = useCallback(() => {
     const channel = activeChannelId ? channelsRef.current.get(activeChannelId) ?? null : null;
-    if (!channel || !channel.enabled || channel.labels.length === 0) {
+    if (!channel || !channel.enabled) {
+      strokeRef.current = null;
+      return;
+    }
+    const isEraserStroke = channel.brushMode === 'eraser';
+    const autoCreateLabel = channel.labels.length === 0;
+    if (autoCreateLabel && isEraserStroke) {
       strokeRef.current = null;
       return;
     }
@@ -590,8 +622,13 @@ export function useAnnotate({
       timepoint: Math.max(0, Math.min(channel.volumeCount - 1, currentTimepointRef.current)),
       mode: channel.mode,
       brushMode: channel.brushMode,
+      brushShape: channel.brushShape,
       radius: channel.radius,
-      labelId: channel.activeLabelIndex + 1,
+      labelId: autoCreateLabel ? 1 : channel.activeLabelIndex + 1,
+      autoCreateLabel,
+      createdLabel: false,
+      beforeLabels: autoCreateLabel ? cloneLabels(channel.labels) : null,
+      beforeActiveLabelIndex: channel.activeLabelIndex,
       touched: new Map(),
       visitedCenters: new Set(),
     };
@@ -619,7 +656,7 @@ export function useAnnotate({
     const isEraserStroke = stroke.brushMode === 'eraser';
     const nextLabel = isEraserStroke ? 0 : stroke.labelId;
     let changed = false;
-    for (const { dx, dy, dz } of computeAnnotationBrushOffsets(stroke.radius, stroke.mode)) {
+    for (const { dx, dy, dz } of computeAnnotationBrushOffsets(stroke.radius, stroke.mode, stroke.brushShape)) {
       const x = safeX + dx;
       const y = safeY + dy;
       const z = safeZ + dz;
@@ -636,6 +673,11 @@ export function useAnnotate({
       }
       if (!stroke.touched.has(index)) {
         stroke.touched.set(index, previous);
+      }
+      if (stroke.autoCreateLabel && !stroke.createdLabel) {
+        channel.labels.push({ name: '' });
+        channel.activeLabelIndex = 0;
+        stroke.createdLabel = true;
       }
       const result = setEditableLabelAtIndex(channel, stroke.timepoint, index, nextLabel);
       changed = changed || result.changed;
@@ -677,6 +719,14 @@ export function useAnnotate({
       indices: Uint32Array.from(indices),
       before: Uint32Array.from(before),
       after: Uint32Array.from(after),
+      ...(stroke.createdLabel && stroke.beforeLabels
+        ? {
+            beforeLabels: cloneLabels(stroke.beforeLabels),
+            beforeActiveLabelIndex: stroke.beforeActiveLabelIndex,
+            afterLabels: cloneLabels(channel.labels),
+            afterActiveLabelIndex: channel.activeLabelIndex,
+          }
+        : {}),
     });
     markChanged(channel, true);
   }, [markChanged, pushHistory]);
@@ -689,9 +739,17 @@ export function useAnnotate({
     if (entry.kind === 'snapshot') {
       restoreSnapshot(channel, direction === 'undo' ? entry.before : entry.after);
     } else {
+      if (direction === 'redo' && entry.afterLabels) {
+        channel.labels = cloneLabels(entry.afterLabels);
+        channel.activeLabelIndex = entry.afterActiveLabelIndex ?? 0;
+      }
       const source = direction === 'undo' ? entry.before : entry.after;
       for (let index = 0; index < entry.indices.length; index += 1) {
         setEditableLabelAtIndex(channel, entry.timepoint, entry.indices[index] ?? 0, source[index] ?? 0);
+      }
+      if (direction === 'undo' && entry.beforeLabels) {
+        channel.labels = cloneLabels(entry.beforeLabels);
+        channel.activeLabelIndex = entry.beforeActiveLabelIndex ?? 0;
       }
     }
     markChanged(channel, true);
@@ -786,6 +844,8 @@ export function useAnnotate({
     setOverlayVisible,
     setMode,
     setBrushMode,
+    setBrushShape,
+    setHoverMode,
     setRadius,
     setActiveLabelIndex,
     addLabel,

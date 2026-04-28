@@ -670,6 +670,21 @@
   min-width: 0;
 }
 
+.draw-roi-alignment-row {
+  gap: 0.55rem;
+}
+
+.draw-roi-alignment-label {
+  color: var(--text-secondary);
+  font-size: var(--type-size-label);
+  font-weight: var(--type-weight-label);
+  line-height: var(--type-line-ui);
+}
+
+.draw-roi-alignment-control {
+  --viewer-top-menu-widget-height: var(--floating-window-control-size);
+}
+
 .draw-roi-color-section {
   display: flex;
   flex-direction: column;

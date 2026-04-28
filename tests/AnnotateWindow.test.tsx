@@ -26,7 +26,9 @@ function createChannel(overrides: Partial<EditableSegmentationChannel> = {}): Ed
     overlayVisible: true,
     mode: '3d',
     brushMode: 'brush',
-    radius: 1,
+    brushShape: 'circle',
+    hoverMode: '3d',
+    radius: 5,
     dirty: true,
     revision: 1,
     savedRevision: 0,
@@ -75,6 +77,8 @@ function createController(overrides: Partial<AnnotateController> = {}): Annotate
     setOverlayVisible: () => {},
     setMode: () => {},
     setBrushMode: () => {},
+    setBrushShape: () => {},
+    setHoverMode: () => {},
     setRadius: () => {},
     setActiveLabelIndex: () => {},
     addLabel: () => {},
@@ -164,7 +168,9 @@ function findNodesByClass(renderer: TestRenderer.ReactTestRenderer, className: s
   assert.equal(renderer.root.findAllByProps({ 'aria-label': 'Eraser' }).length, 0);
   assert.equal(renderer.root.findAllByProps({ 'aria-label': 'Undo' }).length, 0);
   assert.equal(renderer.root.findAllByProps({ 'aria-label': 'Redo' }).length, 0);
-  assert.equal(renderer.root.findAllByType('button').filter((button) => button.props.children === '2D').length, 0);
+  assert.equal(renderer.root.findAllByProps({ 'aria-label': 'Circle' })[0]?.props['aria-pressed'], true);
+  assert.equal(renderer.root.findAllByProps({ 'aria-label': '3D' })[0]?.props['aria-pressed'], true);
+  assert.equal(renderer.root.findByProps({ id: 'annotate-radius-slider' }).props.value, 5);
 
   const labelTexts = findNodesByClass(renderer, 'roi-manager-list-item-label');
   assert.equal(labelTexts[0]?.props.children, '1');
@@ -182,6 +188,42 @@ function findNodesByClass(renderer: TestRenderer.ReactTestRenderer, className: s
   assert.equal(deleteChannelCalls, 1);
   assert.equal(clearCalls, 1);
   assert.equal(saveCalls, 1);
+  renderer.unmount();
+})();
+
+(() => {
+  let brushShape: string | null = null;
+  let hoverMode: string | null = null;
+  const renderer = renderAnnotateWindow(
+    createController({
+      setBrushShape: (value) => {
+        brushShape = value;
+      },
+      setHoverMode: (value) => {
+        hoverMode = value;
+      },
+    })
+  );
+
+  act(() => renderer.root.findByProps({ 'aria-label': 'Square' }).props.onClick());
+  act(() => renderer.root.findByProps({ 'aria-label': '2D' }).props.onClick());
+  assert.equal(brushShape, 'square');
+  assert.equal(hoverMode, '2d');
+  renderer.unmount();
+})();
+
+(() => {
+  const renderer = renderAnnotateWindow(
+    createController({
+      activeChannel: createChannel({ labels: [], activeLabelIndex: 0 }),
+      channels: [createChannel({ labels: [], activeLabelIndex: 0 })],
+    })
+  );
+
+  const currentLabel = findNodesByClass(renderer, 'annotate-current-label')[0];
+  assert.equal(currentLabel?.props.children, 'None');
+  assert.equal(findButtonByText(renderer, 'Delete')?.props.disabled, true);
+  assert.equal(findButtonByText(renderer, 'Rename')?.props.disabled, true);
   renderer.unmount();
 })();
 

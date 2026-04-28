@@ -1,4 +1,11 @@
-import type { RoiDimensionMode, RoiShape } from '../../../types/roi';
+import type { RoiAlignment, RoiDimensionMode, RoiShape } from '../../../types/roi';
+import {
+  addScaledRoiGeometryPoint,
+  resolveRoiGeometryBounds,
+  resolveRoiGeometryBasis,
+  type RoiGeometryBasis,
+  type RoiGeometryDeskew,
+} from '../../../shared/utils/roiGeometry';
 
 type Point3 = {
   x: number;
@@ -11,6 +18,8 @@ type BuildRoiSegmentsOptions = {
   mode: RoiDimensionMode;
   start: Point3;
   end: Point3;
+  alignment?: RoiAlignment;
+  deskew?: RoiGeometryDeskew | null;
 };
 
 const ELLIPSE_SEGMENT_COUNT_2D = 48;
@@ -44,23 +53,28 @@ const buildRectangle2dSegments = (segments: number[], start: Point3, end: Point3
   }
 };
 
-const buildBox3dSegments = (segments: number[], start: Point3, end: Point3) => {
-  const minX = Math.min(start.x, end.x);
-  const maxX = Math.max(start.x, end.x);
-  const minY = Math.min(start.y, end.y);
-  const maxY = Math.max(start.y, end.y);
-  const minZ = Math.min(start.z, end.z);
-  const maxZ = Math.max(start.z, end.z);
+const buildBox3dSegments = (
+  segments: number[],
+  start: Point3,
+  end: Point3,
+  basis: RoiGeometryBasis,
+) => {
+  const { center, radius } = resolveRoiGeometryBounds(start, end, basis);
+  const buildCorner = (signX: number, signY: number, signZ: number) => {
+    const withX = addScaledRoiGeometryPoint(center, basis.x, signX * radius.x);
+    const withY = addScaledRoiGeometryPoint(withX, basis.y, signY * radius.y);
+    return addScaledRoiGeometryPoint(withY, basis.z, signZ * radius.z);
+  };
 
   const corners = {
-    lbf: { x: minX, y: minY, z: minZ },
-    rbf: { x: maxX, y: minY, z: minZ },
-    rtf: { x: maxX, y: maxY, z: minZ },
-    ltf: { x: minX, y: maxY, z: minZ },
-    lbb: { x: minX, y: minY, z: maxZ },
-    rbb: { x: maxX, y: minY, z: maxZ },
-    rtb: { x: maxX, y: maxY, z: maxZ },
-    ltb: { x: minX, y: maxY, z: maxZ },
+    lbf: buildCorner(-1, -1, -1),
+    rbf: buildCorner(1, -1, -1),
+    rtf: buildCorner(1, 1, -1),
+    ltf: buildCorner(-1, 1, -1),
+    lbb: buildCorner(-1, -1, 1),
+    rbb: buildCorner(1, -1, 1),
+    rtb: buildCorner(1, 1, 1),
+    ltb: buildCorner(-1, 1, 1),
   };
 
   [
@@ -111,15 +125,13 @@ const buildEllipse2dSegments = (segments: number[], start: Point3, end: Point3) 
   buildLoopSegments(segments, points);
 };
 
-const buildEllipsoid3dSegments = (segments: number[], start: Point3, end: Point3) => {
-  const center = {
-    x: (start.x + end.x) / 2,
-    y: (start.y + end.y) / 2,
-    z: (start.z + end.z) / 2,
-  };
-  const radiusX = Math.abs(end.x - start.x) / 2;
-  const radiusY = Math.abs(end.y - start.y) / 2;
-  const radiusZ = Math.abs(end.z - start.z) / 2;
+const buildEllipsoid3dSegments = (
+  segments: number[],
+  start: Point3,
+  end: Point3,
+  basis: RoiGeometryBasis,
+) => {
+  const { center, radius } = resolveRoiGeometryBounds(start, end, basis);
 
   const xyPoints: Point3[] = [];
   const xzPoints: Point3[] = [];
@@ -129,21 +141,21 @@ const buildEllipsoid3dSegments = (segments: number[], start: Point3, end: Point3
     const angle = (index / ELLIPSE_SEGMENT_COUNT_3D) * Math.PI * 2;
     const cosAngle = Math.cos(angle);
     const sinAngle = Math.sin(angle);
-    xyPoints.push({
-      x: center.x + cosAngle * radiusX,
-      y: center.y + sinAngle * radiusY,
-      z: center.z,
-    });
-    xzPoints.push({
-      x: center.x + cosAngle * radiusX,
-      y: center.y,
-      z: center.z + sinAngle * radiusZ,
-    });
-    yzPoints.push({
-      x: center.x,
-      y: center.y + cosAngle * radiusY,
-      z: center.z + sinAngle * radiusZ,
-    });
+    xyPoints.push(addScaledRoiGeometryPoint(
+      addScaledRoiGeometryPoint(center, basis.x, cosAngle * radius.x),
+      basis.y,
+      sinAngle * radius.y,
+    ));
+    xzPoints.push(addScaledRoiGeometryPoint(
+      addScaledRoiGeometryPoint(center, basis.x, cosAngle * radius.x),
+      basis.z,
+      sinAngle * radius.z,
+    ));
+    yzPoints.push(addScaledRoiGeometryPoint(
+      addScaledRoiGeometryPoint(center, basis.y, cosAngle * radius.y),
+      basis.z,
+      sinAngle * radius.z,
+    ));
   }
 
   buildLoopSegments(segments, xyPoints);
@@ -156,6 +168,8 @@ export function buildRoiSegmentPositions({
   mode,
   start,
   end,
+  alignment,
+  deskew,
 }: BuildRoiSegmentsOptions): Float32Array {
   const segments: number[] = [];
 
@@ -168,7 +182,7 @@ export function buildRoiSegmentPositions({
     if (mode === '2d') {
       buildRectangle2dSegments(segments, start, end);
     } else {
-      buildBox3dSegments(segments, start, end);
+      buildBox3dSegments(segments, start, end, resolveRoiGeometryBasis(alignment, deskew));
     }
     return Float32Array.from(segments);
   }
@@ -176,7 +190,7 @@ export function buildRoiSegmentPositions({
   if (mode === '2d') {
     buildEllipse2dSegments(segments, start, end);
   } else {
-    buildEllipsoid3dSegments(segments, start, end);
+    buildEllipsoid3dSegments(segments, start, end, resolveRoiGeometryBasis(alignment, deskew));
   }
 
   return Float32Array.from(segments);

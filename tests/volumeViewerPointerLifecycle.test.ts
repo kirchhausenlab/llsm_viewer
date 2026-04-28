@@ -76,7 +76,7 @@ function createFakeCanvas(width = 200, height = 200): FakeCanvas {
 
 function createPointerEvent(
   overrides: Partial<PointerEvent> = {},
-): PointerEvent & { prevented: boolean } {
+): PointerEvent & { prevented: boolean; stopped: boolean; immediateStopped: boolean } {
   const event = {
     button: 0,
     buttons: 0,
@@ -88,10 +88,18 @@ function createPointerEvent(
     altKey: false,
     metaKey: false,
     prevented: false,
+    stopped: false,
+    immediateStopped: false,
     preventDefault() {
       event.prevented = true;
     },
-  } as PointerEvent & { prevented: boolean };
+    stopPropagation() {
+      event.stopped = true;
+    },
+    stopImmediatePropagation() {
+      event.immediateStopped = true;
+    },
+  } as PointerEvent & { prevented: boolean; stopped: boolean; immediateStopped: boolean };
   Object.assign(event, overrides);
   return event;
 }
@@ -139,6 +147,7 @@ function createPointerEvent(
     rotationTargetRef: { current: new THREE.Vector3() },
     updateVoxelHover: () => {},
     isRoiDrawToolActiveRef: { current: false },
+    isRoiMoveToolActiveRef: { current: false },
     isRoiDrawPreviewActiveRef: { current: false },
     isRoiMoveInteractionActiveRef: { current: false },
     isRoiMoveActiveRef: { current: false },
@@ -184,6 +193,167 @@ function createPointerEvent(
 
 (() => {
   const domElement = createFakeCanvas();
+  const camera = new THREE.OrthographicCamera(-4.5, 4.5, 4.5, -4.5, 0.1, 1000);
+  camera.position.set(4, 4, 30);
+  camera.lookAt(4, 4, 0);
+  camera.updateMatrixWorld(true);
+
+  const volumeRootGroup = new THREE.Group();
+  volumeRootGroup.updateMatrixWorld(true);
+  const appliedCoordinates: Array<{ x: number; y: number; z: number }> = [];
+  let hoverUpdates = 0;
+  const annotationRef = {
+    current: {
+      enabled: true,
+      hoverMode: '2d' as const,
+      selectedZIndex: 2,
+      dimensions: { width: 9, height: 9, depth: 5 },
+      onStrokeStart: () => {},
+      onStrokeApply: (coords: { x: number; y: number; z: number }) => {
+        appliedCoordinates.push(coords);
+      },
+      onStrokeEnd: () => {},
+    },
+  };
+
+  const detach = attachVolumeViewerPointerLifecycle({
+    domElement,
+    camera,
+    layersRef: { current: [] },
+    resourcesRef: { current: new Map() },
+    volumeRootGroupRef: { current: volumeRootGroup },
+    annotationRef,
+    annotationStrokePointerIdRef: { current: null },
+    hoverIntensityRef: { current: { intensity: '', coordinates: { x: 99, y: 99, z: 99 } } } as any,
+    followTargetActiveRef: { current: false },
+    followedTrackIdRef: { current: null },
+    rotationTargetRef: { current: new THREE.Vector3() },
+    updateVoxelHover: () => {
+      hoverUpdates += 1;
+    },
+    isRoiDrawToolActiveRef: { current: false },
+    isRoiMoveToolActiveRef: { current: false },
+    isRoiDrawPreviewActiveRef: { current: false },
+    isRoiMoveInteractionActiveRef: { current: false },
+    isRoiMoveActiveRef: { current: false },
+    handleRoiPointerDown: () => false,
+    handleRoiPointerMove: () => false,
+    handleRoiPointerUp: () => false,
+    handleRoiPointerLeave: () => false,
+    performRoiHitTest: () => null,
+    performPropHitTest: () => null,
+    resolveWorldPropDragPosition: () => null,
+    performHoverHitTest: () => null,
+    clearHoverState: () => {},
+    clearVoxelHover: () => {},
+    resolveHoveredFollowTarget: () => null,
+    onPropSelect: () => {},
+    onWorldPropPositionChange: () => {},
+    onTrackSelectionToggle: () => {},
+    onVoxelFollowRequest: () => {},
+    beginPointerLook: () => {},
+    updatePointerLook: () => {},
+    endPointerLook: () => {},
+  });
+
+  domElement.emitPointer('pointerdown', createPointerEvent({ shiftKey: true, pointerId: 31, clientX: 100, clientY: 100 }));
+
+  assert.deepEqual(appliedCoordinates, [{ x: 4, y: 4, z: 2 }]);
+  assert.equal(hoverUpdates, 0, '2D annotation hover should not use 3D hover sampling');
+  detach();
+})();
+
+(() => {
+  const domElement = createFakeCanvas();
+  const controls = { target: new THREE.Vector3() } as unknown as import('three/addons/controls/OrbitControls.js').OrbitControls;
+  const camera = new THREE.PerspectiveCamera(60, 1, 0.1, 1000);
+  const pointerLookCounters = { begin: 0, move: 0, end: 0 };
+  const roiPreviewActiveRef = { current: false };
+  const roiCounters = { down: 0, move: 0, up: 0 };
+
+  const detach = attachVolumeViewerPointerLifecycle({
+    domElement,
+    camera,
+    controls,
+    layersRef: { current: [] },
+    resourcesRef: { current: new Map<string, VolumeResources>() },
+    volumeRootGroupRef: { current: null },
+    annotationRef: {
+      current: {
+        enabled: false,
+        onStrokeStart: () => {},
+        onStrokeApply: () => {},
+        onStrokeEnd: () => {},
+      },
+    },
+    annotationStrokePointerIdRef: { current: null },
+    hoverIntensityRef: { current: null },
+    followTargetActiveRef: { current: true },
+    followedTrackIdRef: { current: null },
+    rotationTargetRef: { current: new THREE.Vector3() },
+    updateVoxelHover: () => {},
+    isRoiDrawToolActiveRef: { current: false },
+    isRoiMoveToolActiveRef: { current: true },
+    isRoiDrawPreviewActiveRef: roiPreviewActiveRef,
+    isRoiMoveInteractionActiveRef: roiPreviewActiveRef,
+    isRoiMoveActiveRef: { current: false },
+    handleRoiPointerDown: () => {
+      roiCounters.down += 1;
+      roiPreviewActiveRef.current = true;
+      return true;
+    },
+    handleRoiPointerMove: () => {
+      roiCounters.move += 1;
+      return true;
+    },
+    handleRoiPointerUp: () => {
+      roiCounters.up += 1;
+      roiPreviewActiveRef.current = false;
+      return true;
+    },
+    handleRoiPointerLeave: () => false,
+    performRoiHitTest: () => 'roi-drag',
+    performPropHitTest: () => null,
+    resolveWorldPropDragPosition: () => null,
+    performHoverHitTest: () => null,
+    clearHoverState: () => {},
+    clearVoxelHover: () => {},
+    resolveHoveredFollowTarget: () => null,
+    onPropSelect: () => {},
+    onWorldPropPositionChange: () => {},
+    onTrackSelectionToggle: () => {},
+    onVoxelFollowRequest: () => {},
+    beginPointerLook: () => {
+      pointerLookCounters.begin += 1;
+    },
+    updatePointerLook: () => {
+      pointerLookCounters.move += 1;
+    },
+    endPointerLook: () => {
+      pointerLookCounters.end += 1;
+    },
+  });
+
+  const downEvent = createPointerEvent({ pointerId: 51 });
+  const moveEvent = createPointerEvent({ pointerId: 51, clientX: 120 });
+  const upEvent = createPointerEvent({ pointerId: 51, clientX: 130 });
+  domElement.emitPointer('pointerdown', downEvent);
+  domElement.emitPointer('pointermove', moveEvent);
+  domElement.emitPointer('pointerup', upEvent);
+
+  assert.deepEqual(roiCounters, { down: 1, move: 1, up: 1 });
+  assert.equal(pointerLookCounters.begin, 0, 'ROI hand drag should suppress pointer-look start');
+  assert.equal(pointerLookCounters.move, 0, 'ROI hand drag should suppress pointer-look updates');
+  assert.equal(pointerLookCounters.end, 0, 'ROI hand drag should suppress pointer-look end');
+  assert.equal(downEvent.prevented, true, 'ROI hand drag should prevent default pointer handling');
+  assert.equal(downEvent.immediateStopped, true, 'ROI hand drag should stop same-target rotate handlers');
+  assert.equal(moveEvent.immediateStopped, true, 'ROI hand drag move should stop same-target rotate handlers');
+  assert.equal(upEvent.immediateStopped, true, 'ROI hand drag release should stop same-target rotate handlers');
+  detach();
+})();
+
+(() => {
+  const domElement = createFakeCanvas();
   const controls = { target: new THREE.Vector3() } as unknown as import('three/addons/controls/OrbitControls.js').OrbitControls;
   const camera = new THREE.PerspectiveCamera(60, 1, 0.1, 1000);
   const pointerLookCounters = { begin: 0, move: 0, end: 0 };
@@ -215,6 +385,7 @@ function createPointerEvent(
     rotationTargetRef: { current: new THREE.Vector3() },
     updateVoxelHover: () => {},
     isRoiDrawToolActiveRef: { current: false },
+    isRoiMoveToolActiveRef: { current: false },
     isRoiDrawPreviewActiveRef: { current: false },
     isRoiMoveInteractionActiveRef: { current: false },
     isRoiMoveActiveRef: { current: false },
@@ -287,7 +458,8 @@ function createPointerEvent(
     followedTrackIdRef: { current: null },
     rotationTargetRef: { current: new THREE.Vector3() },
     updateVoxelHover: () => {},
-    isRoiDrawToolActiveRef: { current: true },
+    isRoiDrawToolActiveRef: { current: false },
+    isRoiMoveToolActiveRef: { current: true },
     isRoiDrawPreviewActiveRef: { current: false },
     isRoiMoveInteractionActiveRef: roiMoveInteractionActiveRef,
     isRoiMoveActiveRef: roiMoveActiveRef,
@@ -354,6 +526,7 @@ function createPointerEvent(
     rotationTargetRef: { current: new THREE.Vector3() },
     updateVoxelHover: () => {},
     isRoiDrawToolActiveRef: { current: false },
+    isRoiMoveToolActiveRef: { current: false },
     isRoiDrawPreviewActiveRef: { current: false },
     isRoiMoveInteractionActiveRef: { current: false },
     isRoiMoveActiveRef: { current: false },
@@ -421,6 +594,7 @@ function createPointerEvent(
     rotationTargetRef: { current: new THREE.Vector3() },
     updateVoxelHover: () => {},
     isRoiDrawToolActiveRef: { current: false },
+    isRoiMoveToolActiveRef: { current: false },
     isRoiDrawPreviewActiveRef: { current: false },
     isRoiMoveInteractionActiveRef: { current: false },
     isRoiMoveActiveRef: { current: false },
@@ -500,6 +674,7 @@ function createPointerEvent(
     rotationTargetRef: { current: new THREE.Vector3() },
     updateVoxelHover: () => {},
     isRoiDrawToolActiveRef: { current: true },
+    isRoiMoveToolActiveRef: { current: false },
     isRoiDrawPreviewActiveRef: { current: false },
     isRoiMoveInteractionActiveRef: { current: false },
     isRoiMoveActiveRef: { current: false },
@@ -582,6 +757,7 @@ function createPointerEvent(
       hoverUpdates += 1;
     },
     isRoiDrawToolActiveRef: { current: true },
+    isRoiMoveToolActiveRef: { current: false },
     isRoiDrawPreviewActiveRef: roiPreviewActiveRef,
     isRoiMoveInteractionActiveRef: roiPreviewActiveRef,
     isRoiMoveActiveRef: { current: false },

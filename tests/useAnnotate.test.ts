@@ -9,6 +9,7 @@ import {
   getEditableLabelAtIndex,
   setEditableLabelAtIndex,
 } from '../src/shared/utils/annotation/editableSegmentationState.ts';
+import type { EditableSegmentationChannel } from '../src/types/annotation.ts';
 import {
   createDefaultLayerSettings,
   RENDER_STYLE_MIP,
@@ -41,12 +42,20 @@ async function createActiveChannel() {
   });
   hook.rerender();
   assert.equal(hook.result.channels.length, 1);
-  assert.equal(hook.result.activeChannel?.labels.length, 1);
+  assert.equal(hook.result.activeChannel?.labels.length, 0);
+  assert.equal(hook.result.activeChannel?.radius, 5);
+  assert.equal(hook.result.activeChannel?.brushShape, 'circle');
+  assert.equal(hook.result.activeChannel?.hoverMode, '3d');
   assert.equal(hook.result.creationName, 'Annotation');
   return hook;
 }
 
-function readLabel(hook: Awaited<ReturnType<typeof createActiveChannel>>, x: number, y: number, z: number) {
+function readLabel(
+  hook: { result: { activeChannel: EditableSegmentationChannel | null } },
+  x: number,
+  y: number,
+  z: number
+) {
   const channel = hook.result.activeChannel;
   assert.ok(channel);
   const index = (z * channel.dimensions.height + y) * channel.dimensions.width + x;
@@ -205,17 +214,20 @@ await (async () => {
 
   assert.equal(readLabel(hook, 1, 1, 0), 1);
   assert.equal(readLabel(hook, 1, 1, 1), 0);
+  assert.equal(hook.result.activeChannel?.labels.length, 1);
   assert.equal(hook.result.hasDirtyChannels, true);
   assert.equal(hook.result.canUndo, true);
 
   hook.act(() => hook.result.undo());
   hook.rerender();
   assert.equal(readLabel(hook, 1, 1, 0), 0);
+  assert.equal(hook.result.activeChannel?.labels.length, 0);
   assert.equal(hook.result.canRedo, true);
 
   hook.act(() => hook.result.redo());
   hook.rerender();
   assert.equal(readLabel(hook, 1, 1, 0), 1);
+  assert.equal(hook.result.activeChannel?.labels.length, 1);
 
   hook.act(() => {
     hook.result.setBrushMode('eraser');
@@ -238,6 +250,11 @@ await (async () => {
 
   const channel = hook.result.activeChannel;
   assert.ok(channel);
+  hook.act(() => {
+    hook.result.addLabel();
+    hook.result.addLabel();
+  });
+  hook.rerender();
   setEditableLabelAtIndex(channel, 0, (0 * channel.dimensions.height + 1) * channel.dimensions.width + 1, 1);
   setEditableLabelAtIndex(channel, 0, (0 * channel.dimensions.height + 1) * channel.dimensions.width + 2, 2);
 
@@ -259,6 +276,44 @@ await (async () => {
 })();
 
 await (async () => {
+  const hook = renderHook(() =>
+    useAnnotate({
+      ...defaultOptions,
+      dimensions: { width: 9, height: 9, depth: 1 },
+    })
+  );
+  await hook.act(async () => {
+    await hook.result.createChannel();
+  });
+  hook.rerender();
+
+  hook.act(() => {
+    hook.result.setEnabled(true);
+    hook.result.setMode('2d');
+    hook.result.setRadius(4);
+    hook.result.setBrushShape('circle');
+    hook.result.beginStroke();
+    hook.result.applyStrokeAt({ x: 4, y: 4, z: 0 });
+    hook.result.endStroke();
+  });
+  hook.rerender();
+  assert.equal(readLabel(hook, 7, 7, 0), 0);
+
+  hook.act(() => hook.result.undo());
+  hook.rerender();
+  hook.act(() => {
+    hook.result.setBrushShape('square');
+    hook.result.beginStroke();
+    hook.result.applyStrokeAt({ x: 4, y: 4, z: 0 });
+    hook.result.endStroke();
+  });
+  hook.rerender();
+  assert.equal(readLabel(hook, 7, 7, 0), 1);
+
+  hook.unmount();
+})();
+
+await (async () => {
   const hook = await createActiveChannel();
   const previousPrompt = globalThis.prompt;
   (globalThis as { prompt?: (message?: string, defaultValue?: string) => string | null }).prompt = () => 'Nucleus';
@@ -273,22 +328,22 @@ await (async () => {
     globalThis.prompt = previousPrompt;
   }
 
-  assert.equal(hook.result.activeChannel?.labels.length, 2);
-  assert.equal(hook.result.activeChannel?.labels[1]?.name, 'Nucleus');
-  assert.equal(hook.result.activeChannel?.activeLabelIndex, 1);
+  assert.equal(hook.result.activeChannel?.labels.length, 1);
+  assert.equal(hook.result.activeChannel?.labels[0]?.name, 'Nucleus');
+  assert.equal(hook.result.activeChannel?.activeLabelIndex, 0);
   assert.equal(hook.result.canUndo, true);
 
   hook.act(() => hook.result.undo());
   hook.rerender();
-  assert.equal(hook.result.activeChannel?.labels[1]?.name, '');
+  assert.equal(hook.result.activeChannel?.labels[0]?.name, '');
 
   hook.act(() => hook.result.undo());
   hook.rerender();
-  assert.equal(hook.result.activeChannel?.labels.length, 1);
+  assert.equal(hook.result.activeChannel?.labels.length, 0);
 
   hook.act(() => hook.result.redo());
   hook.rerender();
-  assert.equal(hook.result.activeChannel?.labels.length, 2);
+  assert.equal(hook.result.activeChannel?.labels.length, 1);
 
   hook.unmount();
 })();

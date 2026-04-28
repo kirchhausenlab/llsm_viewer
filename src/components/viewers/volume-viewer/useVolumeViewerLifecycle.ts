@@ -82,6 +82,7 @@ type UseVolumeViewerLifecycleParams = {
   followedTrackIdRef: PointerLifecycleOptions['followedTrackIdRef'];
   updateVoxelHover: PointerLifecycleOptions['updateVoxelHover'];
   isRoiDrawToolActiveRef: PointerLifecycleOptions['isRoiDrawToolActiveRef'];
+  isRoiMoveToolActiveRef: PointerLifecycleOptions['isRoiMoveToolActiveRef'];
   isRoiDrawPreviewActiveRef: PointerLifecycleOptions['isRoiDrawPreviewActiveRef'];
   isRoiMoveInteractionActiveRef: PointerLifecycleOptions['isRoiMoveInteractionActiveRef'];
   isRoiMoveActiveRef: PointerLifecycleOptions['isRoiMoveActiveRef'];
@@ -193,6 +194,7 @@ export function useVolumeViewerLifecycle({
   followedTrackIdRef,
   updateVoxelHover,
   isRoiDrawToolActiveRef,
+  isRoiMoveToolActiveRef,
   isRoiDrawPreviewActiveRef,
   isRoiMoveInteractionActiveRef,
   isRoiMoveActiveRef,
@@ -282,6 +284,8 @@ export function useVolumeViewerLifecycle({
   updateVoxelHoverRef.current = updateVoxelHover;
   const isRoiDrawToolActiveRefRef = useRef(isRoiDrawToolActiveRef);
   isRoiDrawToolActiveRefRef.current = isRoiDrawToolActiveRef;
+  const isRoiMoveToolActiveRefRef = useRef(isRoiMoveToolActiveRef);
+  isRoiMoveToolActiveRefRef.current = isRoiMoveToolActiveRef;
   const isRoiDrawPreviewActiveRefRef = useRef(isRoiDrawPreviewActiveRef);
   isRoiDrawPreviewActiveRefRef.current = isRoiDrawPreviewActiveRef;
   const isRoiMoveInteractionActiveRefRef = useRef(isRoiMoveInteractionActiveRef);
@@ -570,6 +574,7 @@ export function useVolumeViewerLifecycle({
       rotationTargetRef,
       updateVoxelHover: (event) => updateVoxelHoverRef.current(event),
       isRoiDrawToolActiveRef: isRoiDrawToolActiveRefRef.current,
+      isRoiMoveToolActiveRef: isRoiMoveToolActiveRefRef.current,
       isRoiDrawPreviewActiveRef: isRoiDrawPreviewActiveRefRef.current,
       isRoiMoveInteractionActiveRef: isRoiMoveInteractionActiveRefRef.current,
       isRoiMoveActiveRef: isRoiMoveActiveRefRef.current,

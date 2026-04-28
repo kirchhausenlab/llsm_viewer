@@ -1,8 +1,10 @@
-import type { RoiDefinition, RoiDimensionMode, RoiTool, SavedRoi } from '../../types/roi';
+import type { RoiAlignment, RoiDefinition, RoiDimensionMode, RoiTool, SavedRoi } from '../../types/roi';
 import {
   cloneRoiDefinition,
   cloneSavedRoi,
+  DEFAULT_ROI_ALIGNMENT,
   DEFAULT_ROI_COLOR,
+  normalizeRoiAlignment,
   normalizeRoiColor,
 } from '../../types/roi';
 import { validateSavedRoiWithinDimensions } from './roiMeasurements';
@@ -19,6 +21,7 @@ type RoiPersistenceFile = {
   selectedSavedRoiIds?: string[];
   activeSavedRoiId?: string | null;
   defaultColor?: string;
+  defaultAlignment?: RoiAlignment;
   dimensionMode?: RoiDimensionMode;
   tool?: RoiTool;
 };
@@ -30,6 +33,7 @@ export type SerializedRoiManagerState = {
   editingSavedRoiId: string | null;
   workingRoi: RoiDefinition | null;
   defaultColor: string;
+  defaultAlignment: RoiAlignment;
   dimensionMode: RoiDimensionMode;
   tool: RoiTool;
 };
@@ -39,6 +43,7 @@ export function serializeRoiManagerState(state: {
   selectedSavedRoiIds: string[];
   activeSavedRoiId: string | null;
   defaultColor: string;
+  defaultAlignment?: RoiAlignment;
   dimensionMode: RoiDimensionMode;
   tool: RoiTool;
 }) {
@@ -48,6 +53,7 @@ export function serializeRoiManagerState(state: {
     selectedSavedRoiIds: [...state.selectedSavedRoiIds],
     activeSavedRoiId: state.activeSavedRoiId,
     defaultColor: normalizeRoiColor(state.defaultColor),
+    defaultAlignment: normalizeRoiAlignment(state.defaultAlignment),
     dimensionMode: state.dimensionMode,
     tool: state.tool,
   };
@@ -85,6 +91,7 @@ function normalizeLoadedSavedRoi(value: unknown): SavedRoi {
       z: Number(end.z),
     },
     color: normalizeRoiColor(typeof value.color === 'string' ? value.color : DEFAULT_ROI_COLOR),
+    ...(value.alignment === 'glass' ? { alignment: 'glass' as const } : {}),
   };
 
   if (!roi.id || !roi.name) {
@@ -139,6 +146,9 @@ export function parseRoiManagerStateFromJson(
     editingSavedRoiId: activeSavedRoiId,
     workingRoi: activeSavedRoi ? cloneRoiDefinition(activeSavedRoi) : null,
     defaultColor: normalizeRoiColor(typeof parsed.defaultColor === 'string' ? parsed.defaultColor : DEFAULT_ROI_COLOR),
+    defaultAlignment: normalizeRoiAlignment(
+      parsed.defaultAlignment === 'glass' ? 'glass' : DEFAULT_ROI_ALIGNMENT,
+    ),
     dimensionMode: parsed.dimensionMode === '3d' ? '3d' : '2d',
     tool: parsed.tool === 'rectangle' || parsed.tool === 'ellipse' ? parsed.tool : 'line',
   };

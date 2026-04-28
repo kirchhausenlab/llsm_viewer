@@ -64,6 +64,7 @@ import {
 } from '../../shared/utils/roiMeasurements';
 import type { BackgroundMaskVolume } from '../../shared/utils/backgroundMask';
 import { parseRoiManagerStateFromJson, serializeRoiManagerState } from '../../shared/utils/roiPersistence';
+import { reorientRoiDefinitionForAlignment } from '../../shared/utils/roiGeometry';
 import { createDefaultTrackSetState } from '../../hooks/tracks/useTrackStyling';
 import { resolveTrackVisibilityForState } from '../../shared/utils/trackVisibilityState';
 import {
@@ -661,6 +662,7 @@ function ViewerShell({
   });
   const [activeViewerTool, setActiveViewerTool] = useState<ViewerTool>('hand');
   const [viewerToolDimensionMode, setViewerToolDimensionMode] = useState<ViewerToolDimensionMode>('2d');
+  const selectedZIndex = Math.max(0, (playbackState.zSliderValue ?? 1) - 1);
 
   const {
     isChannelsWindowOpen,
@@ -734,14 +736,20 @@ function ViewerShell({
 
   const annotationStrokeHandlers = useMemo(() => ({
     enabled: isAnnotationInputEnabled,
+    hoverMode: annotateController.activeChannel?.hoverMode ?? '3d',
+    selectedZIndex,
+    dimensions: annotateController.activeChannel?.dimensions ?? null,
     onStrokeStart: annotateController.beginStroke,
     onStrokeApply: annotateController.applyStrokeAt,
     onStrokeEnd: annotateController.endStroke,
   }), [
+    annotateController.activeChannel,
     annotateController.applyStrokeAt,
     annotateController.beginStroke,
     annotateController.endStroke,
+    annotateController.revision,
     isAnnotationInputEnabled,
+    selectedZIndex,
   ]);
 
   const volumeViewerWithAnnotation = useMemo(
@@ -1088,6 +1096,7 @@ function ViewerShell({
   });
   const {
     tool: roiTool,
+    defaultAlignment: roiDefaultAlignment,
     defaultColor: roiDefaultColor,
     workingRoi,
     savedRois,
@@ -1097,9 +1106,11 @@ function ViewerShell({
     showAllSavedRois,
     setTool: setRoiTool,
     setDimensionMode: setRoiDimensionMode,
+    setDefaultAlignment: setRoiDefaultAlignment,
     setDefaultColor: setRoiDefaultColor,
     setWorkingRoi,
     updateWorkingRoi,
+    clearWorkingRoiAttachment,
     activateSavedRoi,
     selectSavedRoi,
     addWorkingRoi,
@@ -1111,7 +1122,6 @@ function ViewerShell({
   } = useViewerRoiState({
     volumeDimensions,
   });
-  const selectedZIndex = Math.max(0, (playbackState.zSliderValue ?? 1) - 1);
   const currentRoiColor = workingRoi?.color ?? roiDefaultColor;
   const activeSavedRoi = useMemo(
     () => savedRois.find((roi) => roi.id === activeSavedRoiId) ?? null,
@@ -1209,6 +1219,48 @@ function ViewerShell({
     },
     [setRoiDefaultColor, updateWorkingRoi, workingRoi]
   );
+
+  const handleRoiAlignmentChange = useCallback(
+    (alignment: typeof roiDefaultAlignment) => {
+      setRoiDefaultAlignment(alignment);
+      if (workingRoi?.mode === '3d') {
+        const alignmentDeskew = deskew
+          ? {
+              angleRadians: deskew.angleRadians,
+              direction: deskew.direction,
+            }
+          : null;
+        updateWorkingRoi((current) => reorientRoiDefinitionForAlignment(current, alignment, alignmentDeskew));
+      }
+    },
+    [deskew, setRoiDefaultAlignment, updateWorkingRoi, workingRoi]
+  );
+
+  useEffect(() => {
+    if (!workingRoi || activeSavedRoiId !== null) {
+      return undefined;
+    }
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Delete') {
+        return;
+      }
+
+      const target = event.target as HTMLElement | null;
+      const tagName = target?.tagName;
+      if (target?.isContentEditable || tagName === 'INPUT' || tagName === 'TEXTAREA' || tagName === 'SELECT') {
+        return;
+      }
+
+      event.preventDefault();
+      clearWorkingRoiAttachment();
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [activeSavedRoiId, clearWorkingRoiAttachment, workingRoi]);
 
   useEffect(() => {
     if (workingRoi?.mode !== '2d') {
@@ -1428,6 +1480,12 @@ function ViewerShell({
       selectedRois: selectedSavedRoisForCurrentZ,
       channels: resolvedChannels,
       timepoint: currentViewerPropTimepoint,
+      deskew: deskew
+        ? {
+            angleRadians: deskew.angleRadians,
+            direction: deskew.direction,
+          }
+        : null,
     });
 
     if (snapshot.rows.length === 0) {
@@ -1443,6 +1501,7 @@ function ViewerShell({
     canMeasureRois,
     currentViewerPropTimepoint,
     datasetAccess.volumeProvider,
+    deskew,
     loadMeasurementVolume,
     measurableChannelSources,
     measurementDefaults,
@@ -1502,6 +1561,7 @@ function ViewerShell({
       selectedSavedRoiIds,
       activeSavedRoiId,
       defaultColor: roiDefaultColor,
+      defaultAlignment: roiDefaultAlignment,
       dimensionMode: viewerToolDimensionMode,
       tool: isRoiViewerTool(activeViewerTool) ? activeViewerTool : roiTool,
     });
@@ -1517,6 +1577,7 @@ function ViewerShell({
     activeViewerTool,
     buildTimestampedFileName,
     canSaveRois,
+    roiDefaultAlignment,
     roiDefaultColor,
     roiTool,
     saveTextFile,
@@ -2638,10 +2699,18 @@ function ViewerShell({
       },
       roiConfig: {
         isDrawToolActive: isRoiViewerTool(activeViewerTool),
+        isMoveToolActive: activeViewerTool === 'hand',
         tool: isRoiViewerTool(activeViewerTool) ? activeViewerTool : roiTool,
         dimensionMode: viewerToolDimensionMode,
         selectedZIndex,
         defaultColor: roiDefaultColor,
+        defaultAlignment: roiDefaultAlignment,
+        deskew: deskew
+          ? {
+              angleRadians: deskew.angleRadians,
+              direction: deskew.direction,
+            }
+          : null,
         workingRoi,
         savedRois,
         activeSavedRoiId,
@@ -2664,6 +2733,8 @@ function ViewerShell({
       propsController.updateWorldPosition,
       currentViewerPropTimepoint,
       totalViewerPropTimepoints,
+      deskew,
+      roiDefaultAlignment,
       roiDefaultColor,
       roiTool,
       savedRois,
@@ -2873,8 +2944,11 @@ function ViewerShell({
           dimensionMode={viewerToolDimensionMode}
           currentRoiName={currentRoiName}
           currentColor={currentRoiColor}
+          currentAlignment={workingRoi?.alignment ?? roiDefaultAlignment}
+          glassAlignmentEnabled={deskew !== null}
           workingRoi={workingRoi}
           onColorChange={handleRoiColorChange}
+          onAlignmentChange={handleRoiAlignmentChange}
           onUpdateWorkingRoi={updateWorkingRoi}
           onClose={closeDrawRoiWindow}
         />
