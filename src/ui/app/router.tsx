@@ -1,19 +1,21 @@
-import { Suspense } from 'react';
+import { lazy, Suspense } from 'react';
 import DatasetSetupRoute from './routes/DatasetSetupRoute';
-import ViewerRoute from './routes/ViewerRoute';
 import { useAppRouteState } from './hooks/useAppRouteState';
+
+const ViewerRoute = lazy(() => import('./routes/ViewerRoute'));
 
 function AppRouter() {
   const { isViewerLaunched, datasetSetupProps, viewerRouteProps } = useAppRouteState();
 
   return (
-    <Suspense fallback={<div role="status">Loading application…</div>}>
-      {isViewerLaunched ? (
-        <ViewerRoute {...viewerRouteProps} />
-      ) : (
-        <DatasetSetupRoute {...datasetSetupProps} />
-      )}
-    </Suspense>
+    <>
+      {!isViewerLaunched ? <DatasetSetupRoute {...datasetSetupProps} /> : null}
+      {viewerRouteProps ? (
+        <Suspense fallback={isViewerLaunched ? <div role="status">Loading viewer...</div> : null}>
+          <ViewerRoute {...viewerRouteProps} />
+        </Suspense>
+      ) : null}
+    </>
   );
 }
 

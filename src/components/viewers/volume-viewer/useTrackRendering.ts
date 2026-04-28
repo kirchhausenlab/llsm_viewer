@@ -7,7 +7,7 @@ import { LineMaterial } from 'three/addons/lines/LineMaterial.js';
 import { LineSegments2 } from 'three/addons/lines/LineSegments2.js';
 import { LineSegmentsGeometry } from 'three/addons/lines/LineSegmentsGeometry.js';
 
-import { createTrackColor } from '../../../shared/colorMaps/trackColors';
+import { getTrackColorHex } from '../../../shared/colorMaps/trackColors';
 import {
   materializeTrackPoints,
   resolveTrackCentroidAtTime
@@ -28,6 +28,10 @@ import type {
   TrackLineResource,
   TrackRenderResource
 } from '../VolumeViewer.types';
+
+function createTrackColor(seed: string | number): THREE.Color {
+  return new THREE.Color(getTrackColorHex(seed));
+}
 import { DEFAULT_TRACK_LINE_WIDTH, DEFAULT_TRACK_OPACITY } from './constants';
 import {
   computeTrackEndCapRadius,
