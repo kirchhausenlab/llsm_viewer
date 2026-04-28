@@ -24,6 +24,13 @@ import { useViewerPanelWindows } from './viewer-shell/hooks/useViewerPanelWindow
 import { useViewerPropsState } from './viewer-shell/hooks/useViewerPropsState';
 import { useViewerRoiState } from './viewer-shell/hooks/useViewerRoiState';
 import { useViewerRecording } from './viewer-shell/hooks/useViewerRecording';
+import {
+  addMissingLayerRenderModesToSnapshot,
+  captureLayerRenderModeSnapshot,
+  collectChannelLayersFor2dView,
+  readLayerRenderModeSnapshot,
+  type LayerRenderModeSnapshot,
+} from './viewer-shell/twoDLayerModes';
 import type { ViewerShellProps } from './viewer-shell/types';
 import type {
   DesktopViewerBackgroundConfig,
@@ -34,8 +41,6 @@ import type {
 import {
   createDefaultLayerSettings,
   RENDER_STYLE_SLICE,
-  type RenderStyle,
-  type SamplingMode,
 } from '../../state/layerSettings';
 import type {
   CameraCoordinate,
@@ -123,8 +128,6 @@ type RotationDraft = {
   pitch: string;
   roll: string;
 };
-
-type LayerRenderModeSnapshot = Record<string, { renderStyle: RenderStyle; samplingMode: SamplingMode }>;
 
 const EMPTY_COORDINATE_DRAFT: CoordinateDraft = { x: '', y: '', z: '' };
 const DEFAULT_DARK_VIEWER_BACKGROUND = '#040607';
@@ -829,6 +832,13 @@ function ViewerShell({
     annotateController,
     channelsPanel,
   ]);
+  const resolvedManagedChannelLayers = useMemo(
+    () => collectChannelLayersFor2dView(
+      resolvedChannelsPanel.loadedChannelIds,
+      resolvedChannelsPanel.channelLayersMap
+    ),
+    [resolvedChannelsPanel.channelLayersMap, resolvedChannelsPanel.loadedChannelIds]
+  );
 
   const selectedAnnotateChannel = useMemo(() => {
     const channelId = resolvedChannelsPanel.activeChannelId;
@@ -1633,33 +1643,50 @@ function ViewerShell({
     () => cameraControllerRef.current?.captureCameraState() ?? cameraWindowState,
     [cameraWindowState]
   );
+  const readCurrentLayerRenderMode = useCallback(
+    (layerKey: string) =>
+      readLayerRenderModeSnapshot(
+        layerKey,
+        resolvedChannelsPanel.layerSettings,
+        resolvedChannelsPanel.getLayerDefaultSettings
+      ),
+    [resolvedChannelsPanel.getLayerDefaultSettings, resolvedChannelsPanel.layerSettings]
+  );
   const captureLayerRenderModes = useCallback((): LayerRenderModeSnapshot => {
-    const snapshot: LayerRenderModeSnapshot = {};
-    for (const layer of managedChannelLayers) {
-      const settings = channelsPanel.layerSettings[layer.key] ?? channelsPanel.getLayerDefaultSettings(layer.key);
-      snapshot[layer.key] = {
-        renderStyle: settings.renderStyle,
-        samplingMode: settings.samplingMode,
-      };
-    }
-    return snapshot;
-  }, [channelsPanel.getLayerDefaultSettings, channelsPanel.layerSettings, managedChannelLayers]);
+    return captureLayerRenderModeSnapshot(
+      resolvedManagedChannelLayers,
+      resolvedChannelsPanel.layerSettings,
+      resolvedChannelsPanel.getLayerDefaultSettings
+    );
+  }, [
+    resolvedChannelsPanel.getLayerDefaultSettings,
+    resolvedChannelsPanel.layerSettings,
+    resolvedManagedChannelLayers,
+  ]);
   const force2dLayerModes = useCallback(() => {
-    for (const layer of managedChannelLayers) {
-      channelsPanel.onLayerRenderStyleChange(layer.key, RENDER_STYLE_SLICE, 'nearest');
+    for (const layer of resolvedManagedChannelLayers) {
+      const settings = readCurrentLayerRenderMode(layer.key);
+      if (settings.renderStyle === RENDER_STYLE_SLICE && settings.samplingMode === 'nearest') {
+        continue;
+      }
+      resolvedChannelsPanel.onLayerRenderStyleChange(layer.key, RENDER_STYLE_SLICE, 'nearest');
     }
-  }, [channelsPanel.onLayerRenderStyleChange, managedChannelLayers]);
+  }, [
+    readCurrentLayerRenderMode,
+    resolvedChannelsPanel.onLayerRenderStyleChange,
+    resolvedManagedChannelLayers,
+  ]);
   const restoreLayerRenderModes = useCallback(
     (snapshot: LayerRenderModeSnapshot) => {
-      const activeLayerKeys = new Set(managedChannelLayers.map((layer) => layer.key));
+      const activeLayerKeys = new Set(resolvedManagedChannelLayers.map((layer) => layer.key));
       for (const [layerKey, settings] of Object.entries(snapshot)) {
         if (!activeLayerKeys.has(layerKey)) {
           continue;
         }
-        channelsPanel.onLayerRenderStyleChange(layerKey, settings.renderStyle, settings.samplingMode);
+        resolvedChannelsPanel.onLayerRenderStyleChange(layerKey, settings.renderStyle, settings.samplingMode);
       }
     },
-    [channelsPanel.onLayerRenderStyleChange, managedChannelLayers]
+    [resolvedChannelsPanel.onLayerRenderStyleChange, resolvedManagedChannelLayers]
   );
 
   const handleToggle2dView = useCallback(() => {
@@ -1692,6 +1719,25 @@ function ViewerShell({
     modeControls.onProjectionModeChange,
     modeControls.resetViewHandler,
     restoreLayerRenderModes,
+  ]);
+
+  useEffect(() => {
+    if (!is2dViewActive) {
+      return;
+    }
+    previousLayerRenderModesRef.current = addMissingLayerRenderModesToSnapshot(
+      previousLayerRenderModesRef.current,
+      resolvedManagedChannelLayers,
+      resolvedChannelsPanel.layerSettings,
+      resolvedChannelsPanel.getLayerDefaultSettings
+    );
+    force2dLayerModes();
+  }, [
+    force2dLayerModes,
+    is2dViewActive,
+    resolvedChannelsPanel.getLayerDefaultSettings,
+    resolvedChannelsPanel.layerSettings,
+    resolvedManagedChannelLayers,
   ]);
 
   useEffect(() => {
