@@ -1,7 +1,6 @@
 import { useCallback, useMemo, useState, type CSSProperties } from 'react';
 
 import FloatingWindow from '../../widgets/FloatingWindow';
-import type { AnnotateBrushMode, AnnotateDimensionMode } from '../../../types/annotation';
 import type { AnnotateController } from '../../../hooks/annotation/useAnnotate';
 import { createSegmentationSeed } from '../../../shared/utils/appHelpers';
 import { hashSparseSegmentationLabelColor } from '../../../shared/utils/preprocessedDataset/sparseSegmentation';
@@ -13,7 +12,6 @@ import {
   ViewerWindowEmptyState,
   ViewerWindowFieldRow,
   ViewerWindowForm,
-  ViewerWindowIconButton,
   ViewerWindowManager,
   ViewerWindowManagerActions,
   ViewerWindowManagerItem,
@@ -21,7 +19,6 @@ import {
   ViewerWindowManagerList,
   ViewerWindowMessage,
   ViewerWindowRow,
-  ViewerWindowSegmentedControl,
   ViewerWindowSelect,
   ViewerWindowSlider,
   ViewerWindowStack,
@@ -44,8 +41,6 @@ type AnnotateWindowProps = {
   onClose: () => void;
 };
 
-const MODE_OPTIONS: AnnotateDimensionMode[] = ['2d', '3d'];
-
 function formatLabelRow(index: number, name: string): string {
   const trimmed = name.trim();
   return trimmed ? `${index + 1} - ${trimmed}` : `${index + 1}`;
@@ -54,54 +49,6 @@ function formatLabelRow(index: number, name: string): string {
 function resolveLabelColor(layerKey: string, labelId: number): string {
   const [r, g, b] = hashSparseSegmentationLabelColor(labelId, createSegmentationSeed(layerKey));
   return `rgb(${r}, ${g}, ${b})`;
-}
-
-function HandIcon() {
-  return (
-    <svg className="annotate-tool-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-      <path d="M18 11V6a2 2 0 0 0-4 0v5" />
-      <path d="M14 10V5a2 2 0 0 0-4 0v7" />
-      <path d="M10 12V7a2 2 0 0 0-4 0v7" />
-      <path d="M6 14v-2a2 2 0 0 0-4 0v3c0 4.4 3.6 8 8 8h2c4.4 0 8-3.6 8-8v-4a2 2 0 0 0-2-2Z" />
-    </svg>
-  );
-}
-
-function BrushIcon() {
-  return (
-    <svg className="annotate-tool-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-      <path d="M7 17c0 2-1.5 3.5-4 4 0-2.5 1.5-4 3.5-4h.5Z" />
-      <path d="M7 17 19 5a2.1 2.1 0 0 1 3 3L10 20c-.8.8-2.1.8-3 0s-.8-2.1 0-3Z" />
-    </svg>
-  );
-}
-
-function EraserIcon() {
-  return (
-    <svg className="annotate-tool-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-      <path d="m4 15 8-8a2.8 2.8 0 0 1 4 0l4 4a2.8 2.8 0 0 1 0 4l-5 5H8l-4-4Z" />
-      <path d="m9 10 7 7" />
-      <path d="M14 20h7" />
-    </svg>
-  );
-}
-
-function UndoIcon() {
-  return (
-    <svg className="annotate-tool-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-      <path d="M9 14 4 9l5-5" />
-      <path d="M4 9h10a6 6 0 1 1-5.2 9" />
-    </svg>
-  );
-}
-
-function RedoIcon() {
-  return (
-    <svg className="annotate-tool-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-      <path d="m15 14 5-5-5-5" />
-      <path d="M20 9H10a6 6 0 1 0 5.2 9" />
-    </svg>
-  );
 }
 
 export default function AnnotateWindow({
@@ -114,7 +61,6 @@ export default function AnnotateWindow({
   onClose,
 }: AnnotateWindowProps) {
   const active = controller.activeChannel;
-  const mode = active?.mode ?? '3d';
   const radius = active?.radius ?? 1;
   const canEditSelectedChannel = Boolean(
     active &&
@@ -129,7 +75,6 @@ export default function AnnotateWindow({
   const channelLabel = selectedChannel
     ? `${selectedChannel.name}${selectedChannel.editable ? '' : ' (read-only)'}`
     : 'None';
-  const activeTool: 'hand' | AnnotateBrushMode = active?.enabled ? active.brushMode : 'hand';
   const createButtonDisabled = !controller.available || controller.busy;
   const deleteButtonDisabled = !canEditSelectedChannel || controller.busy;
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
@@ -189,18 +134,6 @@ export default function AnnotateWindow({
     setCreateMessage(result.message);
   }, [controller, createSourceId, draftName]);
 
-  const handleToolChange = useCallback((tool: 'hand' | AnnotateBrushMode) => {
-    if (!canEditSelectedChannel) {
-      return;
-    }
-    if (tool === 'hand') {
-      controller.setEnabled(false);
-      return;
-    }
-    controller.setBrushMode(tool);
-    controller.setEnabled(true);
-  }, [canEditSelectedChannel, controller]);
-
   return (
     <>
       <FloatingWindow
@@ -243,54 +176,6 @@ export default function AnnotateWindow({
                 {selectedLabelText}
               </ViewerWindowValue>
             </ViewerWindowFieldRow>
-
-            <ViewerWindowRow className="annotate-tool-row" wrap>
-              <ViewerWindowSegmentedControl
-                className="annotate-tool-segmented-control"
-                ariaLabel="Annotation tool"
-                value={activeTool}
-                onChange={handleToolChange}
-                disabled={!canEditSelectedChannel}
-                options={[
-                  { value: 'hand', ariaLabel: 'Hand', title: 'Hand', content: <HandIcon /> },
-                  { value: 'brush', ariaLabel: 'Brush', title: 'Brush', content: <BrushIcon /> },
-                  { value: 'eraser', ariaLabel: 'Eraser', title: 'Eraser', content: <EraserIcon /> },
-                ]}
-              />
-            </ViewerWindowRow>
-
-            <ViewerWindowRow className="annotate-mode-history-row" align="stretch" wrap>
-              <ViewerWindowSegmentedControl
-                ariaLabel="Annotation dimension"
-                value={mode}
-                onChange={controller.setMode}
-                disabled={!canEditSelectedChannel}
-                options={MODE_OPTIONS.map((option) => ({
-                  value: option,
-                  content: option.toUpperCase(),
-                }))}
-              />
-              <ViewerWindowIconButton
-                type="button"
-                className="annotate-icon-button"
-                onClick={controller.undo}
-                disabled={!canEditSelectedChannel || !controller.canUndo}
-                aria-label="Undo"
-                title="Undo"
-              >
-                <UndoIcon />
-              </ViewerWindowIconButton>
-              <ViewerWindowIconButton
-                type="button"
-                className="annotate-icon-button"
-                onClick={controller.redo}
-                disabled={!canEditSelectedChannel || !controller.canRedo}
-                aria-label="Redo"
-                title="Redo"
-              >
-                <RedoIcon />
-              </ViewerWindowIconButton>
-            </ViewerWindowRow>
 
             <ViewerWindowRow className="annotate-radius-row">
               <ViewerWindowSlider

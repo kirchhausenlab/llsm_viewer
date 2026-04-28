@@ -95,6 +95,12 @@ import {
   DEFAULT_DESKTOP_RENDER_RESOLUTION,
   type DesktopRenderResolution,
 } from '../../types/renderResolution';
+import {
+  isAnnotationViewerTool,
+  isRoiViewerTool,
+  type ViewerTool,
+  type ViewerToolDimensionMode,
+} from '../../types/viewerTool';
 import { useUiTheme } from '../../ui/app/providers/UiThemeProvider';
 import type { LoadedDatasetLayer } from '../../hooks/dataset';
 
@@ -593,6 +599,8 @@ function ViewerShell({
     loadRegularSegmentationSource,
     saveEditableChannel,
   });
+  const [activeViewerTool, setActiveViewerTool] = useState<ViewerTool>('hand');
+  const [viewerToolDimensionMode, setViewerToolDimensionMode] = useState<ViewerToolDimensionMode>('2d');
 
   const {
     isChannelsWindowOpen,
@@ -654,15 +662,15 @@ function ViewerShell({
 
   const isAnnotationInputEnabled = Boolean(
     annotateController.available &&
-    isAnnotateOpen &&
+    isAnnotationViewerTool(activeViewerTool) &&
     annotateController.activeChannel?.enabled
   );
 
   useEffect(() => {
-    if (!isAnnotateOpen) {
-      annotateController.setEnabled(false);
+    if (isAnnotationViewerTool(activeViewerTool) && !annotateController.available) {
+      setActiveViewerTool('hand');
     }
-  }, [annotateController.setEnabled, isAnnotateOpen]);
+  }, [activeViewerTool, annotateController.available]);
 
   const annotationStrokeHandlers = useMemo(() => ({
     enabled: isAnnotationInputEnabled,
@@ -780,6 +788,11 @@ function ViewerShell({
     resolvedChannelsPanel.activeChannelId,
     resolvedChannelsPanel.channelNameMap,
   ]);
+  const canEditSelectedAnnotateChannel = Boolean(
+    annotateController.activeChannel &&
+    selectedAnnotateChannel?.editable &&
+    selectedAnnotateChannel.channelId === annotateController.activeChannel.channelId
+  );
 
   const exportSources = useMemo<ChannelExportSource[]>(() => {
     const sources: ChannelExportSource[] = [];
@@ -1008,7 +1021,6 @@ function ViewerShell({
   });
   const {
     tool: roiTool,
-    dimensionMode: roiDimensionMode,
     defaultColor: roiDefaultColor,
     workingRoi,
     twoDCurrentZEnabled,
@@ -1125,7 +1137,7 @@ function ViewerShell({
   );
 
   useEffect(() => {
-    if (!twoDCurrentZEnabled || roiDimensionMode !== '2d') {
+    if (!twoDCurrentZEnabled || viewerToolDimensionMode !== '2d') {
       return;
     }
 
@@ -1153,7 +1165,7 @@ function ViewerShell({
     }
   }, [
     playbackState.zSliderValue,
-    roiDimensionMode,
+    viewerToolDimensionMode,
     setTwoDStartZIndex,
     twoDCurrentZEnabled,
     updateWorkingRoi,
@@ -1163,6 +1175,80 @@ function ViewerShell({
   const handleClearOrDetachRoi = useCallback(() => {
     clearWorkingRoiAttachment();
   }, [clearWorkingRoiAttachment]);
+
+  const handleViewerToolChange = useCallback(
+    (tool: ViewerTool) => {
+      if (isAnnotationViewerTool(tool) && !annotateController.available) {
+        setActiveViewerTool('hand');
+        annotateController.setEnabled(false);
+        return;
+      }
+
+      setActiveViewerTool(tool);
+
+      if (isRoiViewerTool(tool)) {
+        setRoiTool(tool);
+        setRoiDimensionMode(viewerToolDimensionMode);
+        annotateController.setEnabled(false);
+        return;
+      }
+
+      if (isAnnotationViewerTool(tool)) {
+        annotateController.setMode(viewerToolDimensionMode);
+        annotateController.setBrushMode(tool);
+        annotateController.setEnabled(true);
+        return;
+      }
+
+      annotateController.setEnabled(false);
+    },
+    [
+      annotateController.available,
+      annotateController.setBrushMode,
+      annotateController.setEnabled,
+      annotateController.setMode,
+      setRoiDimensionMode,
+      setRoiTool,
+      viewerToolDimensionMode,
+    ]
+  );
+
+  const handleViewerToolDimensionModeChange = useCallback(
+    (mode: ViewerToolDimensionMode) => {
+      setViewerToolDimensionMode(mode);
+      setRoiDimensionMode(mode);
+      annotateController.setMode(mode);
+    },
+    [annotateController.setMode, setRoiDimensionMode]
+  );
+
+  useEffect(() => {
+    if (
+      !isAnnotationViewerTool(activeViewerTool) ||
+      !annotateController.available ||
+      !annotateController.activeChannel
+    ) {
+      return;
+    }
+
+    if (annotateController.activeChannel.mode !== viewerToolDimensionMode) {
+      annotateController.setMode(viewerToolDimensionMode);
+    }
+    if (annotateController.activeChannel.brushMode !== activeViewerTool) {
+      annotateController.setBrushMode(activeViewerTool);
+    }
+    if (!annotateController.activeChannel.enabled) {
+      annotateController.setEnabled(true);
+    }
+  }, [
+    activeViewerTool,
+    annotateController.activeChannel,
+    annotateController.available,
+    annotateController.setBrushMode,
+    annotateController.setEnabled,
+    annotateController.setMode,
+    viewerToolDimensionMode,
+  ]);
 
   const handleRenameActiveRoi = useCallback(() => {
     if (!activeSavedRoi) {
@@ -1356,8 +1442,8 @@ function ViewerShell({
       selectedSavedRoiIds,
       activeSavedRoiId,
       defaultColor: roiDefaultColor,
-      dimensionMode: roiDimensionMode,
-      tool: roiTool,
+      dimensionMode: viewerToolDimensionMode,
+      tool: isRoiViewerTool(activeViewerTool) ? activeViewerTool : roiTool,
     });
 
     await saveTextFile(
@@ -1368,14 +1454,15 @@ function ViewerShell({
     );
   }, [
     activeSavedRoiId,
+    activeViewerTool,
     buildTimestampedFileName,
     canSaveRois,
     roiDefaultColor,
-    roiDimensionMode,
     roiTool,
     saveTextFile,
     savedRois,
     selectedSavedRoiIds,
+    viewerToolDimensionMode,
   ]);
 
   const handleLoadRoiFile = useCallback(
@@ -1383,6 +1470,7 @@ function ViewerShell({
       try {
         const loadedState = parseRoiManagerStateFromJson(await file.text(), volumeDimensions);
         replaceState(loadedState);
+        setViewerToolDimensionMode(loadedState.dimensionMode);
       } catch (error) {
         if (typeof window !== 'undefined' && typeof window.alert === 'function') {
           window.alert(error instanceof Error ? error.message : 'Failed to load ROI file.');
@@ -2151,6 +2239,16 @@ function ViewerShell({
       onOpenAnnotate: openAnnotate,
       annotateDisabled: !annotateController.available,
       annotateDisabledTitle: annotateController.available ? undefined : annotateController.unavailableReason ?? undefined,
+      activeViewerTool,
+      viewerToolDimensionMode,
+      onViewerToolChange: handleViewerToolChange,
+      onViewerToolDimensionModeChange: handleViewerToolDimensionModeChange,
+      annotationToolsDisabled: !annotateController.available,
+      annotationToolsDisabledTitle: annotateController.available ? undefined : annotateController.unavailableReason ?? undefined,
+      annotationUndoDisabled: !canEditSelectedAnnotateChannel || !annotateController.canUndo,
+      annotationRedoDisabled: !canEditSelectedAnnotateChannel || !annotateController.canRedo,
+      onAnnotationUndo: annotateController.undo,
+      onAnnotationRedo: annotateController.redo,
       onOpenExportChannel: openExportChannel,
       onOpenDrawRoiWindow: openDrawRoiWindow,
       onOpenRoiManagerWindow: openRoiManagerWindow,
@@ -2208,8 +2306,16 @@ function ViewerShell({
     }),
     [
       annotateController.available,
+      annotateController.canRedo,
+      annotateController.canUndo,
+      annotateController.redo,
+      annotateController.undo,
       annotateController.unavailableReason,
+      activeViewerTool,
+      canEditSelectedAnnotateChannel,
       deskew,
+      handleViewerToolChange,
+      handleViewerToolDimensionModeChange,
       handleReturnToLauncher,
       hoverCoordinateDigits,
       hoverIntensityValueDigits,
@@ -2242,6 +2348,7 @@ function ViewerShell({
       twoDViewButtonTitle,
       trackVisibilitySummaryByTrackSet,
       tracksPanel,
+      viewerToolDimensionMode,
       vrButtonDisabled,
       vrButtonTitle,
       topMenu
@@ -2434,9 +2541,9 @@ function ViewerShell({
         onUpdateWorldPosition: propsController.updateWorldPosition,
       },
       roiConfig: {
-        isDrawWindowOpen: isDrawRoiWindowOpen,
-        tool: roiTool,
-        dimensionMode: roiDimensionMode,
+        isDrawToolActive: isRoiViewerTool(activeViewerTool),
+        tool: isRoiViewerTool(activeViewerTool) ? activeViewerTool : roiTool,
+        dimensionMode: viewerToolDimensionMode,
         selectedZIndex: Math.max(0, (playbackState.zSliderValue ?? 1) - 1),
         twoDCurrentZEnabled,
         twoDStartZIndex,
@@ -2452,9 +2559,9 @@ function ViewerShell({
     }),
     [
       activeSavedRoiId,
+      activeViewerTool,
       editingSavedRoiId,
       isPropsWindowOpen,
-      isDrawRoiWindowOpen,
       activateSavedRoi,
       twoDCurrentZEnabled,
       twoDStartZIndex,
@@ -2466,7 +2573,6 @@ function ViewerShell({
       currentViewerPropTimepoint,
       totalViewerPropTimepoints,
       roiDefaultColor,
-      roiDimensionMode,
       roiTool,
       savedRois,
       setWorkingRoi,
@@ -2483,6 +2589,7 @@ function ViewerShell({
       handleRegisterCameraWindowController,
       workingRoi,
       playbackState.zSliderValue,
+      viewerToolDimensionMode,
       volumeViewerWithAnnotation,
     ]
   );
@@ -2671,8 +2778,7 @@ function ViewerShell({
           controlWindowWidth={controlWindowWidth}
           resetSignal={resetToken}
           volumeDimensions={volumeDimensions}
-          tool={roiTool}
-          dimensionMode={roiDimensionMode}
+          dimensionMode={viewerToolDimensionMode}
           selectedZIndex={Math.max(0, (playbackState.zSliderValue ?? 1) - 1)}
           currentRoiName={currentRoiName}
           roiAttachmentState={roiAttachmentState}
@@ -2680,8 +2786,6 @@ function ViewerShell({
           workingRoi={workingRoi}
           twoDCurrentZEnabled={twoDCurrentZEnabled}
           twoDStartZIndex={twoDStartZIndex}
-          onToolChange={setRoiTool}
-          onDimensionModeChange={setRoiDimensionMode}
           onColorChange={handleRoiColorChange}
           onTwoDCurrentZEnabledChange={setTwoDCurrentZEnabled}
           onTwoDStartZIndexChange={setTwoDStartZIndex}

@@ -114,7 +114,7 @@ const ROI_BL_OCCLUSION_DEPTH_FALLBACK_TEXTURE = (() => {
 })();
 
 function isDrawToolActive(roiConfig: ViewerRoiConfig | undefined): boolean {
-  return Boolean(roiConfig?.isDrawWindowOpen);
+  return Boolean(roiConfig?.isDrawToolActive);
 }
 
 function setLineMaterialResolution(

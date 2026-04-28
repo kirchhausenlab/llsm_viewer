@@ -127,11 +127,6 @@ function findNodesByClass(renderer: TestRenderer.ReactTestRenderer, className: s
   let deleteChannelCalls = 0;
   let clearCalls = 0;
   let saveCalls = 0;
-  const enabledValues: boolean[] = [];
-  const brushModes: string[] = [];
-  const dimensionModes: string[] = [];
-  let undoCalls = 0;
-  let redoCalls = 0;
   const renderer = renderAnnotateWindow(
     createController({
       deleteActiveChannel: () => {
@@ -142,21 +137,6 @@ function findNodesByClass(renderer: TestRenderer.ReactTestRenderer, className: s
       },
       saveActiveChannel: async () => {
         saveCalls += 1;
-      },
-      setEnabled: (value) => {
-        enabledValues.push(value);
-      },
-      setBrushMode: (mode) => {
-        brushModes.push(mode);
-      },
-      setMode: (mode) => {
-        dimensionModes.push(mode);
-      },
-      undo: () => {
-        undoCalls += 1;
-      },
-      redo: () => {
-        redoCalls += 1;
       },
     })
   );
@@ -179,28 +159,12 @@ function findNodesByClass(renderer: TestRenderer.ReactTestRenderer, className: s
   assert.equal(findButtonByText(renderer, 'Undo'), undefined);
   assert.equal(findButtonByText(renderer, 'Redo'), undefined);
 
-  const handButton = renderer.root.findByProps({ 'aria-label': 'Hand' });
-  const brushButton = renderer.root.findByProps({ 'aria-label': 'Brush' });
-  const eraserButton = renderer.root.findByProps({ 'aria-label': 'Eraser' });
-  assert.equal(handButton.props['aria-pressed'], true);
-  assert.equal(brushButton.findAllByType('svg').length, 1);
-  assert.equal(eraserButton.findAllByType('svg').length, 1);
-
-  act(() => brushButton.props.onClick());
-  act(() => eraserButton.props.onClick());
-  act(() => handButton.props.onClick());
-  assert.deepEqual(brushModes, ['brush', 'eraser']);
-  assert.deepEqual(enabledValues, [true, true, false]);
-
-  const mode2dButton = renderer.root.findAllByType('button').find((button) => button.props.children === '2D');
-  assert.ok(mode2dButton);
-  act(() => mode2dButton.props.onClick());
-  assert.deepEqual(dimensionModes, ['2d']);
-
-  act(() => renderer.root.findByProps({ 'aria-label': 'Undo' }).props.onClick());
-  act(() => renderer.root.findByProps({ 'aria-label': 'Redo' }).props.onClick());
-  assert.equal(undoCalls, 1);
-  assert.equal(redoCalls, 1);
+  assert.equal(renderer.root.findAllByProps({ 'aria-label': 'Hand' }).length, 0);
+  assert.equal(renderer.root.findAllByProps({ 'aria-label': 'Brush' }).length, 0);
+  assert.equal(renderer.root.findAllByProps({ 'aria-label': 'Eraser' }).length, 0);
+  assert.equal(renderer.root.findAllByProps({ 'aria-label': 'Undo' }).length, 0);
+  assert.equal(renderer.root.findAllByProps({ 'aria-label': 'Redo' }).length, 0);
+  assert.equal(renderer.root.findAllByType('button').filter((button) => button.props.children === '2D').length, 0);
 
   const labelTexts = findNodesByClass(renderer, 'roi-manager-list-item-label');
   assert.equal(labelTexts[0]?.props.children, '1');

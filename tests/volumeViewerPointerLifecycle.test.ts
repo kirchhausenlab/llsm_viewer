@@ -171,12 +171,12 @@ function createPointerEvent(
     },
   });
 
-  domElement.emitPointer('pointerdown', createPointerEvent({ ctrlKey: true }));
-  domElement.emitPointer('pointermove', createPointerEvent({ ctrlKey: true, pointerId: 1, clientX: 110 }));
-  domElement.emitPointer('pointerup', createPointerEvent({ ctrlKey: true, pointerId: 1, clientX: 115 }));
+  domElement.emitPointer('pointerdown', createPointerEvent({ shiftKey: true }));
+  domElement.emitPointer('pointermove', createPointerEvent({ shiftKey: true, pointerId: 1, clientX: 110 }));
+  domElement.emitPointer('pointerup', createPointerEvent({ shiftKey: true, pointerId: 1, clientX: 115 }));
 
-  assert.equal(annotationCounters.start, 1, 'CTRL down should start annotation stroke');
-  assert.equal(annotationCounters.end, 1, 'CTRL up should end annotation stroke');
+  assert.equal(annotationCounters.start, 1, 'SHIFT down should start annotation stroke');
+  assert.equal(annotationCounters.end, 1, 'SHIFT up should end annotation stroke');
   assert.equal(annotationCounters.apply, 3, 'annotation should apply on down/move/up');
   assert.equal(pointerLookCounters.begin, 0, 'annotation gesture should not start pointer-look');
   detach();
@@ -251,7 +251,7 @@ function createPointerEvent(
   );
   domElement.emitPointer('pointerup', createPointerEvent({ shiftKey: true, pointerId: 7, clientX: 140 }));
 
-  assert.equal(annotationCounters.start, 0, 'SHIFT drag should not trigger annotation when CTRL is not pressed');
+  assert.equal(annotationCounters.start, 0, 'SHIFT drag should not trigger annotation when annotation mode is disabled');
   assert.equal(annotationCounters.end, 0, 'SHIFT drag should not end annotation when annotation mode is disabled');
   assert.equal(pointerLookCounters.begin, 1, 'SHIFT drag should start pointer-look');
   assert.equal(pointerLookCounters.move, 1, 'SHIFT drag should update pointer-look');

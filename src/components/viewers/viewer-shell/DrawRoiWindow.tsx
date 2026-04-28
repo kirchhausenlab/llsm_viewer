@@ -3,12 +3,11 @@ import {
   ViewerWindowButton,
   ViewerWindowDivider,
   ViewerWindowRow,
-  ViewerWindowSegmentedControl,
   ViewerWindowSlider,
   ViewerWindowStack,
 } from './window-ui';
 import type { LayoutProps } from './types';
-import type { RoiDefinition, RoiDimensionMode, RoiTool } from '../../../types/roi';
+import type { RoiDefinition, RoiDimensionMode } from '../../../types/roi';
 import { ROI_COLOR_SWATCHES } from '../../../types/roi';
 import { fromUserFacingVoxelIndex, toUserFacingVoxelIndex } from '../../../shared/utils/voxelIndex';
 
@@ -22,7 +21,6 @@ type DrawRoiWindowProps = {
     height: number;
     depth: number;
   };
-  tool: RoiTool;
   dimensionMode: RoiDimensionMode;
   selectedZIndex: number;
   currentRoiName: string;
@@ -31,8 +29,6 @@ type DrawRoiWindowProps = {
   workingRoi: RoiDefinition | null;
   twoDCurrentZEnabled: boolean;
   twoDStartZIndex: number;
-  onToolChange: (tool: RoiTool) => void;
-  onDimensionModeChange: (mode: RoiDimensionMode) => void;
   onColorChange: (color: string) => void;
   onTwoDCurrentZEnabledChange: (enabled: boolean) => void;
   onTwoDStartZIndexChange: (value: number) => void;
@@ -40,30 +36,6 @@ type DrawRoiWindowProps = {
   onClearOrDetach: () => void;
   onClose: () => void;
 };
-
-function LineIcon() {
-  return (
-    <svg viewBox="0 0 24 24" className="roi-tool-icon" aria-hidden="true">
-      <path d="M5 18 19 6" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-    </svg>
-  );
-}
-
-function RectangleIcon() {
-  return (
-    <svg viewBox="0 0 24 24" className="roi-tool-icon" aria-hidden="true">
-      <rect x="5" y="5" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" rx="1" />
-    </svg>
-  );
-}
-
-function EllipseIcon() {
-  return (
-    <svg viewBox="0 0 24 24" className="roi-tool-icon" aria-hidden="true">
-      <ellipse cx="12" cy="12" rx="7" ry="5.5" fill="none" stroke="currentColor" strokeWidth="2" />
-    </svg>
-  );
-}
 
 type AxisKey = keyof RoiDefinition['start'];
 
@@ -83,7 +55,6 @@ export default function DrawRoiWindow({
   controlWindowWidth,
   resetSignal,
   volumeDimensions,
-  tool,
   dimensionMode,
   selectedZIndex,
   currentRoiName,
@@ -92,8 +63,6 @@ export default function DrawRoiWindow({
   workingRoi,
   twoDCurrentZEnabled,
   twoDStartZIndex,
-  onToolChange,
-  onDimensionModeChange,
   onColorChange,
   onTwoDCurrentZEnabledChange,
   onTwoDStartZIndexChange,
@@ -101,8 +70,6 @@ export default function DrawRoiWindow({
   onClearOrDetach,
   onClose,
 }: DrawRoiWindowProps) {
-  const hasAttachedRoi = workingRoi !== null;
-  const effectiveTool = workingRoi?.shape ?? tool;
   const effectiveDimensionMode = workingRoi?.mode ?? dimensionMode;
   const isTwoDMode = effectiveDimensionMode === '2d';
   const actionButtonLabel = roiAttachmentState === 'saved' ? 'Detach' : 'Clear';
@@ -145,47 +112,6 @@ export default function DrawRoiWindow({
       onClose={onClose}
     >
       <ViewerWindowStack className="draw-roi-window">
-        <ViewerWindowRow className="draw-roi-toolbar" wrap>
-          <ViewerWindowSegmentedControl
-            className="draw-roi-segmented-control draw-roi-segmented-control--mode"
-            buttonClassName="draw-roi-segment-button"
-            ariaLabel="ROI dimension"
-            value={effectiveDimensionMode}
-            onChange={onDimensionModeChange}
-            disabled={hasAttachedRoi}
-            options={(['2d', '3d'] as const).map((mode) => ({
-              value: mode,
-              content: mode.toUpperCase(),
-            }))}
-          />
-
-          <ViewerWindowSegmentedControl
-            className="draw-roi-segmented-control draw-roi-segmented-control--shape"
-            buttonClassName="draw-roi-segment-button"
-            ariaLabel="ROI drawing tool"
-            value={effectiveTool}
-            onChange={onToolChange}
-            disabled={hasAttachedRoi}
-            options={[
-              { value: 'line', ariaLabel: 'Line', title: 'Line', className: 'draw-roi-tool-button', content: <LineIcon /> },
-              {
-                value: 'rectangle',
-                ariaLabel: 'Rectangle',
-                title: 'Rectangle',
-                className: 'draw-roi-tool-button',
-                content: <RectangleIcon />,
-              },
-              {
-                value: 'ellipse',
-                ariaLabel: 'Ellipse',
-                title: 'Ellipse',
-                className: 'draw-roi-tool-button',
-                content: <EllipseIcon />,
-              },
-            ]}
-          />
-        </ViewerWindowRow>
-
         <div className="draw-roi-sliders" role="group" aria-label="ROI coordinates">
           <div className="draw-roi-name-row">
             <span>{currentRoiName}</span>

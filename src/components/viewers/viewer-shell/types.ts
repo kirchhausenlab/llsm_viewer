@@ -19,6 +19,7 @@ import type { CameraFaceView, CameraFaceViewMode } from '../../../types/camera';
 import type { FollowedVoxelTarget } from '../../../types/follow';
 import type { HoveredVoxelInfo, HoverSettings, HoverType } from '../../../types/hover';
 import type { NumericRange, TrackColorMode, TrackPoint, TrackSummary } from '../../../types/tracks';
+import type { ViewerTool, ViewerToolDimensionMode } from '../../../types/viewerTool';
 
 export type TopMenuChromeProps = {
   onReturnToLauncher: () => void;
@@ -78,6 +79,16 @@ export type TopMenuProps = TopMenuChromeProps &
     onOpenAnnotate: () => void;
     annotateDisabled?: boolean;
     annotateDisabledTitle?: string;
+    activeViewerTool?: ViewerTool;
+    viewerToolDimensionMode?: ViewerToolDimensionMode;
+    onViewerToolChange?: (tool: ViewerTool) => void;
+    onViewerToolDimensionModeChange?: (mode: ViewerToolDimensionMode) => void;
+    annotationToolsDisabled?: boolean;
+    annotationToolsDisabledTitle?: string;
+    annotationUndoDisabled?: boolean;
+    annotationRedoDisabled?: boolean;
+    onAnnotationUndo?: () => void;
+    onAnnotationRedo?: () => void;
     onOpenExportChannel: () => void;
     onOpenDrawRoiWindow: () => void;
     onOpenRoiManagerWindow: () => void;

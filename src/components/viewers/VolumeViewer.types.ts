@@ -178,7 +178,7 @@ export type DesktopViewerBackgroundConfig = {
 };
 
 export type ViewerRoiConfig = {
-  isDrawWindowOpen: boolean;
+  isDrawToolActive: boolean;
   tool: RoiTool;
   dimensionMode: RoiDimensionMode;
   selectedZIndex: number;

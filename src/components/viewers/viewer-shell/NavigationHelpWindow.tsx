@@ -116,8 +116,8 @@ const HELP_TABS: HelpTab[] = [
         title: 'Editing labels',
         items: [
           'Open Edit > Annotate to create or refine labels.',
-          'Enable Annotate, then hold Ctrl + left-click or drag in the viewer to draw labels.',
-          'Switch to Eraser to remove labels, and use the radius control to change brush size.',
+          'Select Brush in the top menu, then hold Shift + left-click or drag in the viewer to draw labels.',
+          'Select Eraser to remove labels, and use the radius control to change brush size.',
           'Use Undo, Redo, Clear, and Save in the Annotate window to manage your edits.',
           'Show/Hide lets you preview editable labels directly in the viewer.'
         ]

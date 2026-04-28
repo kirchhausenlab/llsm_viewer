@@ -125,7 +125,7 @@ export function attachVolumeViewerPointerLifecycle({
     }
 
     const annotation = annotationRef.current;
-    const shouldAnnotate = Boolean(annotation?.enabled && event.ctrlKey);
+    const shouldAnnotate = Boolean(annotation?.enabled && event.shiftKey);
     if (shouldAnnotate && annotation) {
       domElement.style.cursor = '';
       annotationStrokePointerIdRef.current = event.pointerId;

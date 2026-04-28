@@ -323,10 +323,145 @@ test('top menu renders and toggles the 2D/3D segmented control state', () => {
   });
 });
 
+test('top menu renders unified drawing and annotation tool controls in the top third cell', () => {
+  withEnvironmentMocks(() => {
+    const toolCalls: string[] = [];
+    const modeCalls: string[] = [];
+    let annotateCalls = 0;
+    let drawRoiCalls = 0;
+    let undoCalls = 0;
+    let redoCalls = 0;
+    const renderer = renderTopMenu({
+      activeViewerTool: 'hand',
+      viewerToolDimensionMode: '2d',
+      onViewerToolChange: (tool) => {
+        toolCalls.push(tool);
+      },
+      onViewerToolDimensionModeChange: (mode) => {
+        modeCalls.push(mode);
+      },
+      onOpenAnnotate: () => {
+        annotateCalls += 1;
+      },
+      onOpenDrawRoiWindow: () => {
+        drawRoiCalls += 1;
+      },
+      annotationUndoDisabled: false,
+      annotationRedoDisabled: false,
+      onAnnotationUndo: () => {
+        undoCalls += 1;
+      },
+      onAnnotationRedo: () => {
+        redoCalls += 1;
+      }
+    });
+
+    const topThirdColumn = renderer.root.findAll(
+      (node) =>
+        node.type === 'div' &&
+        hasClassName(node, 'viewer-top-menu-cell--top') &&
+        hasClassName(node, 'viewer-top-menu-cell--column-3')
+    )[0];
+    assert.ok(topThirdColumn);
+
+    const toolToolbar = topThirdColumn.findAll(
+      (node) => node.type === 'div' && node.props.role === 'toolbar' && node.props['aria-label'] === 'Drawing and annotation tools'
+    )[0];
+    assert.ok(toolToolbar);
+    const orderedControls = toolToolbar
+      .findAll(
+        (node) =>
+          (node.type === 'div' && node.props['aria-label'] === 'Tool dimensionality') ||
+          (node.type === 'span' && hasClassName(node, 'viewer-top-menu-tool-spacer')) ||
+          (node.type === 'button' && typeof node.props['aria-label'] === 'string')
+      )
+      .map((node) => {
+        if (node.type === 'span') {
+          return 'Spacer';
+        }
+        return node.props['aria-label'] as string;
+      });
+    assert.deepEqual(orderedControls, [
+      'Tool dimensionality',
+      'Hand',
+      'Spacer',
+      'Line',
+      'Rectangle',
+      'Ellipse',
+      'Open Draw ROI window',
+      'Spacer',
+      'Brush',
+      'Eraser',
+      'Undo',
+      'Redo',
+      'Open Annotate window'
+    ]);
+
+    const toolButtons = ['Hand', 'Line', 'Rectangle', 'Ellipse', 'Brush', 'Eraser'].map((label) => {
+      const button = topThirdColumn.findAll(
+        (node) => node.type === 'button' && node.props['aria-label'] === label
+      )[0];
+      assert.ok(button, `Expected ${label} tool button.`);
+      return button;
+    });
+    assert.deepEqual(toolButtons.map((button) => button.props['aria-pressed']), [true, false, false, false, false, false]);
+
+    const toolDimensionControl = topThirdColumn.findAll(
+      (node) => node.type === 'div' && node.props['aria-label'] === 'Tool dimensionality'
+    )[0];
+    assert.ok(toolDimensionControl);
+    const threeDButton = toolDimensionControl.findAll(
+      (node) => node.type === 'button' && extractText(node) === '3D'
+    )[0];
+    assert.ok(threeDButton);
+    const drawRoiSettingsButton = topThirdColumn.findAll(
+      (node) => node.type === 'button' && node.props['aria-label'] === 'Open Draw ROI window'
+    )[0];
+    const annotateSettingsButton = topThirdColumn.findAll(
+      (node) => node.type === 'button' && node.props['aria-label'] === 'Open Annotate window'
+    )[0];
+    const undoButton = topThirdColumn.findAll(
+      (node) => node.type === 'button' && node.props['aria-label'] === 'Undo'
+    )[0];
+    const redoButton = topThirdColumn.findAll(
+      (node) => node.type === 'button' && node.props['aria-label'] === 'Redo'
+    )[0];
+    assert.ok(drawRoiSettingsButton);
+    assert.ok(annotateSettingsButton);
+    assert.ok(undoButton);
+    assert.ok(redoButton);
+    assert.equal(drawRoiSettingsButton.props['aria-pressed'], undefined);
+    assert.equal(annotateSettingsButton.props['aria-pressed'], undefined);
+    assert.equal(undoButton.props['aria-pressed'], undefined);
+    assert.equal(redoButton.props['aria-pressed'], undefined);
+    assert.equal(undoButton.props.disabled, false);
+    assert.equal(redoButton.props.disabled, false);
+
+    act(() => {
+      toolButtons[2]!.props.onClick();
+      threeDButton.props.onClick();
+      drawRoiSettingsButton.props.onClick();
+      undoButton.props.onClick();
+      redoButton.props.onClick();
+      annotateSettingsButton.props.onClick();
+    });
+
+    assert.deepEqual(toolCalls, ['rectangle']);
+    assert.deepEqual(modeCalls, ['3d']);
+    assert.equal(drawRoiCalls, 1);
+    assert.equal(annotateCalls, 1);
+    assert.equal(undoCalls, 1);
+    assert.equal(redoCalls, 1);
+
+    renderer.unmount();
+  });
+});
+
 test('top menu projection and face view controls call viewer handlers', () => {
   withEnvironmentMocks(() => {
     const projectionCalls: string[] = [];
     const faceCalls: string[] = [];
+    let renderSettingsCalls = 0;
     const renderer = renderTopMenu({
       is3dModeAvailable: true,
       projectionMode: 'perspective',
@@ -335,6 +470,9 @@ test('top menu projection and face view controls call viewer handlers', () => {
       },
       onCameraFaceViewChange: (face, mode) => {
         faceCalls.push(`${face}:${mode}`);
+      },
+      onOpenRenderSettingsWindow: () => {
+        renderSettingsCalls += 1;
       }
     });
 
@@ -366,8 +504,18 @@ test('top menu projection and face view controls call viewer handlers', () => {
       yzButton.props.onClick();
     });
 
+    const renderSettingsButton = renderer.root.findAll(
+      (node) => node.type === 'button' && node.props['aria-label'] === 'Open Render Settings window'
+    )[0];
+    assert.ok(renderSettingsButton);
+
+    act(() => {
+      renderSettingsButton.props.onClick();
+    });
+
     assert.deepEqual(projectionCalls, ['orthographic']);
     assert.deepEqual(faceCalls, ['yz:axes']);
+    assert.equal(renderSettingsCalls, 1);
 
     renderer.unmount();
   });
@@ -389,7 +537,7 @@ test('top menu glass mode is disabled without deskew and changes face view mode 
     )[0];
     assert.ok(overlayControl);
     const glassButton = overlayControl.findAll(
-      (node) => node.type === 'button' && extractText(node) === 'Glass'
+      (node) => node.type === 'button' && node.props['aria-label'] === 'Glass'
     )[0];
     assert.equal(glassButton.props.disabled, false);
 

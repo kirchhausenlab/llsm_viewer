@@ -5,9 +5,9 @@ This program replaces the current Paintbrush overlay tool with an editable segme
 Primary document:
 
 - [Implementation Spec](./IMPLEMENTATION_SPEC.md)
+- [Incremental Sparse Editing Spec](./INCREMENTAL_SPARSE_EDITING_SPEC.md)
 
 Status:
 
-- Planned.
-- No implementation has been started from this spec yet.
-
+- Base overhaul spec: planned reference.
+- Incremental sparse editing spec: follow-up handoff for fixing the current Annotate first-voxel slowdown without changing functionality.

@@ -29,7 +29,6 @@ function createProps(overrides: Partial<React.ComponentProps<typeof DrawRoiWindo
       height: 50,
       depth: 60,
     },
-    tool: 'line' as const,
     dimensionMode: '3d' as const,
     selectedZIndex: 6,
     currentRoiName: 'Unsaved ROI',
@@ -38,8 +37,6 @@ function createProps(overrides: Partial<React.ComponentProps<typeof DrawRoiWindo
     workingRoi: createWorkingRoi(),
     twoDCurrentZEnabled: false,
     twoDStartZIndex: 6,
-    onToolChange: () => {},
-    onDimensionModeChange: () => {},
     onColorChange: () => {},
     onTwoDCurrentZEnabledChange: () => {},
     onTwoDStartZIndexChange: () => {},
@@ -62,14 +59,12 @@ function findNodeByClassName(renderer: TestRenderer.ReactTestRenderer, className
     <DrawRoiWindow {...createProps()} />,
   );
 
-  const toolbar = findNodeByClassName(renderer, 'draw-roi-toolbar');
-  assert.ok(toolbar);
   assert.equal(
-    toolbar.findAll((node) => (
+    renderer.root.findAll((node) => (
       typeof node.type === 'string' &&
       node.props.className?.includes?.('draw-roi-segmented-control')
     )).length,
-    2,
+    0,
   );
   const nameRow = findNodeByClassName(renderer, 'draw-roi-name-row');
   assert.ok(nameRow);
@@ -81,8 +76,7 @@ function findNodeByClassName(renderer: TestRenderer.ReactTestRenderer, className
   const toolButtons = renderer.root.findAll(
     (node) => node.type === 'button' && node.props.className?.includes?.('draw-roi-tool-button'),
   );
-  assert.deepEqual(toolButtons.map((button) => button.props.title), ['Line', 'Rectangle', 'Ellipse']);
-  assert.ok(toolButtons.every((button) => button.props.disabled === true));
+  assert.equal(toolButtons.length, 0);
 
   const sliderRows = renderer.root.findAll((node) => {
     const className = node.props.className;

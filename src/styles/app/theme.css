@@ -1091,6 +1091,21 @@
   overflow: hidden;
 }
 
+.viewer-top-menu-tool-controls {
+  --viewer-top-menu-tool-button-size: var(--viewer-top-menu-widget-height);
+  --viewer-top-menu-tool-icon-size: 0.98rem;
+  display: grid;
+  grid-template-columns:
+    auto
+    repeat(12, var(--viewer-top-menu-tool-button-size));
+  align-items: center;
+  gap: 0.16rem;
+  width: fit-content;
+  max-width: 100%;
+  min-width: 0;
+  overflow: visible;
+}
+
 .viewer-top-menu-segmented-control {
   display: grid;
   grid-template-columns: repeat(var(--viewer-top-menu-segment-count), var(--viewer-top-menu-segment-width, 2.2rem));
@@ -1108,12 +1123,28 @@
   --viewer-top-menu-segment-width: 2.2rem;
 }
 
+.viewer-top-menu-segmented-control--tool-dimension {
+  --viewer-top-menu-segment-width: 1.86rem;
+  height: var(--viewer-top-menu-widget-height);
+  padding: 0.08rem;
+}
+
+.viewer-top-menu-segmented-control--tool-dimension .viewer-top-menu-segment-button {
+  height: 100%;
+  min-height: 0;
+  padding: 0 0.12rem;
+}
+
 .viewer-top-menu-segmented-control--projection {
   --viewer-top-menu-segment-width: 1.9rem;
 }
 
 .viewer-top-menu-segmented-control--overlay {
-  --viewer-top-menu-segment-width: 2.75rem;
+  --viewer-top-menu-segment-width: 1.9rem;
+}
+
+.viewer-top-menu-segmented-control--overlay .viewer-top-menu-segment-button {
+  padding: 0;
 }
 
 .viewer-top-menu-segment-button {
@@ -1173,6 +1204,59 @@
   stroke-linejoin: round;
 }
 
+.viewer-top-menu-view-settings-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--viewer-top-menu-widget-height);
+  min-width: var(--viewer-top-menu-widget-height);
+  height: var(--viewer-top-menu-widget-height);
+  min-height: 0;
+  padding: 0;
+  border-color: var(--control-border);
+  background: var(--control-background);
+  color: var(--text-muted);
+  line-height: 1;
+  letter-spacing: 0;
+  box-sizing: border-box;
+}
+
+.viewer-top-menu-view-settings-button:not(:disabled):hover {
+  border-color: var(--control-border-strong);
+  background: var(--control-hover-background);
+}
+
+.viewer-top-menu-view-icon,
+.viewer-top-menu-overlay-icon {
+  display: block;
+  flex: 0 0 auto;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  pointer-events: none;
+}
+
+.viewer-top-menu-view-icon {
+  width: 0.98rem;
+  height: 0.98rem;
+  stroke-width: 2;
+}
+
+.viewer-top-menu-overlay-icon {
+  width: 1.08rem;
+  height: 1.08rem;
+  stroke-width: 1.8;
+}
+
+.viewer-top-menu-face-spacer {
+  display: block;
+  width: 2.08rem;
+  min-width: 2.08rem;
+  height: var(--viewer-top-menu-widget-height);
+  pointer-events: none;
+}
+
 .viewer-top-menu-face-buttons {
   display: grid;
   grid-template-columns: repeat(3, 2.08rem);
@@ -1182,19 +1266,103 @@
 }
 
 .viewer-top-menu-face-button {
+  display: inline-flex;
+  align-items: center;
   justify-content: center;
   width: 2.08rem;
   min-width: 2.08rem;
+  height: var(--viewer-top-menu-widget-height);
+  min-height: 0;
   padding-inline: 0;
   border-color: var(--control-border);
   background: var(--control-background);
   font-size: 0.72rem;
   letter-spacing: 0;
+  line-height: 1;
+  box-sizing: border-box;
 }
 
 .viewer-top-menu-face-button:not(:disabled):hover {
   border-color: var(--control-border-strong);
   background: var(--control-hover-background);
+}
+
+.viewer-top-menu-tool-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--viewer-top-menu-tool-button-size);
+  min-width: var(--viewer-top-menu-tool-button-size);
+  height: var(--viewer-top-menu-tool-button-size);
+  min-height: 0;
+  padding: 0;
+  border-color: var(--control-border);
+  background: var(--control-background);
+  line-height: 1;
+  letter-spacing: 0;
+  box-sizing: border-box;
+}
+
+.viewer-top-menu-tool-button:not(:disabled):hover {
+  border-color: var(--control-border-strong);
+  background: var(--control-hover-background);
+}
+
+.viewer-top-menu-tool-button[aria-pressed='true'] {
+  border-color: var(--accent-border);
+  background: var(--accent-soft);
+  color: var(--text-primary);
+  box-shadow: inset 0 0 0 1px var(--accent-border);
+}
+
+.viewer-top-menu-tool-button:disabled:hover {
+  border-color: var(--control-border);
+  background: var(--control-background);
+  color: var(--text-secondary);
+}
+
+.viewer-top-menu-tool-settings-button {
+  color: var(--text-muted);
+}
+
+.viewer-top-menu-tool-history-button {
+  color: var(--text-secondary);
+}
+
+.viewer-top-menu-tool-spacer {
+  display: block;
+  width: var(--viewer-top-menu-tool-button-size);
+  min-width: var(--viewer-top-menu-tool-button-size);
+  height: var(--viewer-top-menu-tool-button-size);
+  pointer-events: none;
+}
+
+.viewer-top-menu-tool-icon,
+.viewer-tool-icon,
+.annotate-tool-icon,
+.roi-tool-icon {
+  display: block;
+  flex: 0 0 auto;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.viewer-top-menu-tool-icon {
+  width: var(--viewer-top-menu-tool-icon-size);
+  height: var(--viewer-top-menu-tool-icon-size);
+  max-width: calc(var(--viewer-top-menu-tool-button-size) - 0.42rem);
+  max-height: calc(var(--viewer-top-menu-tool-button-size) - 0.42rem);
+  overflow: visible;
+  pointer-events: none;
+}
+
+.annotate-tool-icon,
+.roi-tool-icon {
+  width: 1.2rem;
+  height: 1.2rem;
 }
 
 .viewer-top-menu-floating-warning {
