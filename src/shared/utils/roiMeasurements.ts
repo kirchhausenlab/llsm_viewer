@@ -1,6 +1,7 @@
 import type { NormalizedVolume } from '../../core/volumeProcessing';
 import { isIntensityVolume } from '../../core/volumeProcessing';
 import type { SavedRoi } from '../../types/roi';
+import type { BackgroundMaskVolume } from './backgroundMask';
 import type {
   RoiMeasurementChannelSnapshot,
   RoiMeasurementMetricKey,
@@ -21,6 +22,7 @@ export type RoiMeasurementChannelSource = {
   id: string;
   name: string;
   volume: NormalizedVolume | null;
+  backgroundMask?: BackgroundMaskVolume | null;
 };
 
 const EPSILON = 1e-9;
@@ -70,16 +72,60 @@ function getIntensityScalarAtVoxel(volume: NormalizedVolume, x: number, y: numbe
   return resolveScalarIntensityFromRawValues(rawValues);
 }
 
+function resolveMeasurementMask(
+  volume: NormalizedVolume,
+  backgroundMask: BackgroundMaskVolume | null | undefined,
+): Uint8Array | null {
+  if (!backgroundMask) {
+    return null;
+  }
+  if (
+    backgroundMask.width !== volume.width ||
+    backgroundMask.height !== volume.height ||
+    backgroundMask.depth !== volume.depth ||
+    backgroundMask.data.length !== volume.width * volume.height * volume.depth
+  ) {
+    return null;
+  }
+  return backgroundMask.data;
+}
+
+function isVoxelMasked(
+  mask: Uint8Array | null,
+  volume: NormalizedVolume,
+  x: number,
+  y: number,
+  z: number,
+): boolean {
+  if (!mask) {
+    return false;
+  }
+  return (mask[(z * volume.height + y) * volume.width + x] ?? 0) > 0;
+}
+
+function getUnmaskedIntensityScalarAtVoxel(
+  volume: NormalizedVolume,
+  mask: Uint8Array | null,
+  x: number,
+  y: number,
+  z: number,
+): number | null {
+  if (isVoxelMasked(mask, volume, x, y, z)) {
+    return null;
+  }
+  return getIntensityScalarAtVoxel(volume, x, y, z);
+}
+
 function getInterpolatedIntensityScalarAtPosition(
   volume: NormalizedVolume,
   position: { x: number; y: number; z: number },
+  mask: Uint8Array | null,
 ): number | null {
   if (!isIntensityVolume(volume)) {
     return null;
   }
 
   const channels = Math.max(1, volume.channels);
-  const sliceStride = volume.width * volume.height * channels;
   const rowStride = volume.width * channels;
   const x = clamp(position.x, 0, volume.width - 1);
   const y = clamp(position.y, 0, volume.height - 1);
@@ -110,34 +156,29 @@ function getInterpolatedIntensityScalarAtPosition(
     tX * tY * tZ,
   ] as const;
 
-  const frontOffset = frontZ * sliceStride;
-  const backOffset = backZ * sliceStride;
-  const topFrontOffset = frontOffset + topY * rowStride;
-  const bottomFrontOffset = frontOffset + bottomY * rowStride;
-  const topBackOffset = backOffset + topY * rowStride;
-  const bottomBackOffset = backOffset + bottomY * rowStride;
+  const samples = [
+    { x: leftX, y: topY, z: frontZ, weight: weights[0] },
+    { x: rightX, y: topY, z: frontZ, weight: weights[1] },
+    { x: leftX, y: bottomY, z: frontZ, weight: weights[2] },
+    { x: rightX, y: bottomY, z: frontZ, weight: weights[3] },
+    { x: leftX, y: topY, z: backZ, weight: weights[4] },
+    { x: rightX, y: topY, z: backZ, weight: weights[5] },
+    { x: leftX, y: bottomY, z: backZ, weight: weights[6] },
+    { x: rightX, y: bottomY, z: backZ, weight: weights[7] },
+  ].filter((sample) => sample.weight > 0 && !isVoxelMasked(mask, volume, sample.x, sample.y, sample.z));
+  const weightSum = samples.reduce((sum, sample) => sum + sample.weight, 0);
+  if (weightSum <= EPSILON) {
+    return null;
+  }
 
   const rawValues: number[] = [];
   for (let channelIndex = 0; channelIndex < channels; channelIndex += 1) {
-    const topLeftFront = volume.normalized[topFrontOffset + leftX * channels + channelIndex] ?? 0;
-    const topRightFront = volume.normalized[topFrontOffset + rightX * channels + channelIndex] ?? 0;
-    const bottomLeftFront = volume.normalized[bottomFrontOffset + leftX * channels + channelIndex] ?? 0;
-    const bottomRightFront = volume.normalized[bottomFrontOffset + rightX * channels + channelIndex] ?? 0;
-    const topLeftBack = volume.normalized[topBackOffset + leftX * channels + channelIndex] ?? 0;
-    const topRightBack = volume.normalized[topBackOffset + rightX * channels + channelIndex] ?? 0;
-    const bottomLeftBack = volume.normalized[bottomBackOffset + leftX * channels + channelIndex] ?? 0;
-    const bottomRightBack = volume.normalized[bottomBackOffset + rightX * channels + channelIndex] ?? 0;
-
-    const interpolated =
-      topLeftFront * weights[0] +
-      topRightFront * weights[1] +
-      bottomLeftFront * weights[2] +
-      bottomRightFront * weights[3] +
-      topLeftBack * weights[4] +
-      topRightBack * weights[5] +
-      bottomLeftBack * weights[6] +
-      bottomRightBack * weights[7];
-    rawValues.push(denormalizeValue(interpolated, volume));
+    let interpolated = 0;
+    for (const sample of samples) {
+      const offset = (sample.z * volume.height + sample.y) * rowStride + sample.x * channels;
+      interpolated += (volume.normalized[offset + channelIndex] ?? 0) * sample.weight;
+    }
+    rawValues.push(denormalizeValue(interpolated / weightSum, volume));
   }
 
   return resolveScalarIntensityFromRawValues(rawValues);
@@ -145,7 +186,10 @@ function getInterpolatedIntensityScalarAtPosition(
 
 function computeStatistics(values: number[]): Record<RoiMeasurementMetricKey, number | null> {
   if (values.length === 0) {
-    return createEmptyMetricRecord();
+    return {
+      ...createEmptyMetricRecord(),
+      count: 0,
+    };
   }
 
   const sorted = [...values].sort((left, right) => left - right);
@@ -170,7 +214,7 @@ function computeStatistics(values: number[]): Record<RoiMeasurementMetricKey, nu
   };
 }
 
-function build2dRectangleValues(roi: SavedRoi, volume: NormalizedVolume): number[] {
+function build2dRectangleValues(roi: SavedRoi, volume: NormalizedVolume, mask: Uint8Array | null): number[] {
   const z = clamp(roi.start.z, 0, volume.depth - 1);
   const minX = Math.min(roi.start.x, roi.end.x);
   const maxX = Math.max(roi.start.x, roi.end.x);
@@ -183,7 +227,7 @@ function build2dRectangleValues(roi: SavedRoi, volume: NormalizedVolume): number
       if (x + EPSILON < minX || x - EPSILON > maxX || y + EPSILON < minY || y - EPSILON > maxY) {
         continue;
       }
-      const value = getIntensityScalarAtVoxel(volume, x, y, z);
+      const value = getUnmaskedIntensityScalarAtVoxel(volume, mask, x, y, z);
       if (value !== null) {
         values.push(value);
       }
@@ -216,7 +260,7 @@ function isWithinClosedEllipse(
   return total <= 1 + EPSILON;
 }
 
-function build2dEllipseValues(roi: SavedRoi, volume: NormalizedVolume): number[] {
+function build2dEllipseValues(roi: SavedRoi, volume: NormalizedVolume, mask: Uint8Array | null): number[] {
   const z = clamp(roi.start.z, 0, volume.depth - 1);
   const minX = Math.min(roi.start.x, roi.end.x);
   const maxX = Math.max(roi.start.x, roi.end.x);
@@ -231,7 +275,7 @@ function build2dEllipseValues(roi: SavedRoi, volume: NormalizedVolume): number[]
       if (!isWithinClosedEllipse({ x, y }, center, radius)) {
         continue;
       }
-      const value = getIntensityScalarAtVoxel(volume, x, y, z);
+      const value = getUnmaskedIntensityScalarAtVoxel(volume, mask, x, y, z);
       if (value !== null) {
         values.push(value);
       }
@@ -241,7 +285,7 @@ function build2dEllipseValues(roi: SavedRoi, volume: NormalizedVolume): number[]
   return values;
 }
 
-function build3dBoxValues(roi: SavedRoi, volume: NormalizedVolume): number[] {
+function build3dBoxValues(roi: SavedRoi, volume: NormalizedVolume, mask: Uint8Array | null): number[] {
   const minX = Math.min(roi.start.x, roi.end.x);
   const maxX = Math.max(roi.start.x, roi.end.x);
   const minY = Math.min(roi.start.y, roi.end.y);
@@ -263,7 +307,7 @@ function build3dBoxValues(roi: SavedRoi, volume: NormalizedVolume): number[] {
         ) {
           continue;
         }
-        const value = getIntensityScalarAtVoxel(volume, x, y, z);
+        const value = getUnmaskedIntensityScalarAtVoxel(volume, mask, x, y, z);
         if (value !== null) {
           values.push(value);
         }
@@ -274,7 +318,7 @@ function build3dBoxValues(roi: SavedRoi, volume: NormalizedVolume): number[] {
   return values;
 }
 
-function build3dEllipsoidValues(roi: SavedRoi, volume: NormalizedVolume): number[] {
+function build3dEllipsoidValues(roi: SavedRoi, volume: NormalizedVolume, mask: Uint8Array | null): number[] {
   const minX = Math.min(roi.start.x, roi.end.x);
   const maxX = Math.max(roi.start.x, roi.end.x);
   const minY = Math.min(roi.start.y, roi.end.y);
@@ -299,7 +343,7 @@ function build3dEllipsoidValues(roi: SavedRoi, volume: NormalizedVolume): number
         if (!isWithinClosedEllipse({ x, y, z }, center, radius)) {
           continue;
         }
-        const value = getIntensityScalarAtVoxel(volume, x, y, z);
+        const value = getUnmaskedIntensityScalarAtVoxel(volume, mask, x, y, z);
         if (value !== null) {
           values.push(value);
         }
@@ -310,7 +354,7 @@ function build3dEllipsoidValues(roi: SavedRoi, volume: NormalizedVolume): number
   return values;
 }
 
-function buildLineProfileValues(roi: SavedRoi, volume: NormalizedVolume): number[] {
+function buildLineProfileValues(roi: SavedRoi, volume: NormalizedVolume, mask: Uint8Array | null): number[] {
   const dx = roi.end.x - roi.start.x;
   const dy = roi.end.y - roi.start.y;
   const dz = roi.mode === '3d' ? roi.end.z - roi.start.z : 0;
@@ -320,11 +364,15 @@ function buildLineProfileValues(roi: SavedRoi, volume: NormalizedVolume): number
 
   for (let stepIndex = 0; stepIndex <= steps; stepIndex += 1) {
     const t = stepIndex / steps;
-    const value = getInterpolatedIntensityScalarAtPosition(volume, {
-      x: roi.start.x + dx * t,
-      y: roi.start.y + dy * t,
-      z: roi.mode === '3d' ? roi.start.z + dz * t : roi.start.z,
-    });
+    const value = getInterpolatedIntensityScalarAtPosition(
+      volume,
+      {
+        x: roi.start.x + dx * t,
+        y: roi.start.y + dy * t,
+        z: roi.mode === '3d' ? roi.start.z + dz * t : roi.start.z,
+      },
+      mask,
+    );
     if (value !== null) {
       values.push(value);
     }
@@ -357,18 +405,23 @@ export function validateSavedRoiWithinDimensions(roi: SavedRoi, dimensions: Meas
   );
 }
 
-export function computeRoiMeasurementValues(roi: SavedRoi, volume: NormalizedVolume | null) {
+export function computeRoiMeasurementValues(
+  roi: SavedRoi,
+  volume: NormalizedVolume | null,
+  backgroundMask?: BackgroundMaskVolume | null,
+) {
   if (!volume || !isIntensityVolume(volume)) {
     return createEmptyMetricRecord();
   }
 
+  const mask = resolveMeasurementMask(volume, backgroundMask);
   let values: number[] = [];
   if (roi.shape === 'line') {
-    values = buildLineProfileValues(roi, volume);
+    values = buildLineProfileValues(roi, volume, mask);
   } else if (roi.shape === 'rectangle') {
-    values = roi.mode === '2d' ? build2dRectangleValues(roi, volume) : build3dBoxValues(roi, volume);
+    values = roi.mode === '2d' ? build2dRectangleValues(roi, volume, mask) : build3dBoxValues(roi, volume, mask);
   } else {
-    values = roi.mode === '2d' ? build2dEllipseValues(roi, volume) : build3dEllipsoidValues(roi, volume);
+    values = roi.mode === '2d' ? build2dEllipseValues(roi, volume, mask) : build3dEllipsoidValues(roi, volume, mask);
   }
 
   return computeStatistics(values);
@@ -397,7 +450,7 @@ export function buildRoiMeasurementsSnapshot({
         roiName: roi.name,
         channelId: channel.id,
         channelName: channel.name,
-        values: computeRoiMeasurementValues(roi, channel.volume),
+        values: computeRoiMeasurementValues(roi, channel.volume, channel.backgroundMask ?? null),
       });
     });
   });
@@ -416,7 +469,7 @@ export function formatRoiMeasurementValue(
   decimalPlaces: number,
 ) {
   if (value === null || !Number.isFinite(value)) {
-    return 'N/A';
+    return '';
   }
   if (metric === 'count') {
     return Math.round(value).toString();

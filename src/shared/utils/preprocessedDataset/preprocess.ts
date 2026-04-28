@@ -60,11 +60,18 @@ import { computeMultiscaleGeometryLevels } from './mipPolicy';
 import {
   applyBackgroundMaskInPlace,
   buildBackgroundMaskFromTypedArray,
+  combineBackgroundMaskVolumes,
   coerceBackgroundMaskValuesForDataType,
   downsampleBackgroundMaskByAllMasked,
   findMinMaxExcludingBackgroundMask,
   type BackgroundMaskVolume
 } from '../backgroundMask';
+import {
+  buildDeskewBackgroundMask,
+  radiansToDegrees,
+  resolveDeskewGeometry,
+  type DeskewConfig
+} from '../deskew';
 import {
   buildBrickSubcellChunkData,
   buildBrickSubcellTextureSize,
@@ -215,6 +222,7 @@ export type PreprocessDatasetToStorageOptions = {
   backgroundMask?: {
     values: number[];
   } | null;
+  deskew?: DeskewConfig | null;
   renderIn16Bit?: boolean;
   signal?: AbortSignal;
   onProgress?: (progress: PreprocessDatasetProgress) => void;
@@ -2554,6 +2562,41 @@ function selectFirstNonSegmentationPreparedLayer<T extends { layer: PreprocessLa
   return null;
 }
 
+function selectFirstPreparedLayer<T extends { layer: PreprocessLayerSource }>(
+  preparedLayerSources: T[]
+): T | null {
+  return preparedLayerSources[0] ?? null;
+}
+
+function resolveDeskewManifestForMetadata({
+  deskew,
+  layerMetadataByKey
+}: {
+  deskew: DeskewConfig | null | undefined;
+  layerMetadataByKey: Map<string, LayerMetadata>;
+}): PreprocessedManifest['dataset']['deskew'] {
+  if (!deskew) {
+    return null;
+  }
+  const firstMetadata = layerMetadataByKey.values().next().value as LayerMetadata | undefined;
+  if (!firstMetadata) {
+    throw new Error('Deskew requires at least one loaded layer.');
+  }
+  const geometry = resolveDeskewGeometry({
+    width: firstMetadata.width,
+    height: firstMetadata.height,
+    depth: firstMetadata.depth,
+    angleRadians: deskew.angleRadians,
+    direction: deskew.direction
+  });
+  return {
+    angleRadians: geometry.angleRadians,
+    angleDegrees: radiansToDegrees(geometry.angleRadians),
+    direction: deskew.direction,
+    maskVoxels: deskew.maskVoxels
+  };
+}
+
 function computeRepresentativeNormalization(
   volume: VolumePayload,
   backgroundMask: BackgroundMaskVolume | null,
@@ -2584,38 +2627,72 @@ function computeRepresentativeNormalization(
 async function buildBackgroundMaskForPreparedLayers({
   preparedLayerSources,
   backgroundMaskValues,
+  deskew,
   shardingStrategy,
   signal
 }: {
   preparedLayerSources: PreparedLayerSource[];
   backgroundMaskValues: number[] | null | undefined;
+  deskew: PreprocessedManifest['dataset']['deskew'];
   shardingStrategy: ShardingStrategy;
   signal?: AbortSignal;
 }): Promise<SharedBackgroundMask | null> {
-  if (!backgroundMaskValues || backgroundMaskValues.length === 0) {
+  const hasIntensityMask = Boolean(backgroundMaskValues && backgroundMaskValues.length > 0);
+  const hasDeskewMask = Boolean(deskew?.maskVoxels);
+  if (!hasIntensityMask && !hasDeskewMask) {
     return null;
   }
 
-  const preparedLayer = selectFirstNonSegmentationPreparedLayer(preparedLayerSources);
-  if (!preparedLayer) {
+  const intensityPreparedLayer = hasIntensityMask
+    ? selectFirstNonSegmentationPreparedLayer(preparedLayerSources)
+    : null;
+  if (hasIntensityMask && !intensityPreparedLayer) {
     throw new Error('Background mask requires at least one non-segmentation channel.');
   }
 
-  const volume = await preparedLayer.getTimepointVolume(0, signal);
-  const coercedValues = coerceBackgroundMaskValuesForDataType(backgroundMaskValues, volume.dataType);
-  const source = createVolumeTypedArray(volume.dataType, volume.data);
-  const baseMask = buildBackgroundMaskFromTypedArray({
-    width: volume.width,
-    height: volume.height,
-    depth: volume.depth,
-    channels: volume.channels,
-    source,
-    values: coercedValues
-  });
+  const referencePreparedLayer = intensityPreparedLayer ?? selectFirstPreparedLayer(preparedLayerSources);
+  if (!referencePreparedLayer) {
+    throw new Error('Deskew mask requires at least one channel.');
+  }
+
+  const referenceVolume = await referencePreparedLayer.getTimepointVolume(0, signal);
+  let coercedValues: number[] = [];
+  let intensityMask: BackgroundMaskVolume | null = null;
+  if (hasIntensityMask && intensityPreparedLayer) {
+    const volume =
+      intensityPreparedLayer === referencePreparedLayer
+        ? referenceVolume
+        : await intensityPreparedLayer.getTimepointVolume(0, signal);
+    coercedValues = coerceBackgroundMaskValuesForDataType(backgroundMaskValues ?? [], volume.dataType);
+    const source = createVolumeTypedArray(volume.dataType, volume.data);
+    intensityMask = buildBackgroundMaskFromTypedArray({
+      width: volume.width,
+      height: volume.height,
+      depth: volume.depth,
+      channels: volume.channels,
+      source,
+      values: coercedValues
+    });
+  }
+
+  const deskewMask =
+    hasDeskewMask && deskew
+      ? buildDeskewBackgroundMask({
+          width: referenceVolume.width,
+          height: referenceVolume.height,
+          depth: referenceVolume.depth,
+          angleRadians: deskew.angleRadians,
+          direction: deskew.direction
+        })
+      : null;
+  const baseMask = combineBackgroundMaskVolumes([intensityMask, deskewMask]);
+  if (!baseMask) {
+    return null;
+  }
   return buildBackgroundMaskScales({
     baseMask,
-    sourceLayerKey: preparedLayer.layer.key,
-    sourceDataType: volume.dataType,
+    sourceLayerKey: referencePreparedLayer.layer.key,
+    sourceDataType: referenceVolume.dataType,
     values: coercedValues,
     shardingStrategy
   });
@@ -2624,61 +2701,92 @@ async function buildBackgroundMaskForPreparedLayers({
 async function buildBackgroundMaskForStreamingPreparedLayers({
   preparedLayerSources,
   backgroundMaskValues,
+  deskew,
   shardingStrategy,
   tiffByFileCache,
   signal
 }: {
   preparedLayerSources: StreamingPreparedLayerSource[];
   backgroundMaskValues: number[] | null | undefined;
+  deskew: PreprocessedManifest['dataset']['deskew'];
   shardingStrategy: ShardingStrategy;
   tiffByFileCache: TiffByFileCache;
   signal?: AbortSignal;
 }): Promise<SharedBackgroundMask | null> {
-  if (!backgroundMaskValues || backgroundMaskValues.length === 0) {
+  const hasIntensityMask = Boolean(backgroundMaskValues && backgroundMaskValues.length > 0);
+  const hasDeskewMask = Boolean(deskew?.maskVoxels);
+  if (!hasIntensityMask && !hasDeskewMask) {
     return null;
   }
 
-  const preparedLayer = selectFirstNonSegmentationPreparedLayer(preparedLayerSources);
-  if (!preparedLayer) {
+  const intensityPreparedLayer = hasIntensityMask
+    ? selectFirstNonSegmentationPreparedLayer(preparedLayerSources)
+    : null;
+  if (hasIntensityMask && !intensityPreparedLayer) {
     throw new Error('Background mask requires at least one non-segmentation channel.');
   }
 
-  const sourceMetadata = preparedLayer.sourceMetadata;
-  const coercedValues = coerceBackgroundMaskValuesForDataType(backgroundMaskValues, sourceMetadata.dataType);
-  const raw = createWritableVolumeArray(
-    sourceMetadata.dataType,
-    sourceMetadata.width * sourceMetadata.height * sourceMetadata.depth * sourceMetadata.channels
-  ) as VolumeTypedArray;
-  const sliceLength = sourceMetadata.width * sourceMetadata.height * sourceMetadata.channels;
-  const timepointSource = preparedLayer.getTimepointSource(0);
+  const referencePreparedLayer = intensityPreparedLayer ?? selectFirstPreparedLayer(preparedLayerSources);
+  if (!referencePreparedLayer) {
+    throw new Error('Deskew mask requires at least one channel.');
+  }
 
-  await forEachSliceInStreamingTimepointSource({
-    layer: preparedLayer.layer,
-    timepoint: 0,
-    source: timepointSource,
-    rawExpectedMetadata: preparedLayer.rawSourceMetadata,
-    outputMetadata: sourceMetadata,
-    selectedSourceChannelIndex: getResolvedSourceChannelIndex(preparedLayer.layer),
-    imagejPageChannelLayout: preparedLayer.imagejPageChannelLayout,
-    tiffByFileCache,
-    signal,
-    onSlice: (slice, z) => {
-      raw.set(slice, z * sliceLength);
-    }
-  });
+  let coercedValues: number[] = [];
+  let intensityMask: BackgroundMaskVolume | null = null;
+  if (hasIntensityMask && intensityPreparedLayer) {
+    const sourceMetadata = intensityPreparedLayer.sourceMetadata;
+    coercedValues = coerceBackgroundMaskValuesForDataType(backgroundMaskValues ?? [], sourceMetadata.dataType);
+    const raw = createWritableVolumeArray(
+      sourceMetadata.dataType,
+      sourceMetadata.width * sourceMetadata.height * sourceMetadata.depth * sourceMetadata.channels
+    ) as VolumeTypedArray;
+    const sliceLength = sourceMetadata.width * sourceMetadata.height * sourceMetadata.channels;
+    const timepointSource = intensityPreparedLayer.getTimepointSource(0);
 
-  const baseMask = buildBackgroundMaskFromTypedArray({
-    width: sourceMetadata.width,
-    height: sourceMetadata.height,
-    depth: sourceMetadata.depth,
-    channels: sourceMetadata.channels,
-    source: raw,
-    values: coercedValues
-  });
+    await forEachSliceInStreamingTimepointSource({
+      layer: intensityPreparedLayer.layer,
+      timepoint: 0,
+      source: timepointSource,
+      rawExpectedMetadata: intensityPreparedLayer.rawSourceMetadata,
+      outputMetadata: sourceMetadata,
+      selectedSourceChannelIndex: getResolvedSourceChannelIndex(intensityPreparedLayer.layer),
+      imagejPageChannelLayout: intensityPreparedLayer.imagejPageChannelLayout,
+      tiffByFileCache,
+      signal,
+      onSlice: (slice, z) => {
+        raw.set(slice, z * sliceLength);
+      }
+    });
+
+    intensityMask = buildBackgroundMaskFromTypedArray({
+      width: sourceMetadata.width,
+      height: sourceMetadata.height,
+      depth: sourceMetadata.depth,
+      channels: sourceMetadata.channels,
+      source: raw,
+      values: coercedValues
+    });
+  }
+
+  const referenceMetadata = referencePreparedLayer.sourceMetadata;
+  const deskewMask =
+    hasDeskewMask && deskew
+      ? buildDeskewBackgroundMask({
+          width: referenceMetadata.width,
+          height: referenceMetadata.height,
+          depth: referenceMetadata.depth,
+          angleRadians: deskew.angleRadians,
+          direction: deskew.direction
+        })
+      : null;
+  const baseMask = combineBackgroundMaskVolumes([intensityMask, deskewMask]);
+  if (!baseMask) {
+    return null;
+  }
   return buildBackgroundMaskScales({
     baseMask,
-    sourceLayerKey: preparedLayer.layer.key,
-    sourceDataType: sourceMetadata.dataType,
+    sourceLayerKey: referencePreparedLayer.layer.key,
+    sourceDataType: referenceMetadata.dataType,
     values: coercedValues,
     shardingStrategy
   });
@@ -3057,6 +3165,7 @@ function buildManifestFromLayerMetadata({
   voxelResolution,
   isotropicResampling,
   temporalResolution,
+  deskew,
   backgroundMask,
   shardingStrategy,
   preferDepthChunkOne
@@ -3074,6 +3183,7 @@ function buildManifestFromLayerMetadata({
   voxelResolution: NonNullable<PreprocessedManifest['dataset']['voxelResolution']>;
   isotropicResampling: PreprocessedManifest['dataset']['isotropicResampling'];
   temporalResolution: PreprocessedManifest['dataset']['temporalResolution'];
+  deskew: PreprocessedManifest['dataset']['deskew'];
   backgroundMask: SharedBackgroundMask | null;
   shardingStrategy: ShardingStrategy;
   preferDepthChunkOne?: boolean;
@@ -3214,6 +3324,7 @@ function buildManifestFromLayerMetadata({
       voxelResolution,
       temporalResolution,
       isotropicResampling,
+      deskew,
       backgroundMask: manifestBackgroundMask
     }
   };
@@ -4885,6 +4996,7 @@ export async function preprocessDatasetToStorage({
   processingStrategy,
   inputInterpretation,
   backgroundMask: backgroundMaskConfig,
+  deskew: deskewConfig,
   renderIn16Bit = false,
   signal,
   onProgress
@@ -4945,6 +5057,7 @@ export async function preprocessDatasetToStorage({
   let streamingPreparedLayerByKey: Map<string, StreamingPreparedLayerSource> | null = null;
   let tiffByFileCache: TiffByFileCache | null = null;
   let backgroundMask: SharedBackgroundMask | null = null;
+  let deskew: PreprocessedManifest['dataset']['deskew'] = null;
 
   if (datasetExecutionMode === 'in-memory') {
     const volumeLoader = await resolveVolumeLoader(providedVolumeLoader);
@@ -4974,9 +5087,14 @@ export async function preprocessDatasetToStorage({
       renderIn16Bit,
       signal
     }));
+    deskew = resolveDeskewManifestForMetadata({
+      deskew: deskewConfig,
+      layerMetadataByKey
+    });
     backgroundMask = await buildBackgroundMaskForPreparedLayers({
       preparedLayerSources,
       backgroundMaskValues: backgroundMaskConfig?.values,
+      deskew,
       shardingStrategy,
       signal
     });
@@ -5003,9 +5121,14 @@ export async function preprocessDatasetToStorage({
       preparedLayerSources: streamingPreparedLayerSources,
       renderIn16Bit
     }));
+    deskew = resolveDeskewManifestForMetadata({
+      deskew: deskewConfig,
+      layerMetadataByKey
+    });
     backgroundMask = await buildBackgroundMaskForStreamingPreparedLayers({
       preparedLayerSources: streamingPreparedLayerSources,
       backgroundMaskValues: backgroundMaskConfig?.values,
+      deskew,
       shardingStrategy,
       tiffByFileCache,
       signal
@@ -5042,6 +5165,7 @@ export async function preprocessDatasetToStorage({
     voxelResolution: storedVoxelResolution,
     isotropicResampling,
     temporalResolution,
+    deskew,
     backgroundMask,
     shardingStrategy,
     preferDepthChunkOne: datasetExecutionMode === 'streaming'
@@ -5099,7 +5223,7 @@ export async function preprocessDatasetToStorage({
           sourceMetadata,
           representativeTimepoint,
           normalizationByLayerKey,
-          backgroundMask: layer.isSegmentation ? null : backgroundMask,
+          backgroundMask,
           workerizeNormalizationDownsample,
           signal,
           onProgress,
@@ -5121,7 +5245,7 @@ export async function preprocessDatasetToStorage({
           manifestLayer,
           sourceMetadata,
           normalizationByLayerKey,
-          backgroundMask: layer.isSegmentation ? null : backgroundMask,
+          backgroundMask,
           tiffByFileCache,
           signal,
           onProgress,

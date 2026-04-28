@@ -102,6 +102,30 @@ function createVolume(width: number, height: number, depth: number, normalized: 
 })();
 
 (() => {
+  const volume = createVolume(2, 1, 1, [10, 20]);
+  const roi: SavedRoi = {
+    id: 'roi-masked',
+    name: 'ROI Masked',
+    shape: 'rectangle',
+    mode: '2d',
+    start: { x: 0, y: 0, z: 0 },
+    end: { x: 1, y: 0, z: 0 },
+    color: '#FFFFFF',
+  };
+
+  const values = computeRoiMeasurementValues(roi, volume, {
+    width: 2,
+    height: 1,
+    depth: 1,
+    data: new Uint8Array([255, 255]),
+  });
+  assert.equal(values.count, 0);
+  assert.equal(values.min, null);
+  assert.equal(values.max, null);
+  assert.equal(values.mean, null);
+})();
+
+(() => {
   const snapshot = buildRoiMeasurementsSnapshot({
     selectedRois: [
       {

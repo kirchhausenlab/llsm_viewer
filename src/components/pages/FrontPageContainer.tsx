@@ -9,6 +9,7 @@ import {
 } from '../../shared/storage/preprocessedStorage';
 import type { PreprocessedStorageHandle } from '../../shared/storage/preprocessedStorage';
 import { parseBackgroundMaskValues } from '../../shared/utils/backgroundMask';
+import { parseDeskewAngleInput } from '../../shared/utils/deskew';
 import {
   getDirectoryPickerUnavailableMessage,
   inspectDirectoryPickerSupport
@@ -310,6 +311,14 @@ export default function FrontPageContainer({
       return;
     }
 
+    const deskewAngleResult = deSkewModeEnabled
+      ? parseDeskewAngleInput(skewAngleInput, skewAngleUnit)
+      : { angleRadians: null, error: null };
+    if (deskewAngleResult.error) {
+      showInteractionWarning(deskewAngleResult.error);
+      return;
+    }
+
     setPreprocessSuccessMessage(null);
     setIsPreprocessingExperiment(true);
     try {
@@ -455,6 +464,14 @@ export default function FrontPageContainer({
               values: backgroundMaskParseResult.values
             }
           : null,
+        deskew:
+          deSkewModeEnabled && deskewAngleResult.angleRadians !== null
+            ? {
+                angleRadians: deskewAngleResult.angleRadians,
+                direction: skewDirection,
+                maskVoxels: deSkewMaskVoxels
+              }
+            : null,
         renderIn16Bit: !force8BitRender,
         storage: selectedStorageHandle.storage,
         storageStrategy: PREPROCESS_STORAGE_STRATEGY
@@ -489,6 +506,8 @@ export default function FrontPageContainer({
     backgroundMaskEnabled,
     backgroundMaskParseResult.error,
     backgroundMaskParseResult.values,
+    deSkewMaskVoxels,
+    deSkewModeEnabled,
     force8BitRender,
     isLaunchingViewer,
     isPreprocessingExperiment,
@@ -498,7 +517,11 @@ export default function FrontPageContainer({
     showInteractionWarning,
     tracks,
     selectedExperimentType,
+    skewAngleInput,
+    skewAngleUnit,
+    skewDirection,
     temporalResolutionValue,
+    voxelResolutionInput.correctAnisotropy,
     voxelResolutionValue
   ]);
 

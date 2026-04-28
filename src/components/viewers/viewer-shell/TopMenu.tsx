@@ -199,6 +199,7 @@ export default function TopMenu(props: TopMenuProps) {
     projectionMode = 'perspective',
     onProjectionModeChange,
     onCameraFaceViewChange,
+    deskewModeActive = false,
     loadedChannelIds,
     channelNameMap,
     channelVisibility,
@@ -511,7 +512,7 @@ export default function TopMenu(props: TopMenuProps) {
     if (is2dViewActive) {
       return;
     }
-    onCameraFaceViewChange?.(face);
+    onCameraFaceViewChange?.(face, deskewModeActive ? overlayStyleMode : 'axes');
   };
 
   const intensityComponents = useMemo(
@@ -609,6 +610,16 @@ export default function TopMenu(props: TopMenuProps) {
     : !onCameraFaceViewChange
       ? 'Face view shortcuts are unavailable until the viewer is ready.'
       : undefined;
+  const effectiveOverlayStyleMode: OverlayStyleMode = deskewModeActive ? overlayStyleMode : 'axes';
+  const overlayStyleTitle = deskewModeActive
+    ? 'Choose how the camera face buttons are interpreted.'
+    : 'Glass camera views require de-skew mode.';
+
+  useEffect(() => {
+    if (!deskewModeActive && overlayStyleMode !== 'axes') {
+      setOverlayStyleMode('axes');
+    }
+  }, [deskewModeActive, overlayStyleMode]);
 
   useLayoutEffect(() => {
     if (typeof window === 'undefined') {
@@ -779,12 +790,16 @@ export default function TopMenu(props: TopMenuProps) {
               </div>
               <TopMenuSegmentedControl<OverlayStyleMode>
                 ariaLabel="Volume guide style"
-                value={overlayStyleMode}
-                onChange={setOverlayStyleMode}
+                value={effectiveOverlayStyleMode}
+                onChange={(value) => {
+                  if (deskewModeActive) {
+                    setOverlayStyleMode(value);
+                  }
+                }}
                 className="viewer-top-menu-segmented-control--overlay"
                 options={[
-                  { value: 'axes', content: 'Axes' },
-                  { value: 'glass', content: 'Glass' }
+                  { value: 'axes', content: 'Axes', disabled: !deskewModeActive, title: overlayStyleTitle },
+                  { value: 'glass', content: 'Glass', disabled: !deskewModeActive, title: overlayStyleTitle }
                 ]}
               />
             </div>

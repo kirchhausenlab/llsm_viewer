@@ -333,8 +333,8 @@ test('top menu projection and face view controls call viewer handlers', () => {
       onProjectionModeChange: (mode) => {
         projectionCalls.push(mode);
       },
-      onCameraFaceViewChange: (face) => {
-        faceCalls.push(face);
+      onCameraFaceViewChange: (face, mode) => {
+        faceCalls.push(`${face}:${mode}`);
       }
     });
 
@@ -367,9 +367,57 @@ test('top menu projection and face view controls call viewer handlers', () => {
     });
 
     assert.deepEqual(projectionCalls, ['orthographic']);
-    assert.deepEqual(faceCalls, ['yz']);
+    assert.deepEqual(faceCalls, ['yz:axes']);
 
     renderer.unmount();
+  });
+});
+
+test('top menu glass mode is disabled without deskew and changes face view mode when enabled', () => {
+  withEnvironmentMocks(() => {
+    const faceCalls: string[] = [];
+    const renderer = renderTopMenu({
+      is3dModeAvailable: true,
+      deskewModeActive: true,
+      onCameraFaceViewChange: (face, mode) => {
+        faceCalls.push(`${face}:${mode}`);
+      }
+    });
+
+    const overlayControl = renderer.root.findAll(
+      (node) => node.type === 'div' && node.props['aria-label'] === 'Volume guide style'
+    )[0];
+    assert.ok(overlayControl);
+    const glassButton = overlayControl.findAll(
+      (node) => node.type === 'button' && extractText(node) === 'Glass'
+    )[0];
+    assert.equal(glassButton.props.disabled, false);
+
+    act(() => {
+      glassButton.props.onClick();
+    });
+
+    const faceControl = renderer.root.findAll(
+      (node) => node.type === 'div' && node.props['aria-label'] === 'Camera face views'
+    )[0];
+    const xyButton = faceControl.findAll(
+      (node) => node.type === 'button' && extractText(node) === 'XY'
+    )[0];
+
+    act(() => {
+      xyButton.props.onClick();
+    });
+
+    assert.deepEqual(faceCalls, ['xy:glass']);
+    renderer.unmount();
+
+    const disabledRenderer = renderTopMenu();
+    const disabledOverlayControl = disabledRenderer.root.findAll(
+      (node) => node.type === 'div' && node.props['aria-label'] === 'Volume guide style'
+    )[0];
+    const disabledButtons = disabledOverlayControl.findAll((node) => node.type === 'button');
+    assert.ok(disabledButtons.every((button) => button.props.disabled === true));
+    disabledRenderer.unmount();
   });
 });
 

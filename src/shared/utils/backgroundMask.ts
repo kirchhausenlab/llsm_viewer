@@ -168,6 +168,44 @@ export function buildBackgroundMaskFromTypedArray({
   return { width, height, depth, data: mask };
 }
 
+export function combineBackgroundMaskVolumes(
+  masks: ReadonlyArray<BackgroundMaskVolume | null | undefined>
+): BackgroundMaskVolume | null {
+  const first = masks.find((mask): mask is BackgroundMaskVolume => Boolean(mask)) ?? null;
+  if (!first) {
+    return null;
+  }
+
+  const combined = new Uint8Array(first.data);
+  for (const mask of masks) {
+    if (!mask || mask === first) {
+      continue;
+    }
+    if (
+      mask.width !== first.width ||
+      mask.height !== first.height ||
+      mask.depth !== first.depth ||
+      mask.data.length !== first.data.length
+    ) {
+      throw new Error(
+        `Background mask geometry mismatch while combining masks: expected ${first.width}x${first.height}x${first.depth}, got ${mask.width}x${mask.height}x${mask.depth}.`
+      );
+    }
+    for (let index = 0; index < combined.length; index += 1) {
+      if ((mask.data[index] ?? 0) > 0) {
+        combined[index] = BACKGROUND_MASK_MASKED;
+      }
+    }
+  }
+
+  return {
+    width: first.width,
+    height: first.height,
+    depth: first.depth,
+    data: combined
+  };
+}
+
 export function findMinMaxExcludingBackgroundMask({
   source,
   channels,

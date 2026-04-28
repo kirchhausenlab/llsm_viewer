@@ -1271,3 +1271,73 @@ test('preprocessDatasetToStorage writes and serves a shared background mask', as
   const histogramTotal = histogram.reduce((sum, value) => sum + value, 0);
   assert.equal(histogramTotal, 2);
 });
+
+test('preprocessDatasetToStorage writes deskew metadata and mask', async () => {
+  const channels: ChannelExportMetadata[] = [{ id: 'channel-a', name: 'Channel A' }];
+  const layers: PreprocessLayerSource[] = [
+    {
+      channelId: 'channel-a',
+      channelLabel: 'Channel A',
+      key: 'layer-a',
+      label: 'Layer A',
+      files: [new File(['volume-0'], 'volume-0.tif', { type: 'image/tiff' })],
+      isSegmentation: false
+    }
+  ];
+  const volumeByFileName = new Map<string, VolumePayload>([
+    [
+      'volume-0.tif',
+      createSyntheticVolumePayload({
+        width: 4,
+        height: 1,
+        depth: 2,
+        channels: 1,
+        values: [1, 2, 3, 4, 5, 6, 7, 8]
+      })
+    ]
+  ]);
+  const storageHandle = createInMemoryPreprocessedStorage({ datasetId: 'preprocess-deskew-mask' });
+
+  const result = await preprocessDatasetToStorage({
+    layers,
+    channels,
+    trackSets: [],
+    voxelResolution: ISOTROPIC_TEST_VOXEL_RESOLUTION,
+    temporalResolution: { interval: 1, unit: 's' },
+    movieMode: '3d',
+    deskew: {
+      angleRadians: Math.PI / 4,
+      direction: 'X',
+      maskVoxels: true
+    },
+    storage: storageHandle.storage,
+    volumeLoader: createLoaderByFileName(volumeByFileName),
+    storageStrategy: { sharding: { enabled: false } }
+  });
+
+  assert.deepEqual(result.manifest.dataset.deskew, {
+    angleRadians: Math.PI / 4,
+    angleDegrees: 45,
+    direction: 'X',
+    maskVoxels: true
+  });
+  assert.ok(result.manifest.dataset.backgroundMask);
+  assert.deepEqual(result.manifest.dataset.backgroundMask?.values, []);
+
+  const opened = await openPreprocessedDatasetFromZarrStorage(storageHandle.storage);
+  const provider = createVolumeProvider({
+    manifest: opened.manifest,
+    storage: storageHandle.storage,
+    maxCachedVolumes: DEFAULT_MAX_CACHED_VOLUMES,
+    maxCachedChunkBytes: DEFAULT_MAX_CACHED_CHUNK_BYTES,
+    maxConcurrentChunkReads: DEFAULT_MAX_CONCURRENT_CHUNK_READS,
+    maxConcurrentPrefetchLoads: DEFAULT_MAX_CONCURRENT_PREFETCH_LOADS,
+  });
+
+  const loadedVolume = await provider.getVolume('layer-a', 0, { scaleLevel: 0 });
+  assert.deepEqual(Array.from(loadedVolume.normalized), [1, 2, 0, 0, 0, 6, 7, 0]);
+
+  const loadedMask = await provider.getBackgroundMask?.({ scaleLevel: 0 });
+  assert.ok(loadedMask);
+  assert.deepEqual(Array.from(loadedMask?.data ?? []), [0, 0, 255, 255, 255, 0, 0, 255]);
+});

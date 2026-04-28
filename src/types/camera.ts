@@ -11,6 +11,11 @@ export type CameraRotation = {
 };
 
 export type CameraFaceView = 'xy' | 'yz' | 'xz';
+export type CameraFaceViewMode = 'axes' | 'glass';
+export type CameraFaceViewDeskewOptions = {
+  angleRadians: number;
+  direction: 'X' | 'Y';
+};
 
 export type CameraWindowState = {
   cameraPosition: CameraCoordinate;
@@ -53,6 +58,6 @@ export type CameraWindowController = {
     cameraPosition?: CameraCoordinate | null;
     cameraRotation: CameraRotation;
   }) => boolean;
-  applyCameraFaceView: (face: CameraFaceView) => boolean;
+  applyCameraFaceView: (face: CameraFaceView, options?: { deskew?: CameraFaceViewDeskewOptions | null }) => boolean;
   captureCameraState: () => CameraWindowState | null;
 };

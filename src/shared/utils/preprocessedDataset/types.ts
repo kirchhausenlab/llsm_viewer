@@ -138,6 +138,13 @@ export type PreprocessedBackgroundMaskManifest = {
   };
 };
 
+export type PreprocessedDeskewManifest = {
+  angleRadians: number;
+  angleDegrees: number;
+  direction: 'X' | 'Y';
+  maskVoxels: boolean;
+};
+
 export type SparseSegmentationRepresentation = 'sparse-label-bricks-v1';
 export type SparseSegmentationLabelDataType = 'uint32';
 export type SparseSegmentationBrickCodec =
@@ -335,6 +342,7 @@ export type PreprocessedManifest = {
     voxelResolution: VoxelResolutionValues;
     temporalResolution: TemporalResolutionMetadata;
     isotropicResampling: IsotropicResamplingMetadata;
+    deskew?: PreprocessedDeskewManifest | null;
     backgroundMask?: PreprocessedBackgroundMaskManifest | null;
   };
 };

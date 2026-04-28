@@ -9,6 +9,7 @@ import type {
   PreprocessedLayerManifestEntry,
   PreprocessedLayerScaleManifestEntry,
   PreprocessedManifest,
+  PreprocessedDeskewManifest,
   PreprocessedScalePlaybackAtlasZarrDescriptor,
   PreprocessedScaleSkipHierarchyZarrDescriptor,
   PreprocessedScaleSubcellZarrDescriptor,
@@ -67,6 +68,7 @@ const SHARDING_ARRAY_KINDS: readonly ZarrArrayShardingPlanArrayKind[] = [
 
 const BRICK_ATLAS_TEXTURE_FORMATS: readonly PreprocessedBrickAtlasTextureFormat[] = ['red', 'rg', 'rgba'];
 const SPARSE_SEGMENTATION_REPRESENTATION = 'sparse-label-bricks-v1';
+const DESKEW_DIRECTIONS = new Set(['X', 'Y']);
 
 function isRecord(value: unknown): value is UnknownRecord {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -761,9 +763,6 @@ function validateBackgroundMask(
   const sourceLayerKey = expectString(backgroundMask.sourceLayerKey, `${path}.sourceLayerKey`, { nonEmpty: true });
   const sourceDataType = expectDataType(backgroundMask.sourceDataType, `${path}.sourceDataType`);
   const rawValues = expectArray(backgroundMask.values, `${path}.values`);
-  if (rawValues.length === 0) {
-    throw new Error(`Invalid manifest schema at ${path}.values: expected at least one value.`);
-  }
   const values = rawValues.map((entry, index) => expectNumber(entry, `${path}.values[${index}]`));
   const zarr = expectRecord(backgroundMask.zarr, `${path}.zarr`);
   const scalesValue = expectArray(zarr.scales, `${path}.zarr.scales`);
@@ -833,6 +832,33 @@ function validateBackgroundMask(
     sourceDataType,
     values,
     zarr: { scales }
+  };
+}
+
+function validateDeskew(
+  value: unknown,
+  path: string
+): PreprocessedDeskewManifest | null | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+  if (value === null) {
+    return null;
+  }
+
+  const deskew = expectRecord(value, path);
+  const angleRadians = expectNumber(deskew.angleRadians, `${path}.angleRadians`);
+  const angleDegrees = expectNumber(deskew.angleDegrees, `${path}.angleDegrees`);
+  const direction = expectString(deskew.direction, `${path}.direction`);
+  if (!DESKEW_DIRECTIONS.has(direction)) {
+    throw new Error(`Invalid manifest schema at ${path}.direction: expected "X" or "Y".`);
+  }
+  const maskVoxels = expectBoolean(deskew.maskVoxels, `${path}.maskVoxels`);
+  return {
+    angleRadians,
+    angleDegrees,
+    direction: direction as PreprocessedDeskewManifest['direction'],
+    maskVoxels
   };
 }
 
@@ -1927,6 +1953,7 @@ export function coercePreprocessedManifest(value: unknown): PreprocessedManifest
     voxelResolution,
     isotropicResampling
   });
+  const deskew = validateDeskew(dataset.deskew, 'manifest.dataset.deskew');
   const backgroundMask = validateBackgroundMask(dataset.backgroundMask, 'manifest.dataset.backgroundMask');
   if (backgroundMask && !layerKeys.has(backgroundMask.sourceLayerKey)) {
     throw new Error(
@@ -1947,6 +1974,7 @@ export function coercePreprocessedManifest(value: unknown): PreprocessedManifest
       voxelResolution,
       temporalResolution,
       isotropicResampling,
+      deskew: deskew ?? null,
       backgroundMask: backgroundMask ?? null
     }
   };

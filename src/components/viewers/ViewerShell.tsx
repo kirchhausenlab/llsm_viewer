@@ -40,6 +40,7 @@ import {
 import type {
   CameraCoordinate,
   CameraFaceView,
+  CameraFaceViewMode,
   CameraRotation,
   CameraWindowController,
   CameraWindowState,
@@ -56,6 +57,7 @@ import {
   buildRoiMeasurementsCsv,
   buildRoiMeasurementsSnapshot,
 } from '../../shared/utils/roiMeasurements';
+import type { BackgroundMaskVolume } from '../../shared/utils/backgroundMask';
 import { parseRoiManagerStateFromJson, serializeRoiManagerState } from '../../shared/utils/roiPersistence';
 import { createDefaultTrackSetState } from '../../hooks/tracks/useTrackStyling';
 import { resolveTrackVisibilityForState } from '../../shared/utils/trackVisibilityState';
@@ -328,6 +330,7 @@ function ViewerShell({
     setMeasurementsWindowInitialPosition,
   } = layout;
   const { loadedChannelIds, channelLayersMap } = channelsPanel;
+  const deskew = datasetAccess.manifest?.dataset.deskew ?? null;
   const managedChannelLayers = useMemo(
     () => loadedChannelIds.flatMap((channelId) => channelLayersMap.get(channelId) ?? []),
     [channelLayersMap, loadedChannelIds]
@@ -1242,10 +1245,21 @@ function ViewerShell({
       return;
     }
 
+    let measurementBackgroundMask: BackgroundMaskVolume | null = null;
+    try {
+      measurementBackgroundMask = await datasetAccess.volumeProvider?.getBackgroundMask?.({ scaleLevel: 0 }) ?? null;
+    } catch (error) {
+      console.warn('Failed to load ROI measurement mask.', error);
+    }
+
     const resolvedChannels = await Promise.all(
       measurableChannelSources.map(async (channel) => {
-        if (channel.volume !== null || !loadMeasurementVolume) {
-          return channel;
+        const hasFullResolutionVolume = channel.volume !== null && (channel.volume.scaleLevel ?? 0) === 0;
+        if (hasFullResolutionVolume || !loadMeasurementVolume) {
+          return {
+            ...channel,
+            backgroundMask: measurementBackgroundMask,
+          };
         }
 
         try {
@@ -1253,9 +1267,13 @@ function ViewerShell({
           return {
             ...channel,
             volume: loadedVolume,
+            backgroundMask: measurementBackgroundMask,
           };
         } catch {
-          return channel;
+          return {
+            ...channel,
+            backgroundMask: measurementBackgroundMask,
+          };
         }
       })
     );
@@ -1278,6 +1296,7 @@ function ViewerShell({
   }, [
     canMeasureRois,
     currentViewerPropTimepoint,
+    datasetAccess.volumeProvider,
     loadMeasurementVolume,
     measurableChannelSources,
     measurementDefaults,
@@ -1647,7 +1666,7 @@ function ViewerShell({
     }
   }, [is2dViewActive, parsedCameraPosition.value, parsedCameraRotation.value, translationEnabled]);
 
-  const handleCameraFaceViewChange = useCallback((face: CameraFaceView) => {
+  const handleCameraFaceViewChange = useCallback((face: CameraFaceView, mode: CameraFaceViewMode) => {
     if (is2dViewActive) {
       return;
     }
@@ -1656,7 +1675,17 @@ function ViewerShell({
       return;
     }
 
-    const applied = controller.applyCameraFaceView(face);
+    const applied = controller.applyCameraFaceView(
+      face,
+      mode === 'glass' && deskew
+        ? {
+            deskew: {
+              angleRadians: deskew.angleRadians,
+              direction: deskew.direction,
+            },
+          }
+        : undefined,
+    );
     if (applied) {
       const nextState = controller.captureCameraState();
       if (nextState) {
@@ -1668,7 +1697,7 @@ function ViewerShell({
       }
       setIsCameraDraftDirty(false);
     }
-  }, [is2dViewActive]);
+  }, [deskew, is2dViewActive]);
 
   const handleVoxelFollowChange = useCallback((axis: keyof CoordinateDraft, value: string) => {
     setVoxelFollowDraft((current) => ({ ...current, [axis]: value }));
@@ -2144,6 +2173,7 @@ function ViewerShell({
       projectionMode: modeToggle.projectionMode,
       onProjectionModeChange: modeToggle.onProjectionModeChange,
       onCameraFaceViewChange: handleCameraFaceViewChange,
+      deskewModeActive: deskew !== null,
       onVrButtonClick: modeToggle.onVrButtonClick,
       vrButtonDisabled,
       vrButtonTitle,
@@ -2179,6 +2209,7 @@ function ViewerShell({
     [
       annotateController.available,
       annotateController.unavailableReason,
+      deskew,
       handleReturnToLauncher,
       hoverCoordinateDigits,
       hoverIntensityValueDigits,

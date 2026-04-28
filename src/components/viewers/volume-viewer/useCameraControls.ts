@@ -24,8 +24,14 @@ import {
 } from '../../../hooks/useVolumeRenderSetup';
 import { DEFAULT_DESKTOP_RENDER_PIXEL_RATIO_CAP } from '../../../types/renderResolution';
 import type { MovementState, RoiRenderResource, TrackRenderResource } from '../VolumeViewer.types';
-import type { CameraFaceView, CameraRotation, CameraWindowState } from '../../../types/camera';
+import type {
+  CameraFaceView,
+  CameraFaceViewDeskewOptions,
+  CameraRotation,
+  CameraWindowState
+} from '../../../types/camera';
 import { normalizeSignedAngleDegrees } from '../../../shared/utils/cameraViews';
+import { computeDeskewGlassTiltRadians } from '../../../shared/utils/deskew';
 
 const MOVEMENT_KEY_MAP: Record<string, keyof MovementState> = {
   KeyW: 'moveForward',
@@ -57,6 +63,39 @@ const CAMERA_FACE_ORIENTATIONS: Record<CameraFaceView, { direction: THREE.Vector
     up: new THREE.Vector3(0, 0, 1),
   },
 };
+
+const CAMERA_FACE_DESKEW_AXES = {
+  X: new THREE.Vector3(0, 1, 0),
+  Y: new THREE.Vector3(1, 0, 0),
+} as const;
+
+function isDeskewGlassFaceAffected(face: CameraFaceView, deskew: CameraFaceViewDeskewOptions): boolean {
+  return deskew.direction === 'X' ? face === 'xy' || face === 'yz' : face === 'xy' || face === 'xz';
+}
+
+function resolveCameraFaceOrientation(
+  face: CameraFaceView,
+  deskew: CameraFaceViewDeskewOptions | null | undefined
+): { direction: THREE.Vector3; up: THREE.Vector3 } | null {
+  const baseOrientation = CAMERA_FACE_ORIENTATIONS[face];
+  if (!baseOrientation) {
+    return null;
+  }
+  if (!deskew || !isDeskewGlassFaceAffected(face, deskew)) {
+    return baseOrientation;
+  }
+
+  const tilt = computeDeskewGlassTiltRadians(deskew.angleRadians);
+  if (Math.abs(tilt) <= 1e-9) {
+    return baseOrientation;
+  }
+
+  const quaternion = new THREE.Quaternion().setFromAxisAngle(CAMERA_FACE_DESKEW_AXES[deskew.direction], tilt);
+  return {
+    direction: baseOrientation.direction.clone().applyQuaternion(quaternion).normalize(),
+    up: baseOrientation.up.clone().applyQuaternion(quaternion).normalize(),
+  };
+}
 
 type PointerLookHandlers = {
   beginPointerLook: (event: PointerEvent) => void;
@@ -380,15 +419,17 @@ export function useCameraControls({
   );
 
   const applyCameraFaceView = useCallback(
-    (face: CameraFaceView): boolean => {
+    (face: CameraFaceView, options?: { deskew?: CameraFaceViewDeskewOptions | null }): boolean => {
       const camera = cameraRef.current;
       const controls = controlsRef.current;
-      const orientation = CAMERA_FACE_ORIENTATIONS[face];
+      const orientation = resolveCameraFaceOrientation(face, options?.deskew);
       if (!camera || !controls || !orientation) {
         return false;
       }
 
-      const target = controls.target.clone();
+      const target = followTargetActiveRef.current
+        ? controls.target.clone()
+        : resolveCanonicalBounds()?.centerWorld.clone() ?? controls.target.clone();
       const distance = resolveTargetDistance(camera, controls);
       camera.position.copy(target).addScaledVector(orientation.direction, distance);
       camera.up.copy(orientation.up);
@@ -410,6 +451,7 @@ export function useCameraControls({
     [
       followTargetActiveRef,
       followTargetOffsetRef,
+      resolveCanonicalBounds,
       resolveTargetDistance,
     ],
   );
