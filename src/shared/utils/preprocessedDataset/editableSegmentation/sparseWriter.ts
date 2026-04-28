@@ -29,6 +29,7 @@ import {
 } from '../sparseSegmentation';
 import { computeSparseSegmentationCrc32 } from '../sparseSegmentation/binaryLayout';
 import type { EditableSegmentationChannel } from '../../../../types/annotation';
+import { forEachEditableSparseVoxel } from '../../annotation/editableSegmentationState';
 
 const DEFAULT_SHARD_TARGET_BYTES = 16 * 1024 * 1024;
 const textEncoder = new TextEncoder();
@@ -194,25 +195,11 @@ function collectVoxelsForTimepoint({
   timepoint: number;
   labelStats: Map<number, SparseSegmentationLabelStatsAccumulator>;
 }): SparseSegmentationGlobalVoxel[] {
-  const labels = channel.timepointLabels.get(timepoint);
-  if (!labels) {
-    return [];
-  }
-  const { width, height, depth } = channel.dimensions;
   const voxels: SparseSegmentationGlobalVoxel[] = [];
-  for (let z = 0; z < depth; z += 1) {
-    for (let y = 0; y < height; y += 1) {
-      for (let x = 0; x < width; x += 1) {
-        const index = (z * height + y) * width + x;
-        const label = labels[index] ?? 0;
-        if (label === 0) {
-          continue;
-        }
-        voxels.push({ z, y, x, label });
-        updateSparseSegmentationLabelStats(labelStats, label, timepoint, z, y, x);
-      }
-    }
-  }
+  forEachEditableSparseVoxel(channel, timepoint, ({ z, y, x, label }) => {
+    voxels.push({ z, y, x, label });
+    updateSparseSegmentationLabelStats(labelStats, label, timepoint, z, y, x);
+  });
   return voxels;
 }
 

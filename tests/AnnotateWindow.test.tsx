@@ -21,7 +21,7 @@ function createChannel(overrides: Partial<EditableSegmentationChannel> = {}): Ed
     createdFrom: { kind: 'empty' },
     labels: [{ name: '' }, { name: 'Nucleus' }],
     activeLabelIndex: 1,
-    timepointLabels: new Map(),
+    timepoints: new Map(),
     enabled: false,
     overlayVisible: true,
     mode: '3d',

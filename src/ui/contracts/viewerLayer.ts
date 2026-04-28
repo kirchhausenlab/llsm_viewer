@@ -48,6 +48,11 @@ export type ViewerLayer = {
   brickPageTable?: VolumeBrickPageTable | null;
   brickAtlas?: VolumeBrickAtlas | null;
   backgroundMask?: VolumeBackgroundMask | null;
+  renderBounds?: {
+    enabled: boolean;
+    min: [number, number, number];
+    max: [number, number, number];
+  } | null;
   playbackWarmupForLayerKey?: string;
   playbackWarmupTimeIndex?: number;
   playbackRole?: 'active' | 'warmup';

@@ -6,8 +6,8 @@ import {
   buildEditableSegmentationBrickAtlas,
   createEditableSegmentationChannel,
   createEditableViewerLayer,
-  getEditableTimepointLabels,
-  getOrCreateEditableTimepointLabels,
+  getEditableLabelAtIndex,
+  setEditableLabelAtIndex,
 } from '../src/shared/utils/annotation/editableSegmentationState.ts';
 import {
   createDefaultLayerSettings,
@@ -49,9 +49,8 @@ async function createActiveChannel() {
 function readLabel(hook: Awaited<ReturnType<typeof createActiveChannel>>, x: number, y: number, z: number) {
   const channel = hook.result.activeChannel;
   assert.ok(channel);
-  const labels = getEditableTimepointLabels(channel, 0);
   const index = (z * channel.dimensions.height + y) * channel.dimensions.width + x;
-  return labels?.[index] ?? 0;
+  return getEditableLabelAtIndex(channel, 0, index);
 }
 
 (() => {
@@ -63,8 +62,7 @@ function readLabel(hook: Awaited<ReturnType<typeof createActiveChannel>>, x: num
     volumeCount: 1,
     createdFrom: { kind: 'empty' },
   });
-  const labels = getOrCreateEditableTimepointLabels(channel, 0);
-  labels[(32 * 33 + 32) * 33 + 32] = 1;
+  setEditableLabelAtIndex(channel, 0, (32 * 33 + 32) * 33 + 32, 1);
 
   const atlas = buildEditableSegmentationBrickAtlas({ channel, timepoint: 0 });
   const levels = atlas.pageTable.skipHierarchy.levels;
@@ -77,6 +75,36 @@ function readLabel(hook: Awaited<ReturnType<typeof createActiveChannel>>, x: num
     assert.equal(level.max.length, expectedLength);
   }
   assert.equal(levels[levels.length - 1]?.occupancy[0], 255);
+})();
+
+(() => {
+  const channel = createEditableSegmentationChannel({
+    channelId: 'annotate-1',
+    layerKey: 'annotate-layer-1',
+    name: 'Annotation',
+    dimensions: { width: 512, height: 512, depth: 128 },
+    volumeCount: 1,
+    createdFrom: { kind: 'empty' },
+  });
+  setEditableLabelAtIndex(channel, 0, (17 * channel.dimensions.height + 23) * channel.dimensions.width + 31, 1);
+  const state = channel.timepoints.get(0);
+  assert.ok(state);
+  assert.equal(state.bricks.size, 1);
+  assert.equal(state.bricks.values().next().value?.labels.byteLength, 32 * 32 * 32 * 4);
+
+  const atlas = buildEditableSegmentationBrickAtlas({ channel, timepoint: 0 });
+  assert.equal(atlas.enabled, true);
+  assert.equal(atlas.pageTable.occupiedBrickCount, 1);
+  assert.equal(atlas.data.byteLength, 32 * 32 * 32 * 4);
+
+  const viewerLayer = createEditableViewerLayer({
+    channel,
+    visible: true,
+    brickAtlas: atlas,
+    settings: createDefaultLayerSettings(),
+  });
+  assert.deepEqual(viewerLayer.renderBounds?.min, [30.5, 22.5, 16.5]);
+  assert.deepEqual(viewerLayer.renderBounds?.max, [31.5, 23.5, 17.5]);
 })();
 
 (() => {
@@ -210,9 +238,8 @@ await (async () => {
 
   const channel = hook.result.activeChannel;
   assert.ok(channel);
-  const labels = getOrCreateEditableTimepointLabels(channel, 0);
-  labels[(0 * channel.dimensions.height + 1) * channel.dimensions.width + 1] = 1;
-  labels[(0 * channel.dimensions.height + 1) * channel.dimensions.width + 2] = 2;
+  setEditableLabelAtIndex(channel, 0, (0 * channel.dimensions.height + 1) * channel.dimensions.width + 1, 1);
+  setEditableLabelAtIndex(channel, 0, (0 * channel.dimensions.height + 1) * channel.dimensions.width + 2, 2);
 
   hook.act(() => {
     hook.result.setBrushMode('eraser');

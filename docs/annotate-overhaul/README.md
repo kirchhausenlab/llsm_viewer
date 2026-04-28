@@ -10,4 +10,4 @@ Primary document:
 Status:
 
 - Base overhaul spec: planned reference.
-- Incremental sparse editing spec: follow-up handoff for fixing the current Annotate first-voxel slowdown without changing functionality.
+- Incremental sparse editing spec: implemented in the current workspace to fix the Annotate first-voxel slowdown without changing functionality.

@@ -6,6 +6,7 @@ import type {
   AnnotateSourceOption,
   EditableSegmentationChannel,
   EditableSegmentationLabel,
+  EditableSegmentationTimepointState,
   LoadedEditableSegmentationCopy,
 } from '../../types/annotation';
 import type { LoadedDatasetLayer } from '../dataset';
@@ -16,13 +17,13 @@ import {
   buildEditableSegmentationBrickAtlas,
   clearEditableSegmentationChannelInPlace,
   cloneEditableSegmentationChannel,
-  cloneTimepointLabelMap,
+  cloneEditableTimepointStateMap,
   createEditableLoadedDatasetLayer,
   createEditableSegmentationChannel,
   createEditableViewerLayer,
   deleteEditableLabelInPlace,
-  getEditableTimepointLabels,
-  getOrCreateEditableTimepointLabels,
+  getEditableLabelAtIndex,
+  setEditableLabelAtIndex,
   hasEditableLabelVoxels,
   MAX_ANNOTATION_RADIUS,
   MIN_ANNOTATION_RADIUS,
@@ -35,7 +36,7 @@ import {
 type HistorySnapshot = {
   labels: EditableSegmentationLabel[];
   activeLabelIndex: number;
-  timepointLabels: Map<number, Uint32Array>;
+  timepoints: Map<number, EditableSegmentationTimepointState>;
 };
 
 type StrokeHistoryEntry = {
@@ -154,14 +155,14 @@ function snapshotChannel(channel: EditableSegmentationChannel): HistorySnapshot 
   return {
     labels: cloneLabels(channel.labels),
     activeLabelIndex: channel.activeLabelIndex,
-    timepointLabels: cloneTimepointLabelMap(channel.timepointLabels),
+    timepoints: cloneEditableTimepointStateMap(channel.timepoints),
   };
 }
 
 function restoreSnapshot(channel: EditableSegmentationChannel, snapshot: HistorySnapshot): void {
   channel.labels = cloneLabels(snapshot.labels);
   channel.activeLabelIndex = snapshot.activeLabelIndex;
-  channel.timepointLabels = cloneTimepointLabelMap(snapshot.timepointLabels);
+  channel.timepoints = cloneEditableTimepointStateMap(snapshot.timepoints);
 }
 
 function isNameConflict(name: string, baseChannelNames: Iterable<string>, channels: Iterable<EditableSegmentationChannel>): boolean {
@@ -357,7 +358,7 @@ export function useAnnotate({
             sourceWasEditable: Boolean(source.editableLabelNames),
           },
           labels: loaded.labels,
-          timepointLabels: loaded.timepointLabels,
+          timepoints: loaded.timepoints,
         });
       } else {
         channel = createEditableSegmentationChannel({
@@ -615,9 +616,9 @@ export function useAnnotate({
     }
     stroke.visitedCenters.add(centerIndex);
 
-    const labels = getOrCreateEditableTimepointLabels(channel, stroke.timepoint);
     const isEraserStroke = stroke.brushMode === 'eraser';
     const nextLabel = isEraserStroke ? 0 : stroke.labelId;
+    let changed = false;
     for (const { dx, dy, dz } of computeAnnotationBrushOffsets(stroke.radius, stroke.mode)) {
       const x = safeX + dx;
       const y = safeY + dy;
@@ -626,7 +627,7 @@ export function useAnnotate({
         continue;
       }
       const index = (z * height + y) * width + x;
-      const previous = labels[index] ?? 0;
+      const previous = getEditableLabelAtIndex(channel, stroke.timepoint, index);
       if (isEraserStroke && previous !== stroke.labelId) {
         continue;
       }
@@ -636,9 +637,12 @@ export function useAnnotate({
       if (!stroke.touched.has(index)) {
         stroke.touched.set(index, previous);
       }
-      labels[index] = nextLabel;
+      const result = setEditableLabelAtIndex(channel, stroke.timepoint, index, nextLabel);
+      changed = changed || result.changed;
     }
-    markChanged(channel, true);
+    if (changed) {
+      markChanged(channel, true);
+    }
   }, [markChanged]);
 
   const endStroke = useCallback(() => {
@@ -648,15 +652,14 @@ export function useAnnotate({
       return;
     }
     const channel = channelsRef.current.get(stroke.channelId);
-    const labels = channel ? getEditableTimepointLabels(channel, stroke.timepoint) : null;
-    if (!channel || !labels) {
+    if (!channel) {
       return;
     }
     const indices: number[] = [];
     const before: number[] = [];
     const after: number[] = [];
     for (const [index, previous] of stroke.touched.entries()) {
-      const current = labels[index] ?? 0;
+      const current = getEditableLabelAtIndex(channel, stroke.timepoint, index);
       if (current === previous) {
         continue;
       }
@@ -686,10 +689,9 @@ export function useAnnotate({
     if (entry.kind === 'snapshot') {
       restoreSnapshot(channel, direction === 'undo' ? entry.before : entry.after);
     } else {
-      const labels = getOrCreateEditableTimepointLabels(channel, entry.timepoint);
       const source = direction === 'undo' ? entry.before : entry.after;
       for (let index = 0; index < entry.indices.length; index += 1) {
-        labels[entry.indices[index] ?? 0] = source[index] ?? 0;
+        setEditableLabelAtIndex(channel, entry.timepoint, entry.indices[index] ?? 0, source[index] ?? 0);
       }
     }
     markChanged(channel, true);

@@ -2,7 +2,9 @@
 
 This document is a handoff spec for fixing the Annotate slowdown that appears after painting the first voxel.
 
-It is a follow-up to [IMPLEMENTATION_SPEC.md](./IMPLEMENTATION_SPEC.md). The original Annotate overhaul spec already recommends sparse editable bricks. The current implementation has partially implemented Annotate, but its edit and render path currently materializes dense timepoint label arrays and rebuilds render atlases from the full volume. This document describes the long-term correction.
+It is a follow-up to [IMPLEMENTATION_SPEC.md](./IMPLEMENTATION_SPEC.md). The original Annotate overhaul spec already recommends sparse editable bricks. The dense edit and render path described below was the failure mode this change set fixes.
+
+Status: implemented in the current workspace.
 
 The intended reader is a fresh implementation agent with no prior conversation context.
 
@@ -22,7 +24,7 @@ There are two related causes:
 
 The long-term fix is not throttling, hiding the layer, deferring all work to mouseup, disabling hover, or reducing annotation fidelity. The fix is to make editable annotations a sparse, dirty-brick data source end to end, then update only the CPU and GPU resources touched by a stroke while preserving the same visible and interactive behavior.
 
-## 2) Current Hot Path
+## 2) Original Hot Path
 
 Line numbers are approximate and should be rechecked with `rg` after any surrounding edits.
 
@@ -30,11 +32,11 @@ Line numbers are approximate and should be rechecked with `rg` after any surroun
 
 `src/hooks/annotation/useAnnotate.ts`
 
-- `applyStrokeAt` currently calls `getOrCreateEditableTimepointLabels` during the first stroke for a timepoint.
-- `getOrCreateEditableTimepointLabels` returns a dense `Uint32Array(width * height * depth)`.
-- `applyStrokeAt` then writes global flat indices and calls `markChanged(channel, true)`.
-- `endStroke` records a history entry and calls `markChanged(channel, true)` again.
-- `editableLayerBrickAtlases` is a `useMemo` keyed by `channels`, `currentTimepoint`, and `revision`; it calls `buildEditableSegmentationBrickAtlas` for every editable channel.
+- `applyStrokeAt` called `getOrCreateEditableTimepointLabels` during the first stroke for a timepoint.
+- `getOrCreateEditableTimepointLabels` returned a dense `Uint32Array(width * height * depth)`.
+- `applyStrokeAt` then wrote global flat indices and called `markChanged(channel, true)`.
+- `endStroke` recorded a history entry and called `markChanged(channel, true)` again.
+- `editableLayerBrickAtlases` was a `useMemo` keyed by `channels`, `currentTimepoint`, and `revision`; it called `buildEditableSegmentationBrickAtlas` for every editable channel.
 
 Important current symbols:
 
@@ -48,21 +50,21 @@ Important current symbols:
 
 `src/shared/utils/annotation/editableSegmentationState.ts`
 
-Current state uses:
+The original state used:
 
 ```ts
 timepointLabels: Map<number, Uint32Array>
 ```
 
-The first edit for a timepoint allocates:
+The first edit for a timepoint allocated:
 
 ```ts
 new Uint32Array(width * height * depth)
 ```
 
-This is already expensive for large volumes, even before rendering.
+This was already expensive for large volumes, even before rendering.
 
-Other current helpers scan those dense arrays:
+Other original helpers scanned those dense arrays:
 
 - `hasEditableLabelVoxels`
 - `deleteEditableLabelInPlace`
@@ -71,7 +73,7 @@ Other current helpers scan those dense arrays:
 
 ### 2.3 Full-Volume Atlas Build
 
-`buildEditableSegmentationBrickAtlas` currently:
+`buildEditableSegmentationBrickAtlas` originally:
 
 - Reads the dense label array for the current timepoint.
 - Iterates `z`, `y`, and `x` over the full volume.
@@ -87,13 +89,13 @@ This means painting one voxel in a `512 x 512 x 128` volume scans 33,554,432 vox
 
 `src/components/viewers/volume-viewer/layerRenderSource.ts`
 
-`resolveLayerRenderSource` ignores an editable annotation layer until:
+`resolveLayerRenderSource` ignored an editable annotation layer until:
 
 ```ts
 brickAtlas?.enabled && pageTable
 ```
 
-An empty editable atlas is disabled. After the first nonzero voxel, the atlas becomes enabled, so the viewer starts rendering the editable segmentation layer.
+An empty editable atlas was disabled. After the first nonzero voxel, the atlas became enabled, so the viewer started rendering the editable segmentation layer.
 
 This explains the sharp transition: before the first voxel, the annotation layer is effectively absent from rendering; after the first voxel, it is a normal visible segmentation layer.
 
@@ -101,7 +103,7 @@ This explains the sharp transition: before the first voxel, the annotation layer
 
 `src/components/viewers/volume-viewer/useVolumeResources.ts`
 
-The resource path uses object identity to decide whether page-table metadata, skip hierarchy, and atlas textures can be reused.
+The resource path used object identity to decide whether page-table metadata, skip hierarchy, and atlas textures could be reused.
 
 Current reuse checks include comparisons like:
 
@@ -110,27 +112,27 @@ Current reuse checks include comparisons like:
 - `resource.brickAtlasSourcePageTable === resolvedPageTable`
 - `resource.brickAtlasSourceToken === atlasSourceToken`
 
-Because the editable atlas builder returns fresh objects, every revision can invalidate resource caches even when only one voxel changed.
+Because the editable atlas builder returned fresh objects, every revision could invalidate resource caches even when only one voxel changed.
 
 ### 2.6 Persistent Render Cost
 
 `src/components/viewers/volume-viewer/useVolumeResources.ts`
 
-The 3D path builds a proxy geometry from the layer dimensions or background-mask visible box. Editable annotation layers have full-resolution dimensions and no annotation-specific occupied bounds, so one painted voxel can produce an additional full-volume box.
+The 3D path built a proxy geometry from the layer dimensions or background-mask visible box. Editable annotation layers had full-resolution dimensions and no annotation-specific occupied bounds, so one painted voxel could produce an additional full-volume box.
 
 `src/shaders/volumeRenderShader.ts`
 
-Segmentation layers use `cast_segmentation`. Skip hierarchy helps, but this is still an extra segmentation ray-march pass every frame once the layer is visible.
+Segmentation layers use `cast_segmentation`. Skip hierarchy helps, but this was still an extra segmentation ray-march pass every frame once the layer was visible.
 
 `src/components/viewers/volume-viewer/useVolumeViewerLifecycle.ts`
 
-The renderer uses `setAnimationLoop`, so the cost is persistent while the viewer is active.
+The renderer uses `setAnimationLoop`, so the cost was persistent while the viewer was active.
 
 ### 2.7 Hover Cost
 
 `src/shared/utils/annotation/editableSegmentationState.ts`
 
-Editable viewer layers are created with:
+Editable viewer layers were created with:
 
 ```ts
 isHoverTarget: true
@@ -144,17 +146,17 @@ Hover can sample segmentation brick atlases to display label values. With additi
 
 `src/components/viewers/ViewerShell.tsx`
 
-Regular segmentation source copy currently materializes each timepoint into dense label arrays before remapping labels.
+Regular segmentation source copy originally materialized each timepoint into dense label arrays before remapping labels.
 
 `src/shared/utils/preprocessedDataset/editableSegmentation/sparseWriter.ts`
 
-`collectVoxelsForTimepoint` currently reads `channel.timepointLabels` and scans every voxel in the dense array before writing sparse output.
+`collectVoxelsForTimepoint` originally read `channel.timepointLabels` and scanned every voxel in the dense array before writing sparse output.
 
-Those paths must be migrated before dense `timepointLabels` can stop being the authoritative editable state.
+Those paths had to be migrated before dense `timepointLabels` could stop being the authoritative editable state.
 
 ## 3) Empirical Evidence
 
-A local one-off benchmark of the current atlas-building behavior showed:
+A local one-off benchmark of the original atlas-building behavior showed:
 
 Empty atlas:
 

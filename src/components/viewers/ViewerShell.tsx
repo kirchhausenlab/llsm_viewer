@@ -75,10 +75,18 @@ import { useAnnotate } from '../../hooks/annotation/useAnnotate';
 import type { AnnotateSourceOption, EditableSegmentationChannel, LoadedEditableSegmentationCopy } from '../../types/annotation';
 import {
   exportChannel,
-  materializeRegularSegmentationSource,
   sanitizeExportBaseName,
   type ChannelExportSource,
 } from '../../shared/utils/channelExport';
+import {
+  addEditableSparseBrickVoxels,
+  createEditableSegmentationChannel,
+} from '../../shared/utils/annotation/editableSegmentationState';
+import type {
+  SparseSegmentationBrickCoord,
+  SparseSegmentationBrickSize,
+  SparseSegmentationLocalVoxel,
+} from '../../shared/utils/preprocessedDataset/sparseSegmentation';
 import { writeEditableSegmentationChannel } from '../../shared/utils/preprocessedDataset/editableSegmentation/sparseWriter';
 import {
   DEFAULT_HOVER_SETTINGS,
@@ -524,46 +532,95 @@ function ViewerShell({
         throw new Error('Segmentation source no longer exists.');
       }
 
-      const timepointLabels = new Map<number, Uint32Array>();
+      if (!provider.getSparseSegmentationField || !provider.getSparseSegmentationBrick) {
+        throw new Error('Segmentation source copy is unavailable for this provider.');
+      }
+      const sourceBricks: Array<{
+        timepoint: number;
+        brickCoord: SparseSegmentationBrickCoord;
+        brickSize: SparseSegmentationBrickSize;
+        voxels: SparseSegmentationLocalVoxel[];
+      }> = [];
       const uniqueLabels = new Set<number>();
       let maxLabel = 0;
       for (let timepoint = 0; timepoint < source.volumeCount; timepoint += 1) {
-        const materialized = await materializeRegularSegmentationSource({
-          provider,
-          layer,
-          timepoint,
+        const field = await provider.getSparseSegmentationField(source.layerKey, timepoint, {
+          scaleLevel: 0,
+          loadDirectory: true,
+          loadLabelMetadata: false,
         });
-        timepointLabels.set(timepoint, materialized.labels);
-        for (let index = 0; index < materialized.labels.length; index += 1) {
-          const label = materialized.labels[index] ?? 0;
-          if (label > 0) {
+        for (const record of field.directory.recordsForTimepoint(timepoint)) {
+          const brick = await provider.getSparseSegmentationBrick(
+            source.layerKey,
+            timepoint,
+            0,
+            record.brickCoord as SparseSegmentationBrickCoord
+          );
+          const voxels: SparseSegmentationLocalVoxel[] = [];
+          brick.forEachNonzero((offset, label) => {
+            if (label <= 0) {
+              return;
+            }
             uniqueLabels.add(label);
             maxLabel = Math.max(maxLabel, label);
+            voxels.push({ offset, label });
+          });
+          if (voxels.length > 0) {
+            sourceBricks.push({
+              timepoint,
+              brickCoord: record.brickCoord as SparseSegmentationBrickCoord,
+              brickSize: field.brickSize,
+              voxels,
+            });
           }
         }
       }
 
+      const tempChannel = createEditableSegmentationChannel({
+        channelId: `copy-${source.channelId}`,
+        layerKey: `copy-${source.layerKey}`,
+        name: source.label,
+        dimensions: source.dimensions,
+        volumeCount: source.volumeCount,
+        createdFrom: { kind: 'empty' },
+        labels: [{ name: '' }],
+      });
+
       if (source.editableLabelNames) {
         const labelCount = Math.max(1, source.editableLabelNames.length, maxLabel);
-        return {
-          labels: Array.from({ length: labelCount }, (_, index) => ({
-            name: source.editableLabelNames?.[index] ?? '',
-          })),
-          timepointLabels,
-        };
+        const labels = Array.from({ length: labelCount }, (_, index) => ({
+          name: source.editableLabelNames?.[index] ?? '',
+        }));
+        for (const sourceBrick of sourceBricks) {
+          addEditableSparseBrickVoxels({
+            channel: tempChannel,
+            timepoint: sourceBrick.timepoint,
+            brickCoord: sourceBrick.brickCoord,
+            brickSize: sourceBrick.brickSize,
+            voxels: sourceBrick.voxels,
+          });
+        }
+        return { labels, timepoints: tempChannel.timepoints };
       }
 
       const sortedLabels = [...uniqueLabels].sort((left, right) => left - right);
       const remap = new Map(sortedLabels.map((label, index) => [label, index + 1]));
-      for (const labels of timepointLabels.values()) {
-        for (let index = 0; index < labels.length; index += 1) {
-          const label = labels[index] ?? 0;
-          labels[index] = label === 0 ? 0 : remap.get(label) ?? 0;
-        }
+      const labels = Array.from({ length: Math.max(1, sortedLabels.length) }, () => ({ name: '' }));
+      for (const sourceBrick of sourceBricks) {
+        addEditableSparseBrickVoxels({
+          channel: tempChannel,
+          timepoint: sourceBrick.timepoint,
+          brickCoord: sourceBrick.brickCoord,
+          brickSize: sourceBrick.brickSize,
+          voxels: sourceBrick.voxels.map((voxel) => ({
+            offset: voxel.offset,
+            label: remap.get(voxel.label) ?? 0,
+          })),
+        });
       }
       return {
-        labels: Array.from({ length: Math.max(1, sortedLabels.length) }, () => ({ name: '' })),
-        timepointLabels,
+        labels,
+        timepoints: tempChannel.timepoints,
       };
     },
     [datasetAccess.volumeProvider, regularSegmentationLayerByKey]

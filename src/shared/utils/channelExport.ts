@@ -6,8 +6,8 @@ import type { LoadedDatasetLayer } from '../../hooks/dataset';
 import type { EditableSegmentationChannel } from '../../types/annotation';
 import { encodeGrayscaleTiffStack } from './tiffWriter';
 import {
-  getEditableTimepointLabels,
   getEditableVoxelCount,
+  materializeEditableTimepointLabels,
 } from './annotation/editableSegmentationState';
 import {
   globalCoordForLocalOffset,
@@ -198,8 +198,10 @@ function encodeEditableChannelTimepoint({
   source: Extract<ChannelExportSource, { kind: 'editable' }>;
   timepoint: number;
 }): Uint8Array {
-  const labels = getEditableTimepointLabels(source.channel, timepoint);
-  const data = labels ? labels.slice() : new Uint32Array(getEditableVoxelCount(source.channel));
+  const data =
+    source.channel.timepoints.has(Math.max(0, Math.min(source.channel.volumeCount - 1, Math.floor(timepoint))))
+      ? materializeEditableTimepointLabels(source.channel, timepoint)
+      : new Uint32Array(getEditableVoxelCount(source.channel));
   return encodeSegmentationLabels({
     width: source.channel.dimensions.width,
     height: source.channel.dimensions.height,

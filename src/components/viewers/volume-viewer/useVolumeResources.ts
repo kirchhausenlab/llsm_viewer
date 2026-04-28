@@ -1181,6 +1181,58 @@ function resolveBackgroundMaskVisibleBox(
   };
 }
 
+function resolveLayerProxyVisibleBox(
+  layer: UseVolumeResourcesParams['layers'][number],
+  dimensions: { width: number; height: number; depth: number },
+): {
+  enabled: boolean;
+  min: [number, number, number];
+  max: [number, number, number];
+  signature: string;
+} {
+  const backgroundBox = resolveBackgroundMaskVisibleBox(layer.backgroundMask ?? null, dimensions);
+  const renderBounds = layer.renderBounds ?? null;
+  if (!renderBounds?.enabled) {
+    return backgroundBox;
+  }
+  const fullMin: [number, number, number] = [-0.5, -0.5, -0.5];
+  const fullMax: [number, number, number] = [
+    Math.max(dimensions.width - 0.5, -0.5),
+    Math.max(dimensions.height - 0.5, -0.5),
+    Math.max(dimensions.depth - 0.5, -0.5),
+  ];
+  const boundedMin: [number, number, number] = [
+    Math.max(fullMin[0], Math.min(fullMax[0], renderBounds.min[0])),
+    Math.max(fullMin[1], Math.min(fullMax[1], renderBounds.min[1])),
+    Math.max(fullMin[2], Math.min(fullMax[2], renderBounds.min[2])),
+  ];
+  const boundedMax: [number, number, number] = [
+    Math.max(boundedMin[0] + 1e-3, Math.min(fullMax[0], renderBounds.max[0])),
+    Math.max(boundedMin[1] + 1e-3, Math.min(fullMax[1], renderBounds.max[1])),
+    Math.max(boundedMin[2] + 1e-3, Math.min(fullMax[2], renderBounds.max[2])),
+  ];
+  const min: [number, number, number] = backgroundBox.enabled
+    ? [
+        Math.max(backgroundBox.min[0], boundedMin[0]),
+        Math.max(backgroundBox.min[1], boundedMin[1]),
+        Math.max(backgroundBox.min[2], boundedMin[2]),
+      ]
+    : boundedMin;
+  const max: [number, number, number] = backgroundBox.enabled
+    ? [
+        Math.max(min[0] + 1e-3, Math.min(backgroundBox.max[0], boundedMax[0])),
+        Math.max(min[1] + 1e-3, Math.min(backgroundBox.max[1], boundedMax[1])),
+        Math.max(min[2] + 1e-3, Math.min(backgroundBox.max[2], boundedMax[2])),
+      ]
+    : boundedMax;
+  return {
+    enabled: true,
+    min,
+    max,
+    signature: `${backgroundBox.signature}:render:${min.join(',')}:${max.join(',')}`,
+  };
+}
+
 function getTextureComponentsFromFormat(format: TextureFormat): number | null {
   if (format === THREE.RedFormat) {
     return 1;
@@ -3961,7 +4013,7 @@ export function useVolumeResources({
           : THREE.RedFormat;
         const textureType = textureData instanceof Float32Array ? THREE.FloatType : THREE.UnsignedByteType;
         const directAtlasFormat = brickAtlas ? getTextureFormatFromBrickAtlas(brickAtlas) : null;
-        const proxyVisibleBox = resolveBackgroundMaskVisibleBox(layer.backgroundMask ?? null, {
+        const proxyVisibleBox = resolveLayerProxyVisibleBox(layer, {
           width,
           height,
           depth,

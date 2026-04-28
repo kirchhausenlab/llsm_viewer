@@ -1,5 +1,9 @@
 import type { NormalizedVolume } from '../core/volumeProcessing';
 import type { VolumeBrickAtlas } from '../core/volumeProvider';
+import type {
+  SparseSegmentationBrickCoord,
+  SparseSegmentationBrickSize,
+} from '../shared/utils/preprocessedDataset/sparseSegmentation';
 
 export type AnnotateBrushMode = 'brush' | 'eraser';
 export type AnnotateDimensionMode = '2d' | '3d';
@@ -24,6 +28,31 @@ export type EditableSegmentationCreatedFrom =
       sourceWasEditable: boolean;
     };
 
+export type EditableSegmentationBrick = {
+  coord: SparseSegmentationBrickCoord;
+  labels: Uint32Array;
+  nonzeroCount: number;
+  minLabel: number;
+  maxLabel: number;
+  localBounds: {
+    min: { z: number; y: number; x: number };
+    max: { z: number; y: number; x: number };
+  } | null;
+  revision: number;
+  dirty: boolean;
+  statsDirty: boolean;
+};
+
+export type EditableSegmentationTimepointState = {
+  brickSize: SparseSegmentationBrickSize;
+  bricks: Map<string, EditableSegmentationBrick>;
+  revision: number;
+  dirtyBrickKeys: Set<string>;
+  deletedBrickKeys: Set<string>;
+  renderAtlas: VolumeBrickAtlas | null;
+  renderAtlasRevision: number;
+};
+
 export type EditableSegmentationChannel = {
   channelId: string;
   layerKey: string;
@@ -45,7 +74,7 @@ export type EditableSegmentationChannel = {
   revision: number;
   savedRevision: number;
   createdFrom: EditableSegmentationCreatedFrom;
-  timepointLabels: Map<number, Uint32Array>;
+  timepoints: Map<number, EditableSegmentationTimepointState>;
 };
 
 export type AnnotateSourceOption =
@@ -70,7 +99,7 @@ export type AnnotateSourceOption =
 
 export type LoadedEditableSegmentationCopy = {
   labels: EditableSegmentationLabel[];
-  timepointLabels: Map<number, Uint32Array>;
+  timepoints: Map<number, EditableSegmentationTimepointState>;
 };
 
 export type EditableSegmentationRenderPayload = {
