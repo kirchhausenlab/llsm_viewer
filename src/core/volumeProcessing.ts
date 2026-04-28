@@ -37,18 +37,7 @@ export type IntensityVolume = BaseViewerVolume & {
   readonly labels?: never;
 };
 
-export type SegmentationVolume = BaseViewerVolume & {
-  kind: 'segmentation';
-  channels: 1;
-  dataType: 'uint16';
-  readonly labels: Uint16Array;
-  readonly normalized?: never;
-  histogram?: never;
-  min: 0;
-  max: number;
-};
-
-export type NormalizedVolume = IntensityVolume | SegmentationVolume;
+export type NormalizedVolume = IntensityVolume;
 
 export type NormalizationParameters = {
   min: number;
@@ -59,8 +48,7 @@ export function getNormalizedIntensityDenominator(type: NormalizedIntensityDataT
   return type === 'uint16' ? 0xffff : 0xff;
 }
 
-export const MAX_SEGMENTATION_LABEL_ID = 0xffff;
-export const SEGMENTATION_PALETTE_SIZE = MAX_SEGMENTATION_LABEL_ID + 1;
+const SEGMENTATION_PALETTE_LABEL_COUNT = 0x10000;
 
 const createDeterministicRng = (seed: number): (() => number) => {
   let state = seed >>> 0;
@@ -116,40 +104,18 @@ const hsvToRgb = (h: number, s: number, v: number): [number, number, number] => 
   return [toByte(r1), toByte(g1), toByte(b1)];
 };
 
-export const isSegmentationVolume = (volume: NormalizedVolume): volume is SegmentationVolume =>
-  volume.kind === 'segmentation';
-
 export const isIntensityVolume = (volume: NormalizedVolume): volume is IntensityVolume =>
   volume.kind === 'intensity';
 
-export function toSegmentationLabelId(value: number): number {
-  if (!Number.isFinite(value)) {
-    return 0;
-  }
-  if (value <= 0) {
-    return 0;
-  }
-  const rounded = Math.round(value);
-  if (rounded <= 0) {
-    return 0;
-  }
-  if (rounded > MAX_SEGMENTATION_LABEL_ID) {
-    throw new Error(
-      `Segmentation label ${rounded} exceeds the supported uint16 range (${MAX_SEGMENTATION_LABEL_ID}).`
-    );
-  }
-  return rounded;
-}
-
 export const createSegmentationColorTable = (seed: number): Uint8Array => {
-  const table = new Uint8Array(SEGMENTATION_PALETTE_SIZE * 4);
+  const table = new Uint8Array(SEGMENTATION_PALETTE_LABEL_COUNT * 4);
   table[0] = 0;
   table[1] = 0;
   table[2] = 0;
   table[3] = 0;
 
   const rng = createDeterministicRng(seed);
-  for (let label = 1; label < SEGMENTATION_PALETTE_SIZE; label += 1) {
+  for (let label = 1; label < SEGMENTATION_PALETTE_LABEL_COUNT; label += 1) {
     const hue = rng() * 360;
     const [r, g, b] = hsvToRgb(hue, 1, 1);
     const index = label * 4;
@@ -160,78 +126,6 @@ export const createSegmentationColorTable = (seed: number): Uint8Array => {
   }
   return table;
 };
-
-function canonicalizeSegmentationFromSource({
-  width,
-  height,
-  depth,
-  source
-}: {
-  width: number;
-  height: number;
-  depth: number;
-  source: SourceArray;
-}): SegmentationVolume {
-  const voxelCount = source.length;
-  let maxLabel = 0;
-  for (let i = 0; i < voxelCount; i++) {
-    const label = toSegmentationLabelId(source[i]);
-    if (label > maxLabel) {
-      maxLabel = label;
-    }
-  }
-
-  const labels = new Uint16Array(voxelCount);
-
-  for (let i = 0; i < voxelCount; i++) {
-    labels[i] = toSegmentationLabelId(source[i]);
-  }
-
-  return {
-    kind: 'segmentation',
-    width,
-    height,
-    depth,
-    channels: 1,
-    dataType: 'uint16',
-    labels,
-    min: 0,
-    max: maxLabel
-  };
-}
-
-export function canonicalizeSegmentationVolume(volume: VolumePayload): SegmentationVolume {
-  const { width, height, depth, dataType } = volume;
-  const source = createSourceArray(volume.data, dataType);
-  return canonicalizeSegmentationFromSource({
-    width,
-    height,
-    depth,
-    source
-  });
-}
-
-export function canonicalizeSegmentationTypedArray({
-  width,
-  height,
-  depth,
-  dataType,
-  source
-}: {
-  width: number;
-  height: number;
-  depth: number;
-  dataType: VolumeDataType;
-  source: VolumeTypedArray;
-}): SegmentationVolume {
-  void dataType;
-  return canonicalizeSegmentationFromSource({
-    width,
-    height,
-    depth,
-    source
-  });
-}
 
 export function computeNormalizationParameters(volumes: VolumePayload[]): NormalizationParameters {
   if (volumes.length === 0) {

@@ -4903,7 +4903,6 @@ async function writeLayerVolumesFor3d({
           rawVolume: raw,
           scales: intensityManifestLayer.zarr.scales,
           layerKey: layer.key,
-          isSegmentation: false,
           storedDataType,
           normalization,
           signal
@@ -4935,9 +4934,6 @@ async function writeLayerVolumesFor3d({
         normalization ?? computeRepresentativeNormalization(raw, backgroundMask?.scales[0] ?? null, storedDataType),
         storedDataType
       );
-      if (normalized.kind !== 'intensity') {
-        throw new Error(`Internal error: layer "${layer.key}" was routed to dense intensity preprocessing but produced segmentation data.`);
-      }
 
       if (backgroundMask && backgroundMask.maskedVoxelCount > 0) {
         const maskedNormalized = normalized.normalized.slice();

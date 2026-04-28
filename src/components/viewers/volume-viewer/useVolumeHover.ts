@@ -8,7 +8,6 @@ import {
   clampValue,
   mapDisplayCoordinateToDataCoordinate,
   sampleRawValuesAtVoxel,
-  sampleSegmentationLabel,
 } from '../../../shared/utils/hoverSampling';
 import type { NormalizedVolume } from '../../../core/volumeProcessing';
 import type { VolumeBrickPageTable } from '../../../core/volumeProvider';
@@ -45,7 +44,6 @@ import {
   sampleBrickAtlasAtNormalizedPosition,
   sampleBrickAtlasLabelAtNormalizedPosition,
   sampleVolumeAtNormalizedPosition,
-  sampleVolumeLabelAtNormalizedPosition,
 } from './volumeHoverSampling';
 import type { HoverSettings } from '../../../types/hover';
 
@@ -325,6 +323,10 @@ export function useVolumeHover({
         reportVoxelHoverAbort('No visible hover-capable layer is available for the current mode and hover type.');
         return;
       }
+      if (targetLayer.isSegmentation && targetVolume) {
+        reportVoxelHoverAbort('Segmentation hover requires a sparse atlas source.');
+        return;
+      }
 
       const { width: targetWidth, height: targetHeight, depth: targetDepth } = resolveHoverSpaceDimensions({
         targetLayer,
@@ -482,9 +484,7 @@ export function useVolumeHover({
         );
 
         if (targetIsSegmentation) {
-          const labelValue = targetVolume
-            ? sampleVolumeLabelAtNormalizedPosition(targetVolume, targetSamplePositionForLabels)
-            : sampleBrickAtlasLabelAtNormalizedPosition(targetAtlasSource!, targetSamplePositionForLabels);
+          const labelValue = sampleBrickAtlasLabelAtNormalizedPosition(targetAtlasSource!, targetSamplePositionForLabels);
           maxRawValues = [labelValue];
           maxValue = labelValue > 0 ? 1 : 0;
         } else {
@@ -511,9 +511,7 @@ export function useVolumeHover({
         hoverMaxPosition.copy(hoverSample);
         if (targetIsSegmentation) {
           for (let i = 0; i < nsteps; i++) {
-            const labelValue = targetVolume
-              ? sampleVolumeLabelAtNormalizedPosition(targetVolume, hoverSample)
-              : sampleBrickAtlasLabelAtNormalizedPosition(targetAtlasSource!, hoverSample);
+            const labelValue = sampleBrickAtlasLabelAtNormalizedPosition(targetAtlasSource!, hoverSample);
             if (labelValue > 0) {
               maxValue = 1;
               hoverMaxPosition.copy(hoverSample);
@@ -598,13 +596,9 @@ export function useVolumeHover({
 
       const hoveredSegmentationLabel =
         targetLayer.isSegmentation
-          ? (
-              targetVolume
-                ? sampleVolumeLabelAtNormalizedPosition(targetVolume, targetSamplePositionForLabels)
-                : targetAtlasSource
-                  ? sampleBrickAtlasLabelAtNormalizedPosition(targetAtlasSource, targetSamplePositionForLabels)
-                  : null
-            )
+          ? targetAtlasSource
+            ? sampleBrickAtlasLabelAtNormalizedPosition(targetAtlasSource, targetSamplePositionForLabels)
+            : null
           : null;
 
       const displayLayers = isAdditiveBlending && hoverableLayers.length > 0 ? hoverableLayers : [targetLayer];
@@ -635,9 +629,7 @@ export function useVolumeHover({
           const labelValue =
             layer.key === targetLayer.key && hoveredSegmentationLabel !== null
               ? hoveredSegmentationLabel
-              : layerVolume
-                ? sampleSegmentationLabel(layerVolume, hoverMaxPosition)
-                : (() => {
+              : (() => {
                     const layerAtlasPageTable =
                       layer.brickAtlas?.pageTable ??
                       layer.brickPageTable ??
@@ -682,12 +674,12 @@ export function useVolumeHover({
                   })();
           if (labelValue !== null) {
             displayValues = [labelValue];
-            displayType = (layerVolume?.dataType ?? layer.dataType ?? 'uint16') as NormalizedVolume['dataType'];
+            displayType = (layer.dataType ?? 'uint32') as NormalizedVolume['dataType'];
           }
         }
 
         if (!displayValues) {
-          if (layerVolume) {
+          if (!layer.isSegmentation && layerVolume) {
             displayValues = sampleRawValuesAtVoxel(layerVolume, layerVoxel);
             displayType = layerVolume.dataType;
           } else {

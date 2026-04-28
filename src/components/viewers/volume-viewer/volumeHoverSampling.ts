@@ -1,6 +1,6 @@
 import { denormalizeValue } from '../../../shared/utils/intensityFormatting';
 import { clampValue } from '../../../shared/utils/hoverSampling';
-import { getNormalizedIntensityDenominator, isSegmentationVolume, type NormalizedVolume } from '../../../core/volumeProcessing';
+import { getNormalizedIntensityDenominator, type NormalizedVolume } from '../../../core/volumeProcessing';
 import type { VolumeBrickAtlasTextureFormat, VolumeBrickPageTable } from '../../../core/volumeProvider';
 
 type VectorLike = { x: number; y: number; z: number };
@@ -275,18 +275,6 @@ export function sampleVolumeAtVoxel(
   voxelY: number,
   voxelZ: number,
 ): { normalizedValues: number[]; rawValues: number[] } {
-  if (isSegmentationVolume(volume)) {
-    const label = sampleVolumeLabelAtNormalizedPosition(volume, {
-      x: voxelX / Math.max(1, volume.width),
-      y: voxelY / Math.max(1, volume.height),
-      z: voxelZ / Math.max(1, volume.depth),
-    });
-    return {
-      normalizedValues: [label > 0 ? 1 : 0],
-      rawValues: [label],
-    };
-  }
-
   const channels = Math.max(1, volume.channels);
   const x = Math.round(clampValue(voxelX, 0, volume.width - 1));
   const y = Math.round(clampValue(voxelY, 0, volume.height - 1));
@@ -309,14 +297,6 @@ export function sampleVolumeAtNormalizedPosition(
   volume: NormalizedVolume,
   coords: VectorLike,
 ): { normalizedValues: number[]; rawValues: number[] } {
-  if (isSegmentationVolume(volume)) {
-    const label = sampleVolumeLabelAtNormalizedPosition(volume, coords);
-    return {
-      normalizedValues: [label > 0 ? 1 : 0],
-      rawValues: [label]
-    };
-  }
-
   const channels = Math.max(1, volume.channels);
   const sliceStride = volume.width * volume.height * channels;
   const rowStride = volume.width * channels;
@@ -399,19 +379,6 @@ export function sampleBrickAtlasLabelAtNormalizedPosition(
   const voxelY = Math.round(clampValue(coords.y * volumeHeight, 0, volumeHeight - 1));
   const voxelZ = Math.round(clampValue(coords.z * volumeDepth, 0, volumeDepth - 1));
   return sampleBrickAtlasSegmentationLabel(source, voxelX, voxelY, voxelZ);
-}
-
-export function sampleVolumeLabelAtNormalizedPosition(
-  volume: NormalizedVolume,
-  coords: VectorLike,
-): number {
-  if (!isSegmentationVolume(volume)) {
-    return 0;
-  }
-  const voxelX = Math.round(clampValue(coords.x * volume.width, 0, volume.width - 1));
-  const voxelY = Math.round(clampValue(coords.y * volume.height, 0, volume.height - 1));
-  const voxelZ = Math.round(clampValue(coords.z * volume.depth, 0, volume.depth - 1));
-  return volume.labels[(voxelZ * volume.height + voxelY) * volume.width + voxelX] ?? 0;
 }
 
 export function computeVolumeLuminance(values: number[], channels: number): number {

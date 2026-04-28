@@ -279,8 +279,19 @@ export type PreprocessedLayerManifestEntry =
 export function isSparseSegmentationLayerManifest(
   layer: PreprocessedLayerManifestEntry
 ): layer is PreprocessedSparseSegmentationLayerManifestEntry {
-  const candidate = layer as { kind?: PreprocessedLayerKind; isSegmentation?: boolean };
-  return candidate.kind === 'segmentation' || candidate.isSegmentation === true;
+  const candidate = layer as {
+    kind?: PreprocessedLayerKind;
+    isSegmentation?: boolean;
+    representation?: string;
+    sparse?: unknown;
+  };
+  return (
+    candidate.kind === 'segmentation' &&
+    candidate.isSegmentation === true &&
+    candidate.representation === 'sparse-label-bricks-v1' &&
+    candidate.sparse !== null &&
+    typeof candidate.sparse === 'object'
+  );
 }
 
 export function isIntensityLayerManifest(

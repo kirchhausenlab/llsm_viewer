@@ -14,8 +14,7 @@ export type BuildPreprocessScalePyramidMessage = {
   type: 'build-preprocess-scale-pyramid';
   requestId: number;
   layerKey: string;
-  isSegmentation: boolean;
-  storedDataType?: StoredIntensityDataType;
+  storedDataType: StoredIntensityDataType;
   normalization: NormalizationParameters | null;
   rawVolume: {
     width: number;

@@ -43,6 +43,39 @@ Notes:
 - Sparse segmentation output uses `uint32` labels, sparse brick directories, payload shards with CRC32 validation, label metadata, occupancy hierarchy, sparse multiscale pyramids, provider sparse query/slice APIs, sparse WebGL2 atlas resources, local sub-brick occupancy, and hash-based label colors.
 - The dense segmentation runtime helper type still exists for local/test utility code, but preprocessed segmentation cannot reach dense provider, slice, hover, or shader sampling paths.
 
+## 2026-04-28 Legacy Dense Cleanup Completion
+
+Backlog item:
+
+- Legacy dense preprocessed segmentation runtime cleanup from `LEGACY_DENSE_SEGMENTATION_CLEANUP.md`.
+
+Files changed:
+
+- Runtime type/provider/preprocess boundary: `src/core/volumeProcessing.ts`, `src/core/volumeProvider.ts`, `src/workers/preprocessScalePyramid.worker.ts`, `src/workers/preprocessScalePyramidMessages.ts`, `src/shared/utils/preprocessedDataset/preprocess.ts`, `src/shared/utils/preprocessedDataset/preprocessScalePyramidWorker.ts`, `src/shared/utils/preprocessedDataset/types.ts`.
+- Viewer/export paths: `src/components/viewers/volume-viewer/useVolumeResources.ts`, `src/shaders/volumeRenderShader.ts`, `src/components/viewers/volume-viewer/rendering/renderingUtils.ts`, `src/components/viewers/volume-viewer/volumeHoverSampling.ts`, `src/components/viewers/volume-viewer/useVolumeHover.ts`, `src/shared/utils/hoverSampling.ts`, `src/shared/utils/channelExport.ts`, `src/ui/app/volume-loading/policy.ts`, `src/components/viewers/volume-viewer/layerRenderSource.ts`, `src/autoContrast.ts`.
+- Tests and docs: cleanup-related unit tests plus this sparse-segmentation documentation.
+
+Verification:
+
+- `npm run typecheck`: passed.
+- `npm run typecheck:tests`: passed.
+- Focused cleanup suite: passed, 17 tests.
+- Provider/schema route suite: passed, 16 tests.
+- `npm test`: passed, 270 passed and 3 skipped.
+- `npm run verify:fast`: passed, including coverage and build.
+- `npx playwright test --config=playwright.config.ts --project=chromium tests/e2e/viewer-3d-shader-smoke.spec.ts`: passed, 1 Chromium smoke.
+- `git diff --check`: passed.
+- Dense cleanup inventory found no remaining removed-symbol or `u_segmentationLabels` hits in `src` or `tests`.
+- Local provider smoke on `ap2_iso.zarr`: sparse scale 0 segmentation loaded through `full-resident-packed`, intensity volume loading still worked, segmentation `getVolume()` rejected, and diagnostics did not mention dense segmentation volume.
+
+Result:
+
+- Legacy dense preprocessed segmentation is no longer representable through runtime `NormalizedVolume`, `getVolume()`, dense label textures, dense CPU hover/slice sampling, or regular export fallback.
+
+Notes:
+
+- Sparse global segmentation remains sparse end to end. The `dense-local-v1` sparse brick codec and editable segmentation state remain valid and were not migrated by this cleanup.
+
 ## Entry template
 
 Date:

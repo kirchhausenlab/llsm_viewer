@@ -48,9 +48,6 @@ function arrayBufferToBytes(buffer: ArrayBuffer): Uint8Array {
 }
 
 function encodeIntensityVolume(volume: NormalizedVolume): Uint8Array {
-  if (volume.kind !== 'intensity') {
-    throw new Error('Expected an intensity volume.');
-  }
   if (volume.normalizedDataType === 'uint16') {
     if (!(volume.normalized instanceof Uint16Array)) {
       throw new Error('Expected uint16 normalized intensity data.');
@@ -168,20 +165,9 @@ export async function materializeRegularSegmentationSource({
     return materializeSparseSegmentationLabels({ provider, layerKey: layer.key, timepoint });
   }
 
-  const volume = await provider.getVolume(layer.key, timepoint, { scaleLevel: 0 });
-  if (volume.kind !== 'segmentation') {
-    throw new Error(`Layer "${layer.label}" is not a segmentation volume.`);
-  }
-  const labels = new Uint32Array(volume.labels.length);
-  for (let index = 0; index < volume.labels.length; index += 1) {
-    labels[index] = volume.labels[index] ?? 0;
-  }
-  return {
-    width: volume.width,
-    height: volume.height,
-    depth: volume.depth,
-    labels,
-  };
+  throw new Error(
+    `Unsupported legacy dense segmentation layer "${layer.label}". This dataset must be reprocessed with sparse segmentation support before launching the viewer.`
+  );
 }
 
 async function encodeRegularChannelTimepoint({

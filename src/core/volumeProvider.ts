@@ -1258,6 +1258,11 @@ export function createVolumeProvider({
         `Layer ${layer.layerKey} is a sparse segmentation layer and does not expose dense intensity scales.`
       );
     }
+    if (layer.isSegmentation) {
+      throw new Error(
+        `Unsupported legacy dense segmentation layer "${layer.layerKey}". This dataset must be reprocessed with sparse segmentation support before launching the viewer.`
+      );
+    }
     const sorted = [...layer.layer.zarr.scales].sort((left, right) => left.level - right.level);
     if (sorted.length === 0) {
       throw new Error(`Layer ${layer.layerKey} does not define any scales.`);
@@ -1867,18 +1872,7 @@ export function createVolumeProvider({
     const includeHistogram = options?.includeHistogram !== false;
 
     const dataDescriptor = scale.zarr.data;
-    if (layer.isSegmentation) {
-      if (scale.channels !== 1) {
-        throw new Error(
-          `Unsupported segmentation channel count for ${dataDescriptor.path}: expected 1, got ${scale.channels}.`
-        );
-      }
-      if (dataDescriptor.dataType !== 'uint16') {
-        throw new Error(
-          `Unsupported segmentation data type for ${dataDescriptor.path}: expected uint16, got ${dataDescriptor.dataType}.`
-        );
-      }
-    } else if (dataDescriptor.dataType !== 'uint8' && dataDescriptor.dataType !== 'uint16') {
+    if (dataDescriptor.dataType !== 'uint8' && dataDescriptor.dataType !== 'uint16') {
       throw new Error(
         `Unsupported data type for ${dataDescriptor.path}: expected uint8 or uint16, got ${dataDescriptor.dataType}.`
       );
@@ -1911,44 +1905,6 @@ export function createVolumeProvider({
       throw new Error(
         `Volume byte length mismatch for ${dataDescriptor.path} (expected ${expectedByteLength}, got ${volumeBytes.byteLength}).`
       );
-    }
-
-    if (layer.isSegmentation) {
-      const expectedLabelBytes = scale.width * scale.height * scale.depth * 2;
-      if (volumeBytes.byteLength !== expectedLabelBytes) {
-        throw new Error(
-          `Segmentation byte length mismatch for ${dataDescriptor.path} (expected ${expectedLabelBytes}, got ${volumeBytes.byteLength}).`
-        );
-      }
-      const labelBytes =
-        volumeBytes.byteOffset === 0 && volumeBytes.byteLength === volumeBytes.buffer.byteLength
-          ? volumeBytes
-          : volumeBytes.slice();
-      const labels = new Uint16Array(labelBytes.buffer, labelBytes.byteOffset, labelBytes.byteLength / 2);
-      let maxLabel = 0;
-      for (let index = 0; index < labels.length; index += 1) {
-        const labelValue = labels[index] ?? 0;
-        if (labelValue > maxLabel) {
-          maxLabel = labelValue;
-        }
-      }
-      const loadMs = nowMs() - loadStart;
-      stats.totalLoadMs += loadMs;
-      stats.lastLoadMs = loadMs;
-      stats.loadsCompleted += 1;
-      return {
-        kind: 'segmentation',
-        width: scale.width,
-        height: scale.height,
-        depth: scale.depth,
-        channels: 1,
-        dataType: 'uint16',
-        labels,
-        scaleLevel: scale.level,
-        downsampleFactor: scale.downsampleFactor,
-        min: 0,
-        max: maxLabel
-      };
     }
 
     const histogramDescriptor = includeHistogram ? scale.zarr.histogram : undefined;
@@ -2839,7 +2795,7 @@ export function createVolumeProvider({
         layerKey: layer.layerKey,
         timepoint,
         scaleLevel: scale.level,
-        kind: layer.isSegmentation ? 'segmentation' : 'intensity',
+        kind: 'intensity',
         pageTable,
         histogram,
         width: 1,
@@ -2890,7 +2846,7 @@ export function createVolumeProvider({
         layerKey: layer.layerKey,
         timepoint,
         scaleLevel: scale.level,
-        kind: layer.isSegmentation ? 'segmentation' : 'intensity',
+        kind: 'intensity',
         pageTable,
         histogram,
         width: atlasWidth,
@@ -3071,7 +3027,7 @@ export function createVolumeProvider({
       layerKey: layer.layerKey,
       timepoint,
       scaleLevel: scale.level,
-      kind: layer.isSegmentation ? 'segmentation' : 'intensity',
+      kind: 'intensity',
       pageTable,
       histogram,
       width: atlasWidth,

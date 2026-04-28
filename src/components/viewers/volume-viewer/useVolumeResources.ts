@@ -37,7 +37,6 @@ import { getCachedTextureData } from '../../../core/textureCache';
 import {
   createSegmentationColorTable,
   isIntensityVolume,
-  isSegmentationVolume,
   type NormalizedVolume
 } from '../../../core/volumeProcessing';
 import type { VolumeResources } from '../VolumeViewer.types';
@@ -309,7 +308,6 @@ const sharedBackgroundMaskTextureCache = new WeakMap<object, {
 const brickAtlasIndexDataCache = new WeakMap<VolumeBrickPageTable, Float32Array>();
 const normalizedUint16TextureDataCache = new WeakMap<Uint16Array, Float32Array>();
 const segmentationPaletteTextureCache = new Map<string, THREE.DataTexture>();
-const packedSegmentationTextureDataCache = new WeakMap<Uint16Array, Uint8Array>();
 
 function resolveNumericEnvValue(name: string): number {
   const fromImportMeta = Number((import.meta as { env?: Record<string, unknown> })?.env?.[name] ?? Number.NaN);
@@ -983,22 +981,6 @@ function getSegmentationPaletteTexture(layerKey: string): THREE.DataTexture {
   return texture;
 }
 
-function packSegmentationLabelTextureData(labels: Uint16Array): Uint8Array {
-  const cached = packedSegmentationTextureDataCache.get(labels);
-  if (cached) {
-    return cached;
-  }
-  const packed = new Uint8Array(labels.length * 2);
-  for (let index = 0; index < labels.length; index += 1) {
-    const label = labels[index] ?? 0;
-    const targetOffset = index * 2;
-    packed[targetOffset] = label & 0xff;
-    packed[targetOffset + 1] = (label >>> 8) & 0xff;
-  }
-  packedSegmentationTextureDataCache.set(labels, packed);
-  return packed;
-}
-
 function resolvePreparedVolumeTextureState(volume: NormalizedVolume): {
   data: TextureSourceArray;
   format: TextureFormat;
@@ -1007,26 +989,14 @@ function resolvePreparedVolumeTextureState(volume: NormalizedVolume): {
   height: number;
   depth: number;
 } {
-  if (isIntensityVolume(volume)) {
-    const cached = getCachedTextureData(volume);
-    const data = cached?.data ?? FALLBACK_VOLUME_TEXTURE_DATA;
-    const format = cached?.format ?? THREE.RedFormat;
-    const type = data instanceof Float32Array ? THREE.FloatType : THREE.UnsignedByteType;
-    return {
-      data,
-      format,
-      type,
-      width: volume.width,
-      height: volume.height,
-      depth: volume.depth,
-    };
-  }
-
-  const data = packSegmentationLabelTextureData(volume.labels);
+  const cached = getCachedTextureData(volume);
+  const data = cached?.data ?? FALLBACK_VOLUME_TEXTURE_DATA;
+  const format = cached?.format ?? THREE.RedFormat;
+  const type = data instanceof Float32Array ? THREE.FloatType : THREE.UnsignedByteType;
   return {
     data,
-    format: THREE.RGFormat,
-    type: THREE.UnsignedByteType,
+    format,
+    type,
     width: volume.width,
     height: volume.height,
     depth: volume.depth,
@@ -1049,7 +1019,7 @@ export function updateOrCreatePreparedVolumeTexture({
 } {
   const prepared = resolvePreparedVolumeTextureState(volume);
   const nextInternalFormat = null;
-  const nextColorSpace = volume.kind === 'intensity' ? THREE.LinearSRGBColorSpace : THREE.NoColorSpace;
+  const nextColorSpace = THREE.LinearSRGBColorSpace;
   let texture = existing ?? null;
   if (texture) {
     const { width, height, depth } = getTextureDimensions(texture);
@@ -1083,27 +1053,6 @@ export function updateOrCreatePreparedVolumeTexture({
     textureData: prepared.data,
     textureFormat: prepared.format,
     textureType: prepared.type,
-  };
-}
-
-function normalizeSegmentationTextureUpload({
-  data,
-  format,
-  isSegmentation,
-}: {
-  data: TextureSourceArray | null | undefined;
-  format: TextureFormat | null | undefined;
-  isSegmentation: boolean;
-}): {
-  data: TextureSourceArray | null | undefined;
-  format: TextureFormat | null | undefined;
-} {
-  if (!isSegmentation || !(data instanceof Uint16Array) || format !== THREE.RedFormat) {
-    return { data, format };
-  }
-  return {
-    data: packSegmentationLabelTextureData(data),
-    format: THREE.RGFormat,
   };
 }
 
@@ -2620,17 +2569,6 @@ function applyBrickPageTableUniforms(
     uniforms.u_skipHierarchyLevelCount.value = resource.skipHierarchyLevelCount ?? 0;
   }
 
-  const normalizedAtlasUpload = normalizeSegmentationTextureUpload({
-    data: options?.atlasData,
-    format: options?.atlasFormat ?? options?.textureFormat,
-    isSegmentation: Boolean(options?.isSegmentation),
-  });
-  const normalizedTextureUpload = normalizeSegmentationTextureUpload({
-    data: options?.textureData,
-    format: options?.textureFormat,
-    isSegmentation: Boolean(options?.isSegmentation),
-  });
-
   const atlasSourceToken =
     options?.atlasDataToken ??
     options?.textureDataToken ??
@@ -2638,7 +2576,11 @@ function applyBrickPageTableUniforms(
     options?.textureData ??
     null;
   const atlasTextureFilterMode = options?.isSegmentation ? 'nearest' : resolveAtlasTextureFilterMode(uniforms);
-  const atlasFormat = normalizedAtlasUpload.format ?? normalizedTextureUpload.format;
+  const atlasUploadData = options?.atlasData;
+  const atlasUploadFormat = options?.atlasFormat ?? options?.textureFormat;
+  const textureUploadData = options?.textureData;
+  const textureUploadFormat = options?.textureFormat;
+  const atlasFormat = atlasUploadFormat ?? textureUploadFormat;
   const atlasSize = options?.atlasSize;
   const providedAtlasSlotGrid = options?.atlasSlotGrid ?? null;
   const max3DTextureSize = options?.max3DTextureSize ?? null;
@@ -2646,7 +2588,7 @@ function applyBrickPageTableUniforms(
   const viewPriority = options?.viewPriority ?? null;
   const forceFullResidency = options?.forceFullResidency ?? false;
   const shouldUseAsyncFullResidencyBuild = forceFullResidency && Boolean(resource.playbackWarmupForLayerKey);
-  const byteAtlasData = normalizedAtlasUpload.data instanceof Uint8Array ? normalizedAtlasUpload.data : null;
+  const byteAtlasData = atlasUploadData instanceof Uint8Array ? atlasUploadData : null;
   const shouldUseGpuResidency =
     Boolean(
       byteAtlasData &&
@@ -2657,7 +2599,7 @@ function applyBrickPageTableUniforms(
     );
   let exactBatchPlan: Extract<SparseSegmentationRenderStrategy, { kind: 'exact-batched' }> | null = null;
 
-  if (options?.isSegmentation && atlasSize && normalizedAtlasUpload.data && atlasFormat) {
+  if (options?.isSegmentation && atlasSize && atlasUploadData && atlasFormat) {
     const budget = resolveSparseSegmentationRenderBudget(max3DTextureSize, maxTextureSize);
     const plan = planSparseSegmentationRender({
       pageTable: resolvedPageTable,
@@ -2714,7 +2656,7 @@ function applyBrickPageTableUniforms(
           missingOccupiedBrickCount: invalidOccupiedSlotCount,
           slotGrid: actualSlotGrid,
           atlasSize,
-          atlasBytes: normalizedAtlasUpload.data.byteLength,
+          atlasBytes: atlasUploadData.byteLength,
           max3DTextureSize: budget.max3DTextureSize,
           maxTextureSize: budget.maxTextureSize,
           budgetBytes: budget.maxAtlasBytes,
@@ -2737,7 +2679,7 @@ function applyBrickPageTableUniforms(
         missingOccupiedBrickCount: 0,
         slotGrid: actualSlotGrid,
         atlasSize,
-        atlasBytes: normalizedAtlasUpload.data.byteLength,
+        atlasBytes: atlasUploadData.byteLength,
         max3DTextureSize: budget.max3DTextureSize,
         maxTextureSize: budget.maxTextureSize,
         budgetBytes: budget.maxAtlasBytes,
@@ -3077,7 +3019,7 @@ function applyBrickPageTableUniforms(
   brickSubcellGridUniform.set(brickSubcellGrid.x, brickSubcellGrid.y, brickSubcellGrid.z);
   resource.playbackWarmupReady = null;
 
-  if (exactBatchPlan && normalizedAtlasUpload.data instanceof Uint8Array && atlasSize && atlasFormat) {
+  if (exactBatchPlan && atlasUploadData instanceof Uint8Array && atlasSize && atlasFormat) {
     const chunkDepth = Math.max(1, resolvedPageTable.chunkShape[0]);
     const sourceSlotGrid =
       providedAtlasSlotGrid ??
@@ -3088,7 +3030,7 @@ function applyBrickPageTableUniforms(
       };
     const exactBatchSource = {
       pageTable: resolvedPageTable,
-      sourceAtlasData: normalizedAtlasUpload.data,
+      sourceAtlasData: atlasUploadData,
       sourceAtlasSize: atlasSize,
       sourceSlotGrid,
       textureFormat: atlasFormat,
@@ -3101,7 +3043,7 @@ function applyBrickPageTableUniforms(
     disposeBrickAtlasDataTexture(resource);
     resource.brickAtlasSourceToken =
       typeof atlasSourceToken === 'object' && atlasSourceToken !== null ? atlasSourceToken : null;
-    resource.brickAtlasSourceData = normalizedAtlasUpload.data;
+    resource.brickAtlasSourceData = atlasUploadData;
     resource.brickAtlasSourceFormat = atlasFormat;
     resource.brickAtlasSourcePageTable = resolvedPageTable;
     resource.brickAtlasSlotGrid = exactBatchPlan.batchSlotGrid;
@@ -3201,7 +3143,7 @@ function applyBrickPageTableUniforms(
 
   if (!atlasBuild) {
     atlasBuild = (() => {
-      if (normalizedAtlasUpload.data && atlasFormat && atlasSize) {
+      if (atlasUploadData && atlasFormat && atlasSize) {
         const components = getTextureComponentsFromFormat(atlasFormat);
         const expectedLength =
           atlasSize.width * atlasSize.height * atlasSize.depth * (components ?? 0);
@@ -3211,10 +3153,10 @@ function applyBrickPageTableUniforms(
           atlasSize.height > 0 &&
           atlasSize.depth > 0 &&
           expectedLength > 0 &&
-          normalizedAtlasUpload.data.length === expectedLength
+          atlasUploadData.length === expectedLength
         ) {
           return {
-            data: normalizedAtlasUpload.data,
+            data: atlasUploadData,
             width: atlasSize.width,
             height: atlasSize.height,
             depth: atlasSize.depth,
@@ -3225,11 +3167,11 @@ function applyBrickPageTableUniforms(
         return null;
       }
 
-      if (normalizedTextureUpload.data && normalizedTextureUpload.format) {
+      if (textureUploadData && textureUploadFormat) {
         return buildBrickAtlasDataTexture({
           pageTable: resolvedPageTable,
-          textureData: normalizedTextureUpload.data,
-          textureFormat: normalizedTextureUpload.format,
+          textureData: textureUploadData,
+          textureFormat: textureUploadFormat,
         });
       }
 
@@ -3322,7 +3264,7 @@ function applyBrickPageTableUniforms(
     atlasTexturesDirty,
   );
   resource.brickAtlasSourceToken = atlasSourceToken;
-  resource.brickAtlasSourceData = normalizedAtlasUpload.data ?? normalizedTextureUpload.data ?? null;
+  resource.brickAtlasSourceData = atlasUploadData ?? textureUploadData ?? null;
   resource.brickAtlasSourceFormat = atlasFormat ?? null;
   resource.brickAtlasSourcePageTable = resolvedPageTable;
   resource.brickAtlasSlotGrid = atlasSlotGrid;
@@ -3983,7 +3925,6 @@ export function useVolumeResources({
         ? Number(layer.sliceIndex)
         : Math.round(safeZClipFront * Math.max(dataDepthForSlice - 1, 0));
       const intensityVolume = volume && isIntensityVolume(volume) ? volume : null;
-      const segmentationVolume = volume && isSegmentationVolume(volume) ? volume : null;
       const segmentationPaletteTexture = layer.isSegmentation
         ? getSegmentationPaletteTexture(layer.key)
         : null;
@@ -4012,19 +3953,12 @@ export function useVolumeResources({
         if (intensityVolume) {
           cachedPreparation = getCachedTextureData(intensityVolume);
         }
-        const packedSegmentationTextureData = segmentationVolume
-          ? packSegmentationLabelTextureData(segmentationVolume.labels)
-          : null;
         const textureData = intensityVolume
           ? (cachedPreparation?.data ?? FALLBACK_VOLUME_TEXTURE_DATA)
-          : segmentationVolume
-            ? (packedSegmentationTextureData ?? new Uint8Array([0, 0]))
-            : FALLBACK_VOLUME_TEXTURE_DATA;
+          : FALLBACK_VOLUME_TEXTURE_DATA;
         const textureFormat = intensityVolume
           ? (cachedPreparation?.format ?? THREE.RedFormat)
-          : segmentationVolume
-            ? THREE.RGFormat
-            : THREE.RedFormat;
+          : THREE.RedFormat;
         const textureType = textureData instanceof Float32Array ? THREE.FloatType : THREE.UnsignedByteType;
         const directAtlasFormat = brickAtlas ? getTextureFormatFromBrickAtlas(brickAtlas) : null;
         const proxyVisibleBox = resolveBackgroundMaskVisibleBox(layer.backgroundMask ?? null, {
@@ -4088,9 +4022,6 @@ export function useVolumeResources({
             uniforms.u_isSegmentation.value = layer.isSegmentation ? 1 : 0;
           }
           uniforms.u_size.value.set(width, height, depth);
-          if (uniforms.u_segmentationVolumeSize) {
-            uniforms.u_segmentationVolumeSize.value.set(dataWidth, dataHeight, dataDepth);
-          }
           uniforms.u_clim.value.set(0, 1);
           uniforms.u_renderstyle.value = layer.renderStyle;
           uniforms.u_renderthreshold.value = 0.5;
@@ -4107,9 +4038,6 @@ export function useVolumeResources({
           applyAdaptiveLodUniforms(uniforms as ShaderUniformMap, effectiveSamplingMode, projectionMode);
           applyBeerLambertUniforms(uniforms as ShaderUniformMap, layer);
           applySegmentationColorSeedUniform(uniforms as ShaderUniformMap, layer.key);
-          if (uniforms.u_segmentationLabels) {
-            uniforms.u_segmentationLabels.value = layer.isSegmentation ? texture : FALLBACK_SEGMENTATION_LABEL_TEXTURE;
-          }
           if (uniforms.u_segmentationBrickAtlasData) {
             uniforms.u_segmentationBrickAtlasData.value = FALLBACK_SEGMENTATION_LABEL_TEXTURE;
           }
@@ -4238,12 +4166,7 @@ export function useVolumeResources({
                     disableBrickPageTableSampling: shouldDisableDirectVolumeBrickPageTableSampling,
                     isSegmentation: false,
                   }
-                : segmentationVolume
-                  ? {
-                      disableBrickPageTableSampling: true,
-                      isSegmentation: true,
-                    }
-                  : undefined,
+                : undefined,
           );
           const activeVolumeShaderSourceMode = resolveBoundVolumeShaderSourceMode(
             preferredVolumeShaderSourceMode,
@@ -4650,20 +4573,15 @@ export function useVolumeResources({
                     isSegmentation: layer.isSegmentation,
                     onAsyncFullResidencyPacked: notifyAsyncFullResidencyPacked,
                   }
-                : intensityVolume && preparation
-                  ? {
-                      textureDataToken: intensityVolume.normalized,
-                      textureData: preparation.data,
-                      textureFormat: preparation.format,
-                      max3DTextureSize,
-                      preferDirectVolumeSampling,
-                      disableBrickPageTableSampling: shouldDisableDirectVolumeBrickPageTableSampling,
-                      isSegmentation: false,
-                    }
-                  : segmentationVolume
+                  : intensityVolume && preparation
                     ? {
-                        disableBrickPageTableSampling: true,
-                        isSegmentation: true,
+                        textureDataToken: intensityVolume.normalized,
+                        textureData: preparation.data,
+                        textureFormat: preparation.format,
+                        max3DTextureSize,
+                        preferDirectVolumeSampling,
+                        disableBrickPageTableSampling: shouldDisableDirectVolumeBrickPageTableSampling,
+                        isSegmentation: false,
                       }
                     : undefined
             );
@@ -4692,19 +4610,11 @@ export function useVolumeResources({
             directAtlasFormat,
           });
 	          let dataTexture = resources.texture as THREE.Data3DTexture;
-	          const nextTextureData = preparation
-	            ? preparation.data
-	            : segmentationVolume
-              ? packSegmentationLabelTextureData(segmentationVolume.labels)
-              : FALLBACK_VOLUME_TEXTURE_DATA;
-          const nextTextureWidth = preparation || segmentationVolume ? dataWidth : 1;
-          const nextTextureHeight = preparation || segmentationVolume ? dataHeight : 1;
-          const nextTextureDepth = preparation || segmentationVolume ? dataDepth : 1;
-	          const nextTextureFormat = preparation
-	            ? preparation.format
-	            : segmentationVolume
-	              ? THREE.RGFormat
-	              : THREE.RedFormat;
+	          const nextTextureData = preparation ? preparation.data : FALLBACK_VOLUME_TEXTURE_DATA;
+          const nextTextureWidth = preparation ? dataWidth : 1;
+          const nextTextureHeight = preparation ? dataHeight : 1;
+          const nextTextureDepth = preparation ? dataDepth : 1;
+	          const nextTextureFormat = preparation ? preparation.format : THREE.RedFormat;
 	          const nextTextureType = nextTextureData instanceof Float32Array ? THREE.FloatType : THREE.UnsignedByteType;
 	          const nextTextureInternalFormat = null;
 	          const nextTextureColorSpace = layer.isSegmentation ? THREE.NoColorSpace : THREE.LinearSRGBColorSpace;
@@ -4765,22 +4675,8 @@ export function useVolumeResources({
               sizeUniform.set(width, height, depth);
             }
           }
-          if (materialUniforms.u_segmentationVolumeSize) {
-            const segmentationVolumeSize = materialUniforms.u_segmentationVolumeSize.value as THREE.Vector3;
-            if (
-              segmentationVolumeSize.x !== dataWidth ||
-              segmentationVolumeSize.y !== dataHeight ||
-              segmentationVolumeSize.z !== dataDepth
-            ) {
-              segmentationVolumeSize.set(dataWidth, dataHeight, dataDepth);
-            }
-          }
           resources.paletteTexture = segmentationPaletteTexture;
           resources.labelTexture = null;
-          if (materialUniforms.u_segmentationLabels) {
-            materialUniforms.u_segmentationLabels.value =
-              layer.isSegmentation ? dataTexture : FALLBACK_SEGMENTATION_LABEL_TEXTURE;
-          }
           if (materialUniforms.u_segmentationBrickAtlasData && !brickAtlas) {
             materialUniforms.u_segmentationBrickAtlasData.value = FALLBACK_SEGMENTATION_LABEL_TEXTURE;
           }

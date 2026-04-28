@@ -223,21 +223,14 @@ function createSyntheticPageTableFromVolume(volume: NormalizedVolume): VolumeBri
   let min = 255;
   let max = 0;
   let occupied = 0;
-  const source =
-    'labels' in volume && volume.labels instanceof Uint16Array
-      ? volume.labels
-      : volume.normalized;
+  const source = volume.normalized;
   for (let index = 0; index < source.length; index += 1) {
     const value = source[index] ?? 0;
-    const encodedValue =
-      'labels' in volume && volume.labels instanceof Uint16Array
-        ? (value > 0 ? 255 : 0)
-        : value;
-    if (encodedValue < min) {
-      min = encodedValue;
+    if (value < min) {
+      min = value;
     }
-    if (encodedValue > max) {
-      max = encodedValue;
+    if (value > max) {
+      max = value;
     }
     if (value > 0) {
       occupied += 1;
@@ -344,7 +337,7 @@ const createLayer = (
   invert: false,
   samplingMode,
   mode: '3d',
-  isSegmentation: volume?.kind === 'segmentation' || brickAtlas?.kind === 'segmentation',
+  isSegmentation: brickAtlas?.kind === 'segmentation',
   brickPageTable: resolvedPageTable,
   brickAtlas: resolvedBrickAtlas,
   };
@@ -1013,80 +1006,6 @@ await (async () => {
   const material = resource.mesh.material as THREE.ShaderMaterial;
   const uniforms = material.uniforms as Record<string, { value: unknown }>;
   assert.equal(uniforms.u_brickSkipEnabled?.value, 0);
-})();
-
-(() => {
-  const volume: NormalizedVolume = {
-    kind: 'segmentation',
-    width: 4,
-    height: 1,
-    depth: 1,
-    channels: 1,
-    dataType: 'uint16',
-    labels: new Uint16Array([0, 0, 5, 0]),
-    min: 0,
-    max: 5,
-  };
-  const pageTable = withSyntheticSkipHierarchy({
-    layerKey: 'layer-3d',
-    timepoint: 0,
-    scaleLevel: 0,
-    gridShape: [1, 1, 2],
-    chunkShape: [1, 1, 2],
-    volumeShape: [1, 1, 4],
-    brickAtlasIndices: new Int32Array([-1, 0]),
-    chunkMin: new Uint8Array([255, 255]),
-    chunkMax: new Uint8Array([0, 255]),
-    chunkOccupancy: new Float32Array([0, 1]),
-    occupiedBrickCount: 1,
-  });
-
-  const sceneRef = { current: new THREE.Scene() };
-  const cameraRef = { current: new THREE.PerspectiveCamera(75, 1, 0.1, 10) };
-  const controlsRef = {
-    current: {
-      target: new THREE.Vector3(),
-      update: () => {},
-      saveState: () => {},
-    } as unknown as THREE.OrbitControls,
-  };
-  const resourcesRef = { current: new Map<string, VolumeResources>() };
-
-  renderHook(() =>
-    useVolumeResources({
-      layers: [createLayer(volume, pageTable, null, 'nearest')],
-      primaryVolume: volume,
-      isAdditiveBlending: false,
-      renderContextRevision: 0,
-      sceneRef,
-      cameraRef,
-      controlsRef,
-      rotationTargetRef: { current: new THREE.Vector3() },
-      defaultViewStateRef: { current: null },
-      trackGroupRef: { current: new THREE.Group() },
-      resourcesRef,
-      currentDimensionsRef: { current: null },
-      colormapCacheRef: { current: new Map() },
-      volumeRootGroupRef: { current: new THREE.Group() },
-      volumeRootBaseOffsetRef: { current: new THREE.Vector3() },
-      volumeRootCenterOffsetRef: { current: new THREE.Vector3() },
-      volumeRootCenterUnscaledRef: { current: new THREE.Vector3() },
-      volumeRootHalfExtentsRef: { current: new THREE.Vector3() },
-      volumeNormalizationScaleRef: { current: 1 },
-      volumeUserScaleRef: { current: 1 },
-      volumeStepScaleRef: { current: 1 },
-      volumeYawRef: { current: 0 },
-      volumePitchRef: { current: 0 },
-      volumeRootRotatedCenterTempRef: { current: new THREE.Vector3() },
-      applyTrackGroupTransform: () => {},
-      applyVolumeRootTransform: () => {},
-      applyVolumeStepScaleToResources: () => {},
-      applyHoverHighlightToResources: () => {},
-    }),
-  );
-
-  const resource = resourcesRef.current.get('layer-3d');
-  assert.equal(resource, undefined);
 })();
 
 (() => {
@@ -1933,10 +1852,6 @@ await (async () => {
   assert.deepStrictEqual(
     ((uniforms.u_size?.value as THREE.Vector3) ?? new THREE.Vector3()).toArray(),
     [4, 4, 4]
-  );
-  assert.deepStrictEqual(
-    ((uniforms.u_segmentationVolumeSize?.value as THREE.Vector3) ?? new THREE.Vector3()).toArray(),
-    [2, 2, 2]
   );
 })();
 

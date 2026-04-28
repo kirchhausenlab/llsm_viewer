@@ -1,7 +1,6 @@
 import * as THREE from 'three';
 import {
   getNormalizedIntensityDenominator,
-  isSegmentationVolume,
   type NormalizedVolume
 } from '../../../../core/volumeProcessing';
 import type { VolumeBrickAtlasTextureFormat, VolumeBrickPageTable } from '../../../../core/volumeProvider';
@@ -26,40 +25,20 @@ export function prepareSliceTexture(
   existingBuffer: Uint8Array | Float32Array | null,
   segmentationColorTable: Uint8Array | null = null,
 ) {
+  void segmentationColorTable;
   const { width, height, depth } = volume;
   const pixelCount = width * height;
   const targetLength = pixelCount * 4;
 
   let buffer = existingBuffer ?? null;
   if (!buffer || buffer.length !== targetLength) {
-    buffer = isSegmentationVolume(volume) || volume.normalizedDataType === 'uint8'
+    buffer = volume.normalizedDataType === 'uint8'
       ? new Uint8Array(targetLength)
       : new Float32Array(targetLength);
   }
 
   const maxIndex = Math.max(0, depth - 1);
   const clampedIndex = Math.min(Math.max(sliceIndex, 0), maxIndex);
-  if (isSegmentationVolume(volume)) {
-    const sliceOffset = clampedIndex * pixelCount;
-    for (let i = 0; i < pixelCount; i += 1) {
-      const label = volume.labels[sliceOffset + i] ?? 0;
-      const targetOffset = i * 4;
-      if (segmentationColorTable) {
-        const colorOffset = label * 4;
-        buffer[targetOffset] = segmentationColorTable[colorOffset] ?? 0;
-        buffer[targetOffset + 1] = segmentationColorTable[colorOffset + 1] ?? 0;
-        buffer[targetOffset + 2] = segmentationColorTable[colorOffset + 2] ?? 0;
-        buffer[targetOffset + 3] = segmentationColorTable[colorOffset + 3] ?? 0;
-      } else {
-        const clamped = Math.min(label, 255);
-        buffer[targetOffset] = clamped;
-        buffer[targetOffset + 1] = clamped;
-        buffer[targetOffset + 2] = clamped;
-        buffer[targetOffset + 3] = label > 0 ? 255 : 0;
-      }
-    }
-    return { data: buffer, format: THREE.RGBAFormat } as const;
-  }
 
   const { channels, normalized, normalizedDataType } = volume;
   const denominator = getNormalizedIntensityDenominator(normalizedDataType);

@@ -1,8 +1,6 @@
 import assert from 'node:assert/strict';
 
 import {
-  canonicalizeSegmentationTypedArray,
-  canonicalizeSegmentationVolume,
   createSegmentationColorTable,
   normalizeTypedArray,
   normalizeVolume
@@ -76,26 +74,6 @@ const constantNormalization = normalizeVolume(constantFloatVolume, { min: 0, max
 assert.strictEqual(constantNormalization.kind, 'intensity');
 assert.deepEqual(Array.from(constantNormalization.normalized), [255, 255, 255, 255]);
 
-const segmentation = new Uint8Array([0, 1, 1, 2]);
-const segmentationVolume: VolumePayload = {
-  width: 4,
-  height: 1,
-  depth: 1,
-  channels: 1,
-  dataType: 'uint8',
-  data: segmentation.buffer,
-  min: 0,
-  max: 2
-};
-
-const canonicalized = canonicalizeSegmentationVolume(segmentationVolume);
-assert.strictEqual(canonicalized.kind, 'segmentation');
-assert.strictEqual(canonicalized.channels, 1);
-assert.strictEqual(canonicalized.dataType, 'uint16');
-assert.deepEqual(Array.from(canonicalized.labels), [0, 1, 1, 2]);
-assert.strictEqual(canonicalized.min, 0);
-assert.strictEqual(canonicalized.max, 2);
-
 const seed = 12345;
 const colorTable = createSegmentationColorTable(seed);
 assert.deepEqual(Array.from(colorTable.slice(0, 4)), [0, 0, 0, 0]);
@@ -109,22 +87,6 @@ assert.strictEqual(secondLabelColor[3], 255);
 
 const rerunColorTable = createSegmentationColorTable(seed);
 assert.deepEqual(Array.from(rerunColorTable), Array.from(colorTable));
-
-const fractionalSegmentation = new Float32Array([-1, 0.2, 0.8, 1.2, 1.6]);
-const fractionalVolume: VolumePayload = {
-  width: fractionalSegmentation.length,
-  height: 1,
-  depth: 1,
-  channels: 1,
-  dataType: 'float32',
-  data: fractionalSegmentation.buffer,
-  min: -1,
-  max: 2
-};
-
-const fractionalCanonicalized = canonicalizeSegmentationVolume(fractionalVolume);
-assert.deepEqual(Array.from(fractionalCanonicalized.labels), [0, 0, 1, 1, 2]);
-assert.strictEqual(fractionalCanonicalized.max, 2);
 
 const offsetUint8 = new Uint8Array([99, 0, 64, 128, 255, 77]);
 const offsetUint8View = offsetUint8.subarray(1, 5);
@@ -154,25 +116,5 @@ const normalizedFromView = normalizeTypedArray({
 });
 assert.strictEqual(normalizedFromView.kind, 'intensity');
 assert.deepEqual(Array.from(normalizedFromView.normalized), [0, 64, 128, 191, 255]);
-
-const segmentedFromView = canonicalizeSegmentationTypedArray({
-  width: 4,
-  height: 1,
-  depth: 1,
-  dataType: 'uint8',
-  source: offsetUint8View
-});
-const offsetSegmentationVolume: VolumePayload = {
-  width: 4,
-  height: 1,
-  depth: 1,
-  channels: 1,
-  dataType: 'uint8',
-  data: new Uint8Array(offsetUint8View).buffer,
-  min: 0,
-  max: 255
-};
-const segmentedFromVolume = canonicalizeSegmentationVolume(offsetSegmentationVolume);
-assert.deepEqual(Array.from(segmentedFromView.labels), Array.from(segmentedFromVolume.labels));
 
 console.log('volumeProcessing normalization tests passed');

@@ -560,6 +560,8 @@ These invariants must be tested:
 
 Once full-resident packed sparse segmentation and exact batched rendering are in place, delete or isolate the old dense segmentation runtime path.
 
+The execution handoff for that cleanup is `docs/sparse-segmentation/LEGACY_DENSE_SEGMENTATION_CLEANUP.md`. Use that document as the source of truth for boundaries, sequencing, target files, tests, and the fresh-agent prompt.
+
 Candidate cleanup targets:
 
 - `SegmentationVolume` in `src/core/volumeProcessing.ts`

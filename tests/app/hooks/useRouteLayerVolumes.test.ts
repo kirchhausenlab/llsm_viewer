@@ -1752,6 +1752,7 @@ await (async () => {
                 kind: 'segmentation',
                 key: 'layer-seg',
                 isSegmentation: true,
+                representation: 'sparse-label-bricks-v1',
                 sparse: {
                   scales: [
                     {

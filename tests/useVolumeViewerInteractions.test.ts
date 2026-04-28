@@ -21,7 +21,6 @@ console.log('Starting useVolumeViewerInteractions tests');
       u_hoverActive: { value: 0 },
       u_hoverSegmentationMode: { value: 0 },
       u_hoverLabel: { value: 0 },
-      u_segmentationLabels: { value: null },
       u_hoverPos: { value: new THREE.Vector3() },
       u_hoverRadius: { value: 0 },
       u_hoverScale: { value: new THREE.Vector3() },
@@ -69,7 +68,6 @@ console.log('Starting useVolumeViewerInteractions tests');
   result.applyHoverHighlightToResources();
 
   const uniforms = (material as THREE.ShaderMaterial).uniforms;
-  assert.strictEqual(uniforms.u_segmentationLabels.value, null);
   assert.strictEqual(uniforms.u_hoverVisualMode.value, 0);
   assert.strictEqual(uniforms.u_hoverStrength.value, 0);
 })();
