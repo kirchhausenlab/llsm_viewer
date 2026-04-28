@@ -10,11 +10,11 @@ import type {
 } from '../types/voxelResolution';
 
 const DEFAULT_VOXEL_RESOLUTION: VoxelResolutionInput = {
-  x: '1.0',
-  y: '1.0',
-  z: '1.0',
+  x: '104',
+  y: '104',
+  z: '260',
   t: '1.0',
-  unit: 'μm',
+  unit: 'nm',
   timeUnit: 's',
   correctAnisotropy: false
 };

@@ -69,10 +69,6 @@ const CAMERA_FACE_DESKEW_AXES = {
   Y: new THREE.Vector3(1, 0, 0),
 } as const;
 
-function isDeskewGlassFaceAffected(face: CameraFaceView, deskew: CameraFaceViewDeskewOptions): boolean {
-  return deskew.direction === 'X' ? face === 'xy' || face === 'yz' : face === 'xy' || face === 'xz';
-}
-
 function resolveCameraFaceOrientation(
   face: CameraFaceView,
   deskew: CameraFaceViewDeskewOptions | null | undefined
@@ -81,7 +77,7 @@ function resolveCameraFaceOrientation(
   if (!baseOrientation) {
     return null;
   }
-  if (!deskew || !isDeskewGlassFaceAffected(face, deskew)) {
+  if (!deskew) {
     return baseOrientation;
   }
 

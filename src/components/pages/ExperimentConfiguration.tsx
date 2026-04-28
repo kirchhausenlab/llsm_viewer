@@ -98,7 +98,7 @@ const ExperimentConfiguration: FC<ExperimentConfigurationProps> = ({
               <input
                 type="number"
                 inputMode="decimal"
-                step="any"
+                step={0.1}
                 value={voxelResolution[axis]}
                 onChange={(event) => onVoxelResolutionAxisChange(axis, event.target.value)}
                 disabled={isFrontPageLocked}
@@ -126,7 +126,7 @@ const ExperimentConfiguration: FC<ExperimentConfigurationProps> = ({
                 <input
                   type="number"
                   inputMode="decimal"
-                  step="any"
+                  step={1}
                   value={voxelResolution.t}
                   onChange={(event) => onVoxelResolutionAxisChange('t', event.target.value)}
                   disabled={isFrontPageLocked}

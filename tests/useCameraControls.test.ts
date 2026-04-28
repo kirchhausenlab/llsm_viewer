@@ -248,7 +248,7 @@ test('camera face views keep the current target when following', () => {
   });
 });
 
-test('camera face glass views apply deskew tilt to affected faces', () => {
+test('camera face glass views apply deskew tilt to the full glass basis', () => {
   withWindowMock(() => {
     const hook = renderHook(() =>
       useCameraControls({
@@ -299,6 +299,27 @@ test('camera face glass views apply deskew tilt to affected faces', () => {
     assertNearlyEqual(camera.position.x, 0);
     assertNearlyEqual(camera.position.y, -10);
     assertNearlyEqual(camera.position.z, 0);
+    assertNearlyEqual(camera.up.x, Math.SQRT1_2);
+    assertNearlyEqual(camera.up.y, 0);
+    assertNearlyEqual(camera.up.z, Math.SQRT1_2);
+
+    camera.position.set(0, 0, 10);
+    controls.target.set(0, 0, 0);
+    assert.equal(
+      hook.result.applyCameraFaceView('yz', {
+        deskew: {
+          angleRadians: Math.PI / 4,
+          direction: 'Y',
+        },
+      }),
+      true,
+    );
+    assertNearlyEqual(camera.position.x, 10);
+    assertNearlyEqual(camera.position.y, 0);
+    assertNearlyEqual(camera.position.z, 0);
+    assertNearlyEqual(camera.up.x, 0);
+    assertNearlyEqual(camera.up.y, Math.SQRT1_2);
+    assertNearlyEqual(camera.up.z, Math.SQRT1_2);
 
     hook.unmount();
   });

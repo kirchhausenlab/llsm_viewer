@@ -51,6 +51,16 @@ function findCheckboxByLabel(root: ReactTestInstance, label: string): ReactTestI
   });
 }
 
+function findResolutionInputByLabel(root: ReactTestInstance, label: string): ReactTestInstance {
+  const labelNode = root
+    .findAllByProps({ className: 'voxel-resolution-field-label' })
+    .find((node: ReactTestInstance) => node.children.join('') === label);
+  assert.ok(labelNode);
+  const input = labelNode.parent?.findByType('input');
+  assert.ok(input);
+  return input;
+}
+
 test('experiment configuration renders renamed masking and force 8bit controls', () => {
   let force8BitToggled: boolean | null = null;
   const renderer = TestRenderer.create(
@@ -74,6 +84,21 @@ test('experiment configuration renders renamed masking and force 8bit controls',
     target: { checked: true }
   });
   assert.equal(force8BitToggled, true);
+
+  renderer.unmount();
+});
+
+test('experiment configuration uses spatial and temporal resolution step sizes', () => {
+  const renderer = TestRenderer.create(<ExperimentConfiguration {...buildExperimentConfigurationProps()} />);
+
+  const spatialInputs = ['X:', 'Y:', 'Z:'].map((label) => findResolutionInputByLabel(renderer.root, label));
+  assert.deepEqual(
+    spatialInputs.map((input) => input.props.step),
+    [0.1, 0.1, 0.1]
+  );
+
+  const temporalInput = findResolutionInputByLabel(renderer.root, 'T:');
+  assert.equal(temporalInput.props.step, 1);
 
   renderer.unmount();
 });

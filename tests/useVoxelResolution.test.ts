@@ -9,11 +9,14 @@ console.log('Starting useVoxelResolution tests');
 (() => {
   const hook = renderHook(() => useVoxelResolution());
 
-  assert.strictEqual(hook.result.voxelResolutionInput.x, '1.0');
+  assert.strictEqual(hook.result.voxelResolutionInput.x, '104');
+  assert.strictEqual(hook.result.voxelResolutionInput.y, '104');
+  assert.strictEqual(hook.result.voxelResolutionInput.z, '260');
   assert.strictEqual(hook.result.voxelResolutionInput.t, '1.0');
-  assert.strictEqual(hook.result.voxelResolutionInput.unit, 'μm');
+  assert.strictEqual(hook.result.voxelResolutionInput.unit, 'nm');
   assert.strictEqual(hook.result.voxelResolutionInput.timeUnit, 's');
   assert.strictEqual(hook.result.voxelResolutionInput.correctAnisotropy, false);
+  assert.deepEqual(hook.result.voxelResolution, { x: 104, y: 104, z: 260, unit: 'nm' });
 })();
 
 (() => {
