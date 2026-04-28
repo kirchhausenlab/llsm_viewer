@@ -356,6 +356,17 @@ function buildRoiLineGeometry(spec: VisibleRoiSpec): RoiRenderResource['geometry
   return geometry;
 }
 
+function resolveRoiForCurrentZ(roi: RoiDefinition, selectedZIndex: number): RoiDefinition {
+  if (roi.mode !== '2d') {
+    return roi;
+  }
+  return {
+    ...roi,
+    start: { ...roi.start, z: selectedZIndex },
+    end: { ...roi.end, z: selectedZIndex },
+  };
+}
+
 export function updateRoiResourceGeometry(resource: RoiRenderResource, spec: VisibleRoiSpec) {
   const nextGeometry = buildRoiLineGeometry(spec);
   resource.line.geometry.dispose();
@@ -404,14 +415,15 @@ function buildVisibleRoiSpecs(
       shouldBlink: workingRepresentsActiveSaved,
     });
   } else if (roiConfig.workingRoi) {
+    const workingRoi = resolveRoiForCurrentZ(roiConfig.workingRoi, roiConfig.selectedZIndex);
     visible.push({
       key: ROI_WORKING_KEY,
       roiId: ROI_WORKING_KEY,
-      shape: roiConfig.workingRoi.shape,
-      mode: roiConfig.workingRoi.mode,
-      start: roiConfig.workingRoi.start,
-      end: roiConfig.workingRoi.end,
-      color: roiConfig.workingRoi.color,
+      shape: workingRoi.shape,
+      mode: workingRoi.mode,
+      start: workingRoi.start,
+      end: workingRoi.end,
+      color: workingRoi.color,
       isInvalid: false,
       shouldBlink: workingRepresentsActiveSaved,
     });
@@ -427,14 +439,15 @@ function buildVisibleRoiSpecs(
     if ((previewState || moveSession?.hasMoved || roiConfig.workingRoi) && roi.id === roiConfig.editingSavedRoiId) {
       continue;
     }
+    const visibleRoi = resolveRoiForCurrentZ(roi, roiConfig.selectedZIndex);
     visible.push({
       key: `roi:saved:${roi.id}`,
       roiId: roi.id,
-      shape: roi.shape,
-      mode: roi.mode,
-      start: roi.start,
-      end: roi.end,
-      color: roi.color,
+      shape: visibleRoi.shape,
+      mode: visibleRoi.mode,
+      start: visibleRoi.start,
+      end: visibleRoi.end,
+      color: visibleRoi.color,
       isInvalid: false,
       shouldBlink: roi.id === roiConfig.activeSavedRoiId,
     });
@@ -637,19 +650,21 @@ export function useRoiRendering({
   );
 
   const commitPreviewRoi = useCallback(
-    (nextWorkingRoi: RoiDefinition | null) => {
-      roiConfigRef.current?.onWorkingRoiChange(nextWorkingRoi);
+    (nextWorkingRoi: RoiDefinition | null, options?: { detach?: boolean }) => {
+      roiConfigRef.current?.onWorkingRoiChange(nextWorkingRoi, options);
     },
     []
   );
 
   const resolveSourceRoi = useCallback((roiId: string, config: ViewerRoiConfig) => {
     if (roiId === ROI_WORKING_KEY) {
-      return config.workingRoi ? cloneRoiDefinition(config.workingRoi) : null;
+      return config.workingRoi
+        ? resolveRoiForCurrentZ(cloneRoiDefinition(config.workingRoi), config.selectedZIndex)
+        : null;
     }
 
     const savedRoi = config.savedRois.find((roi) => roi.id === roiId);
-    return savedRoi ? cloneRoiDefinition(savedRoi) : null;
+    return savedRoi ? resolveRoiForCurrentZ(cloneRoiDefinition(savedRoi), config.selectedZIndex) : null;
   }, []);
 
   const beginMoveInteraction = useCallback(
@@ -747,8 +762,7 @@ export function useRoiRendering({
         if (!localRay || !bounds) {
           return true;
         }
-        const zIndex = config.twoDCurrentZEnabled ? config.selectedZIndex : config.twoDStartZIndex;
-        const preview = resolve2dPreviewPoint(localRay, bounds, zIndex);
+        const preview = resolve2dPreviewPoint(localRay, bounds, config.selectedZIndex);
         if (!preview.isValid) {
           return true;
         }
@@ -898,8 +912,11 @@ export function useRoiRendering({
         return false;
       }
 
-      const nextWorkingRoi = session.isValid
-        ? {
+      previewStateRef.current = null;
+      isDrawPreviewActiveRef.current = false;
+      if (session.isValid) {
+        commitPreviewRoi(
+          {
             shape: session.shape,
             mode: session.mode,
             start: { ...session.committedStart },
@@ -910,12 +927,12 @@ export function useRoiRendering({
                 }
               : { ...session.committedEnd },
             color: session.color,
-          }
-        : null;
-
-      previewStateRef.current = null;
-      isDrawPreviewActiveRef.current = false;
-      commitPreviewRoi(nextWorkingRoi);
+          },
+          { detach: true }
+        );
+      } else {
+        syncRoiResources();
+      }
 
       if (event && domElement && domElement.hasPointerCapture(event.pointerId)) {
         try {
@@ -980,10 +997,6 @@ export function useRoiRendering({
       const hitRoiId = performHoverHitTest(event);
       if (hitRoiId) {
         return beginMoveInteraction(event, domElement, hitRoiId);
-      }
-
-      if (roiConfigRef.current?.workingRoi) {
-        return false;
       }
 
       return beginDrawing(event, domElement);

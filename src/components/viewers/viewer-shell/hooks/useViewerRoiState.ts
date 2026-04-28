@@ -22,8 +22,6 @@ type UseViewerRoiStateResult = {
   dimensionMode: RoiDimensionMode;
   defaultColor: string;
   workingRoi: RoiDefinition | null;
-  twoDCurrentZEnabled: boolean;
-  twoDStartZIndex: number;
   savedRois: SavedRoi[];
   selectedSavedRoiIds: string[];
   activeSavedRoiId: string | null;
@@ -32,9 +30,7 @@ type UseViewerRoiStateResult = {
   setTool: (tool: RoiTool) => void;
   setDimensionMode: (mode: RoiDimensionMode) => void;
   setDefaultColor: (color: string) => void;
-  setTwoDCurrentZEnabled: (enabled: boolean) => void;
-  setTwoDStartZIndex: (value: number) => void;
-  setWorkingRoi: (roi: RoiDefinition | null) => void;
+  setWorkingRoi: (roi: RoiDefinition | null, options?: { detach?: boolean }) => void;
   updateWorkingRoi: (updater: (current: RoiDefinition) => RoiDefinition) => void;
   clearWorkingRoiAttachment: () => void;
   activateSavedRoi: (roiId: string) => void;
@@ -61,18 +57,11 @@ const normalizeName = (name: string) => name.trim();
 export function useViewerRoiState({
   volumeDimensions,
 }: UseViewerRoiStateOptions): UseViewerRoiStateResult {
-  const maxZIndex = Math.max(0, volumeDimensions.depth - 1);
-  const clampZIndex = useCallback(
-    (value: number) => Math.min(maxZIndex, Math.max(0, Math.round(value))),
-    [maxZIndex]
-  );
   const nextRoiIdRef = useRef(1);
   const [tool, setTool] = useState<RoiTool>('line');
   const [dimensionMode, setDimensionMode] = useState<RoiDimensionMode>('2d');
   const [defaultColor, setDefaultColorState] = useState(() => normalizeRoiColor(DEFAULT_ROI_COLOR));
   const [workingRoi, setWorkingRoiState] = useState<RoiDefinition | null>(null);
-  const [twoDCurrentZEnabled, setTwoDCurrentZEnabled] = useState(false);
-  const [twoDStartZIndex, setTwoDStartZIndexState] = useState(0);
   const [savedRois, setSavedRois] = useState<SavedRoi[]>([]);
   const [selectedSavedRoiIds, setSelectedSavedRoiIds] = useState<string[]>([]);
   const [activeSavedRoiId, setActiveSavedRoiId] = useState<string | null>(null);
@@ -83,15 +72,12 @@ export function useViewerRoiState({
     setDefaultColorState(normalizeRoiColor(color));
   }, []);
 
-  const setTwoDStartZIndex = useCallback(
-    (value: number) => {
-      setTwoDStartZIndexState(clampZIndex(value));
-    },
-    [clampZIndex]
-  );
-
-  const setWorkingRoi = useCallback((roi: RoiDefinition | null) => {
+  const setWorkingRoi = useCallback((roi: RoiDefinition | null, options?: { detach?: boolean }) => {
     setWorkingRoiState(roi ? cloneRoiDefinition(roi) : null);
+    if (options?.detach || roi === null) {
+      setActiveSavedRoiId(null);
+      setEditingSavedRoiId(null);
+    }
   }, []);
 
   const updateWorkingRoi = useCallback((updater: (current: RoiDefinition) => RoiDefinition) => {
@@ -110,16 +96,7 @@ export function useViewerRoiState({
 
     setTool((current) => (current === workingRoi.shape ? current : workingRoi.shape));
     setDimensionMode((current) => (current === workingRoi.mode ? current : workingRoi.mode));
-
-    if (workingRoi.mode === '2d') {
-      const clamped = clampZIndex(workingRoi.start.z);
-      setTwoDStartZIndexState((current) => (current === clamped ? current : clamped));
-    }
-  }, [clampZIndex, workingRoi]);
-
-  useEffect(() => {
-    setTwoDStartZIndexState((current) => clampZIndex(current));
-  }, [clampZIndex]);
+  }, [workingRoi]);
 
   const attachSavedRoi = useCallback(
     (roiId: string, options?: { preserveSelection?: boolean }) => {
@@ -279,8 +256,6 @@ export function useViewerRoiState({
     dimensionMode,
     defaultColor,
     workingRoi,
-    twoDCurrentZEnabled,
-    twoDStartZIndex,
     savedRois: normalizedSavedRois,
     selectedSavedRoiIds,
     activeSavedRoiId,
@@ -289,8 +264,6 @@ export function useViewerRoiState({
     setTool,
     setDimensionMode,
     setDefaultColor,
-    setTwoDCurrentZEnabled,
-    setTwoDStartZIndex,
     setWorkingRoi,
     updateWorkingRoi,
     clearWorkingRoiAttachment,

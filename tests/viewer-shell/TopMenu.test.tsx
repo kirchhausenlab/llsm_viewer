@@ -241,7 +241,7 @@ test('top menu renders the requested dropdown order and items', () => {
     const expectedMenus = new Map<string, string[]>([
       ['File', ['Save changes', 'Reset changes', 'Export channel', 'Recenter windows', 'Diagnostics', 'Exit']],
       ['View', ['Channels', 'View selection', 'Screen capture', 'Backgrounds', 'Render settings', 'Camera settings', 'Hover settings']],
-      ['Edit', ['Props', 'Annotate', 'Draw ROI', 'ROI Manager', 'Set measurements']],
+      ['Edit', ['Props', 'Annotate', 'ROI Manager', 'Set measurements']],
       ['Tracks', ['Tracks window', 'Amplitude plot', 'Plot settings', 'Tracks settings']],
       ['Help', ['About', 'Controls']]
     ]);
@@ -388,7 +388,7 @@ test('top menu renders unified drawing and annotation tool controls in the top t
       'Line',
       'Rectangle',
       'Ellipse',
-      'Open Draw ROI window',
+      'Open ROI properties window',
       'Spacer',
       'Brush',
       'Eraser',
@@ -415,7 +415,7 @@ test('top menu renders unified drawing and annotation tool controls in the top t
     )[0];
     assert.ok(threeDButton);
     const drawRoiSettingsButton = topThirdColumn.findAll(
-      (node) => node.type === 'button' && node.props['aria-label'] === 'Open Draw ROI window'
+      (node) => node.type === 'button' && node.props['aria-label'] === 'Open ROI properties window'
     )[0];
     const annotateSettingsButton = topThirdColumn.findAll(
       (node) => node.type === 'button' && node.props['aria-label'] === 'Open Annotate window'
@@ -812,13 +812,6 @@ test('wired dropdown items invoke the expected handlers', () => {
       findDropdownTrigger(renderer, 'Edit').props.onClick();
     });
     act(() => {
-      findMenuItem(renderer, 'Draw ROI').props.onClick();
-    });
-
-    act(() => {
-      findDropdownTrigger(renderer, 'Edit').props.onClick();
-    });
-    act(() => {
       findMenuItem(renderer, 'ROI Manager').props.onClick();
     });
 
@@ -887,7 +880,7 @@ test('wired dropdown items invoke the expected handlers', () => {
     assert.equal(propsCalls, 1);
     assert.equal(annotateCalls, 1);
     assert.equal(exportChannelCalls, 1);
-    assert.equal(drawRoiCalls, 1);
+    assert.equal(drawRoiCalls, 0);
     assert.equal(roiManagerCalls, 1);
     assert.equal(setMeasurementsCalls, 1);
     assert.equal(recordCalls, 1);

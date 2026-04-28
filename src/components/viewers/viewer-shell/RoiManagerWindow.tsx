@@ -32,6 +32,7 @@ type RoiManagerWindowProps = {
   onDelete: () => void;
   onRename: () => void;
   onUpdate: () => void;
+  onProperties: () => void;
   onMeasure: () => void;
   onSave: () => void;
   onLoad: () => void;
@@ -58,6 +59,7 @@ export default function RoiManagerWindow({
   onDelete,
   onRename,
   onUpdate,
+  onProperties,
   onMeasure,
   onSave,
   onLoad,
@@ -90,6 +92,7 @@ export default function RoiManagerWindow({
                   className="roi-manager-list-item"
                   selected={isSelected}
                   active={isActive}
+                  title={roi.name}
                   onClick={(event) => onSelectRoi(roi.id, event.shiftKey)}
                 >
                   <ViewerWindowManagerItemLabel className="roi-manager-list-item-label">
@@ -124,6 +127,9 @@ export default function RoiManagerWindow({
           <ViewerWindowButton type="button" onClick={onUpdate} disabled={!canUpdate}>
             Update
           </ViewerWindowButton>
+          <ViewerWindowButton type="button" onClick={onProperties}>
+            Properties
+          </ViewerWindowButton>
           <ViewerWindowButton type="button" onClick={onMeasure} disabled={!canMeasure}>
             Measure
           </ViewerWindowButton>
@@ -133,14 +139,15 @@ export default function RoiManagerWindow({
           <ViewerWindowButton type="button" onClick={onLoad} disabled={!canLoad}>
             Load
           </ViewerWindowButton>
-          <ViewerWindowButton
-            type="button"
-            active={showAllSavedRois}
-            aria-pressed={showAllSavedRois}
-            onClick={() => onShowAllChange(!showAllSavedRois)}
-          >
+          <label className="control-label control-label--compact roi-manager-show-all-toggle" htmlFor="roi-manager-show-all-toggle">
+            <input
+              id="roi-manager-show-all-toggle"
+              type="checkbox"
+              checked={showAllSavedRois}
+              onChange={(event) => onShowAllChange(event.target.checked)}
+            />
             Show all
-          </ViewerWindowButton>
+          </label>
         </ViewerWindowManagerActions>
       </ViewerWindowManager>
     </FloatingWindow>

@@ -1090,8 +1090,6 @@ function ViewerShell({
     tool: roiTool,
     defaultColor: roiDefaultColor,
     workingRoi,
-    twoDCurrentZEnabled,
-    twoDStartZIndex,
     savedRois,
     selectedSavedRoiIds,
     activeSavedRoiId,
@@ -1100,11 +1098,8 @@ function ViewerShell({
     setTool: setRoiTool,
     setDimensionMode: setRoiDimensionMode,
     setDefaultColor: setRoiDefaultColor,
-    setTwoDCurrentZEnabled,
-    setTwoDStartZIndex,
     setWorkingRoi,
     updateWorkingRoi,
-    clearWorkingRoiAttachment,
     activateSavedRoi,
     selectSavedRoi,
     addWorkingRoi,
@@ -1116,20 +1111,32 @@ function ViewerShell({
   } = useViewerRoiState({
     volumeDimensions,
   });
+  const selectedZIndex = Math.max(0, (playbackState.zSliderValue ?? 1) - 1);
   const currentRoiColor = workingRoi?.color ?? roiDefaultColor;
   const activeSavedRoi = useMemo(
     () => savedRois.find((roi) => roi.id === activeSavedRoiId) ?? null,
     [activeSavedRoiId, savedRois]
   );
   const currentRoiName = activeSavedRoi?.name ?? (workingRoi ? 'Unsaved ROI' : 'No ROI');
-  const roiAttachmentState: 'none' | 'unsaved' | 'saved' =
-    activeSavedRoi !== null ? 'saved' : workingRoi ? 'unsaved' : 'none';
   const selectedSavedRois = useMemo(
     () =>
       selectedSavedRoiIds
         .map((roiId) => savedRois.find((roi) => roi.id === roiId) ?? null)
         .filter((roi): roi is (typeof savedRois)[number] => roi !== null),
     [savedRois, selectedSavedRoiIds]
+  );
+  const selectedSavedRoisForCurrentZ = useMemo(
+    () =>
+      selectedSavedRois.map((roi) =>
+        roi.mode === '2d'
+          ? {
+              ...roi,
+              start: { ...roi.start, z: selectedZIndex },
+              end: { ...roi.end, z: selectedZIndex },
+            }
+          : roi
+      ),
+    [selectedSavedRois, selectedZIndex]
   );
   const viewerLayerVolumeByKey = useMemo(
     () => new Map(volumeViewerProps.layers.map((layer) => [layer.key, layer.volume ?? null])),
@@ -1204,44 +1211,30 @@ function ViewerShell({
   );
 
   useEffect(() => {
-    if (!twoDCurrentZEnabled || viewerToolDimensionMode !== '2d') {
+    if (workingRoi?.mode !== '2d') {
       return;
     }
 
-    const targetZIndex = Math.max(0, (playbackState.zSliderValue ?? 1) - 1);
-    if (workingRoi?.mode === '2d') {
-      if (workingRoi.start.z === targetZIndex && workingRoi.end.z === targetZIndex) {
-        return;
-      }
-      updateWorkingRoi((current) => ({
-        ...current,
-        start: {
-          ...current.start,
-          z: targetZIndex,
-        },
-        end: {
-          ...current.end,
-          z: targetZIndex,
-        },
-      }));
+    if (workingRoi.start.z === selectedZIndex && workingRoi.end.z === selectedZIndex) {
       return;
     }
 
-    if (!workingRoi) {
-      setTwoDStartZIndex(targetZIndex);
-    }
+    updateWorkingRoi((current) => ({
+      ...current,
+      start: {
+        ...current.start,
+        z: selectedZIndex,
+      },
+      end: {
+        ...current.end,
+        z: selectedZIndex,
+      },
+    }));
   }, [
-    playbackState.zSliderValue,
-    viewerToolDimensionMode,
-    setTwoDStartZIndex,
-    twoDCurrentZEnabled,
+    selectedZIndex,
     updateWorkingRoi,
     workingRoi,
   ]);
-
-  const handleClearOrDetachRoi = useCallback(() => {
-    clearWorkingRoiAttachment();
-  }, [clearWorkingRoiAttachment]);
 
   const handleViewerToolChange = useCallback(
     (tool: ViewerTool) => {
@@ -1432,7 +1425,7 @@ function ViewerShell({
     );
 
     const snapshot = buildRoiMeasurementsSnapshot({
-      selectedRois: selectedSavedRois,
+      selectedRois: selectedSavedRoisForCurrentZ,
       channels: resolvedChannels,
       timepoint: currentViewerPropTimepoint,
     });
@@ -1454,7 +1447,7 @@ function ViewerShell({
     measurableChannelSources,
     measurementDefaults,
     playbackState.selectedIndex,
-    selectedSavedRois,
+    selectedSavedRoisForCurrentZ,
   ]);
 
   const handleOpenSetMeasurementsWindow = useCallback(() => {
@@ -2139,7 +2132,7 @@ function ViewerShell({
     }
 
     const setWorkingRoiForTests = (nextRoi: typeof workingRoi) => {
-      setWorkingRoi(nextRoi);
+      setWorkingRoi(nextRoi, { detach: true });
       if (nextRoi?.color) {
         setRoiDefaultColor(nextRoi.color);
       }
@@ -2565,7 +2558,7 @@ function ViewerShell({
       {
         id: 'edit-draw-roi',
         group: 'Edit',
-        label: 'Draw ROI',
+        label: 'ROI properties',
         onSelect: topMenuProps.onOpenDrawRoiWindow,
       },
       {
@@ -2647,9 +2640,7 @@ function ViewerShell({
         isDrawToolActive: isRoiViewerTool(activeViewerTool),
         tool: isRoiViewerTool(activeViewerTool) ? activeViewerTool : roiTool,
         dimensionMode: viewerToolDimensionMode,
-        selectedZIndex: Math.max(0, (playbackState.zSliderValue ?? 1) - 1),
-        twoDCurrentZEnabled,
-        twoDStartZIndex,
+        selectedZIndex,
         defaultColor: roiDefaultColor,
         workingRoi,
         savedRois,
@@ -2666,8 +2657,6 @@ function ViewerShell({
       editingSavedRoiId,
       isPropsWindowOpen,
       activateSavedRoi,
-      twoDCurrentZEnabled,
-      twoDStartZIndex,
       propsController.props,
       propsController.selectProp,
       propsController.selectedPropId,
@@ -2691,7 +2680,7 @@ function ViewerShell({
       handleCameraWindowStateChange,
       handleRegisterCameraWindowController,
       workingRoi,
-      playbackState.zSliderValue,
+      selectedZIndex,
       viewerToolDimensionMode,
       volumeViewerWithAnnotation,
     ]
@@ -2882,18 +2871,11 @@ function ViewerShell({
           resetSignal={resetToken}
           volumeDimensions={volumeDimensions}
           dimensionMode={viewerToolDimensionMode}
-          selectedZIndex={Math.max(0, (playbackState.zSliderValue ?? 1) - 1)}
           currentRoiName={currentRoiName}
-          roiAttachmentState={roiAttachmentState}
           currentColor={currentRoiColor}
           workingRoi={workingRoi}
-          twoDCurrentZEnabled={twoDCurrentZEnabled}
-          twoDStartZIndex={twoDStartZIndex}
           onColorChange={handleRoiColorChange}
-          onTwoDCurrentZEnabledChange={setTwoDCurrentZEnabled}
-          onTwoDStartZIndexChange={setTwoDStartZIndex}
           onUpdateWorkingRoi={updateWorkingRoi}
-          onClearOrDetach={handleClearOrDetachRoi}
           onClose={closeDrawRoiWindow}
         />
       ) : null}
@@ -3016,6 +2998,7 @@ function ViewerShell({
           onDelete={deleteActiveSavedRoi}
           onRename={handleRenameActiveRoi}
           onUpdate={updateActiveSavedRoiFromWorking}
+          onProperties={openDrawRoiWindow}
           onMeasure={handleOpenMeasurementsWindow}
           onSave={handleSaveRois}
           onLoad={handleLoadRois}

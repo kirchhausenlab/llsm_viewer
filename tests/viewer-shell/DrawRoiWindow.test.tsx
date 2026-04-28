@@ -30,18 +30,11 @@ function createProps(overrides: Partial<React.ComponentProps<typeof DrawRoiWindo
       depth: 60,
     },
     dimensionMode: '3d' as const,
-    selectedZIndex: 6,
     currentRoiName: 'Unsaved ROI',
-    roiAttachmentState: 'unsaved' as const,
     currentColor: '#FACC15',
     workingRoi: createWorkingRoi(),
-    twoDCurrentZEnabled: false,
-    twoDStartZIndex: 6,
     onColorChange: () => {},
-    onTwoDCurrentZEnabledChange: () => {},
-    onTwoDStartZIndexChange: () => {},
     onUpdateWorkingRoi: () => {},
-    onClearOrDetach: () => {},
     onClose: () => {},
     ...overrides,
   };
@@ -71,7 +64,7 @@ function findNodeByClassName(renderer: TestRenderer.ReactTestRenderer, className
   const nameRowSpans = nameRow?.findAllByType('span') ?? [];
   const nameRowButtons = nameRow?.findAllByType('button') ?? [];
   assert.equal(nameRowSpans[0]?.children.join(''), 'Unsaved ROI');
-  assert.equal(nameRowButtons[0]?.children.join(''), 'Clear');
+  assert.equal(nameRowButtons.length, 0);
 
   const toolButtons = renderer.root.findAll(
     (node) => node.type === 'button' && node.props.className?.includes?.('draw-roi-tool-button'),
@@ -106,30 +99,27 @@ function findNodeByClassName(renderer: TestRenderer.ReactTestRenderer, className
     <DrawRoiWindow
       {...createProps({
         dimensionMode: '2d',
-        selectedZIndex: 7,
         currentRoiName: 'No ROI',
-        roiAttachmentState: 'none',
         workingRoi: null,
-        twoDCurrentZEnabled: false,
-        twoDStartZIndex: 4,
       })}
     />,
   );
 
-  const actionButton = renderer.root.findAll(
-    (node) => (
-      node.type === 'button' &&
-      typeof node.props.className === 'string' &&
-      node.props.className.split(/\s+/).includes('draw-roi-action-button')
-    )
-  )[0];
-  const startZSlider = renderer.root.findByProps({ id: 'draw-roi-start-z-slider' });
-  const currentZToggle = renderer.root.findByProps({ id: 'draw-roi-current-z-toggle' });
+  assert.equal(renderer.root.findAllByProps({ id: 'draw-roi-start-z-slider' }).length, 0);
+  assert.equal(renderer.root.findAllByProps({ id: 'draw-roi-current-z-toggle' }).length, 0);
 
-  assert.equal(actionButton.props.disabled, true);
-  assert.equal(startZSlider.props.disabled, false);
-  assert.equal(startZSlider.props.value, 5);
-  assert.equal(currentZToggle.props.checked, false);
+  const sliderRows = renderer.root.findAll((node) => {
+    const className = node.props.className;
+    return (
+      typeof node.type === 'string' &&
+      typeof className === 'string' &&
+      className.split(/\s+/).includes('draw-roi-slider-row')
+    );
+  });
+  assert.equal(sliderRows.length, 2);
+  for (const slider of renderer.root.findAll((node) => node.type === 'input' && node.props.type === 'range')) {
+    assert.equal(slider.props.disabled, true);
+  }
 
   renderer.unmount();
 })();
@@ -154,20 +144,20 @@ function findNodeByClassName(renderer: TestRenderer.ReactTestRenderer, className
     />,
   );
 
-  const startZSlider = renderer.root.findByProps({ id: 'draw-roi-start-z-slider' });
-  const currentZToggle = renderer.root.findByProps({ id: 'draw-roi-current-z-toggle' });
-
-  assert.equal(startZSlider.props.disabled, false);
-  assert.equal(startZSlider.props.value, 4);
-  assert.equal(currentZToggle.props.checked, false);
+  assert.equal(renderer.root.findAllByProps({ id: 'draw-roi-start-z-slider' }).length, 0);
+  assert.equal(renderer.root.findAllByProps({ id: 'draw-roi-current-z-toggle' }).length, 0);
+  const xStartSlider = renderer.root.findByProps({ id: 'draw-roi-start-x-slider' });
+  assert.equal(xStartSlider.props.disabled, false);
+  assert.equal(xStartSlider.props.value, 2);
 
   act(() => {
-    startZSlider.props.onChange({ target: { value: '10' } });
+    xStartSlider.props.onChange({ target: { value: '10' } });
   });
 
   assert.ok(updatedRoi);
-  assert.equal(updatedRoi.start.z, 9);
-  assert.equal(updatedRoi.end.z, 9);
+  assert.equal(updatedRoi.start.x, 9);
+  assert.equal(updatedRoi.start.z, 3);
+  assert.equal(updatedRoi.end.z, 3);
 
   renderer.unmount();
 })();

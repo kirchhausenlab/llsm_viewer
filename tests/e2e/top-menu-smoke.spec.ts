@@ -19,7 +19,7 @@ const expectedMenus = [
   {
     buttonLabel: 'Edit',
     menuLabel: 'edit menu',
-    items: ['Props', 'Annotate', 'Draw ROI', 'ROI Manager', 'Set measurements']
+    items: ['Props', 'Annotate', 'ROI Manager', 'Set measurements']
   },
   {
     buttonLabel: 'Tracks',

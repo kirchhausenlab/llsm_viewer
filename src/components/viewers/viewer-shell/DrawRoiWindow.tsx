@@ -1,7 +1,5 @@
 import FloatingWindow from '../../widgets/FloatingWindow';
 import {
-  ViewerWindowButton,
-  ViewerWindowDivider,
   ViewerWindowRow,
   ViewerWindowSlider,
   ViewerWindowStack,
@@ -22,18 +20,11 @@ type DrawRoiWindowProps = {
     depth: number;
   };
   dimensionMode: RoiDimensionMode;
-  selectedZIndex: number;
   currentRoiName: string;
-  roiAttachmentState: 'none' | 'unsaved' | 'saved';
   currentColor: string;
   workingRoi: RoiDefinition | null;
-  twoDCurrentZEnabled: boolean;
-  twoDStartZIndex: number;
   onColorChange: (color: string) => void;
-  onTwoDCurrentZEnabledChange: (enabled: boolean) => void;
-  onTwoDStartZIndexChange: (value: number) => void;
   onUpdateWorkingRoi: (updater: (current: RoiDefinition) => RoiDefinition) => void;
-  onClearOrDetach: () => void;
   onClose: () => void;
 };
 
@@ -56,30 +47,17 @@ export default function DrawRoiWindow({
   resetSignal,
   volumeDimensions,
   dimensionMode,
-  selectedZIndex,
   currentRoiName,
-  roiAttachmentState,
   currentColor,
   workingRoi,
-  twoDCurrentZEnabled,
-  twoDStartZIndex,
   onColorChange,
-  onTwoDCurrentZEnabledChange,
-  onTwoDStartZIndexChange,
   onUpdateWorkingRoi,
-  onClearOrDetach,
   onClose,
 }: DrawRoiWindowProps) {
   const effectiveDimensionMode = workingRoi?.mode ?? dimensionMode;
   const isTwoDMode = effectiveDimensionMode === '2d';
-  const actionButtonLabel = roiAttachmentState === 'saved' ? 'Detach' : 'Clear';
-  const actionButtonDisabled = roiAttachmentState === 'none';
 
   const handlePointCoordinateChange = (pointKey: 'start' | 'end', axis: AxisKey, nextValue: number) => {
-    if (!workingRoi && axis === 'z' && pointKey === 'start' && isTwoDMode) {
-      onTwoDStartZIndexChange(nextValue);
-      return;
-    }
     if (!workingRoi) {
       return;
     }
@@ -104,7 +82,7 @@ export default function DrawRoiWindow({
 
   return (
     <FloatingWindow
-      title="Draw ROI"
+      title="ROI properties"
       initialPosition={initialPosition}
       width={`min(${controlWindowWidth}px, calc(100vw - ${windowMargin * 2}px))`}
       resetSignal={resetSignal}
@@ -115,82 +93,45 @@ export default function DrawRoiWindow({
         <div className="draw-roi-sliders" role="group" aria-label="ROI coordinates">
           <div className="draw-roi-name-row">
             <span>{currentRoiName}</span>
-            <ViewerWindowButton
-              type="button"
-              className="draw-roi-action-button"
-              disabled={actionButtonDisabled}
-              onClick={onClearOrDetach}
-            >
-              {actionButtonLabel}
-            </ViewerWindowButton>
           </div>
-          {(['x', 'y', 'z'] as const).map((axis) => (
-            <ViewerWindowRow key={axis} className="draw-roi-slider-row">
-              {(['start', 'end'] as const).map((pointKey) => {
-                if (axis === 'z' && pointKey === 'end' && isTwoDMode) {
+          {(['x', 'y', 'z'] as const).flatMap((axis) => {
+            if (axis === 'z' && isTwoDMode) {
+              return [];
+            }
+            return (
+              <ViewerWindowRow key={axis} className="draw-roi-slider-row">
+                {(['start', 'end'] as const).map((pointKey) => {
+                  const max =
+                    axis === 'x'
+                      ? Math.max(0, volumeDimensions.width - 1)
+                      : axis === 'y'
+                        ? Math.max(0, volumeDimensions.height - 1)
+                        : Math.max(0, volumeDimensions.depth - 1);
+                  const value = workingRoi ? workingRoi[pointKey][axis] : 0;
+                  const disabled = !workingRoi;
+
                   return (
-                    <div
-                      key="two-d-current-z"
-                      className="control-group control-group--slider draw-roi-slider-group draw-roi-slider-group--toggle"
-                    >
-                      <label htmlFor="draw-roi-current-z-toggle" className="draw-roi-checkbox-row">
-                        <input
-                          id="draw-roi-current-z-toggle"
-                          type="checkbox"
-                          checked={twoDCurrentZEnabled}
-                          onChange={(event) => onTwoDCurrentZEnabledChange(event.target.checked)}
-                        />
-                        <span>Current Z</span>
-                      </label>
-                    </div>
+                    <ViewerWindowSlider
+                      key={`${pointKey}-${axis}`}
+                      id={`draw-roi-${pointKey}-${axis}-slider`}
+                      className="draw-roi-slider-group"
+                      label={`${axis.toUpperCase()} ${pointKey === 'start' ? 'Start' : 'End'}`}
+                      valueLabel={toUserFacingVoxelIndex(value)}
+                      min={1}
+                      max={max + 1}
+                      step={1}
+                      value={toUserFacingVoxelIndex(value)}
+                      disabled={disabled}
+                      onChange={(event) =>
+                        handlePointCoordinateChange(pointKey, axis, fromUserFacingVoxelIndex(Number(event.target.value)))
+                      }
+                    />
                   );
-                }
-
-                const max =
-                  axis === 'x'
-                    ? Math.max(0, volumeDimensions.width - 1)
-                    : axis === 'y'
-                      ? Math.max(0, volumeDimensions.height - 1)
-                      : Math.max(0, volumeDimensions.depth - 1);
-                const value = (() => {
-                  if (axis === 'z' && pointKey === 'start' && isTwoDMode) {
-                    if (twoDCurrentZEnabled) {
-                      return workingRoi?.start.z ?? selectedZIndex;
-                    }
-                    return workingRoi?.start.z ?? twoDStartZIndex;
-                  }
-                  return workingRoi ? workingRoi[pointKey][axis] : 0;
-                })();
-                const disabled = (() => {
-                  if (axis === 'z' && pointKey === 'start' && isTwoDMode) {
-                    return twoDCurrentZEnabled;
-                  }
-                  return !workingRoi;
-                })();
-
-                return (
-                  <ViewerWindowSlider
-                    key={`${pointKey}-${axis}`}
-                    id={`draw-roi-${pointKey}-${axis}-slider`}
-                    className="draw-roi-slider-group"
-                    label={`${axis.toUpperCase()} ${pointKey === 'start' ? 'Start' : 'End'}`}
-                    valueLabel={toUserFacingVoxelIndex(value)}
-                    min={1}
-                    max={max + 1}
-                    step={1}
-                    value={toUserFacingVoxelIndex(value)}
-                    disabled={disabled}
-                    onChange={(event) =>
-                      handlePointCoordinateChange(pointKey, axis, fromUserFacingVoxelIndex(Number(event.target.value)))
-                    }
-                  />
-                );
-              })}
-            </ViewerWindowRow>
-          ))}
+                })}
+              </ViewerWindowRow>
+            );
+          })}
         </div>
-
-        <ViewerWindowDivider />
 
         <div className="draw-roi-color-section">
           <div className="draw-roi-color-header">

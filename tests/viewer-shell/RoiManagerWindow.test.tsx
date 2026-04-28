@@ -14,6 +14,8 @@ function findByClass(renderer: TestRenderer.ReactTestRenderer, className: string
 
 (() => {
   const selectCalls: Array<{ roiId: string; additive: boolean | undefined }> = [];
+  let propertiesCalls = 0;
+  const showAllChanges: boolean[] = [];
   const renderer = TestRenderer.create(
     <RoiManagerWindow
       initialPosition={{ x: 0, y: 0 }}
@@ -64,10 +66,15 @@ function findByClass(renderer: TestRenderer.ReactTestRenderer, className: string
       onDelete={() => {}}
       onRename={() => {}}
       onUpdate={() => {}}
+      onProperties={() => {
+        propertiesCalls += 1;
+      }}
       onMeasure={() => {}}
       onSave={() => {}}
       onLoad={() => {}}
-      onShowAllChange={() => {}}
+      onShowAllChange={(value) => {
+        showAllChanges.push(value);
+      }}
       onClose={() => {}}
     />
   );
@@ -79,6 +86,9 @@ function findByClass(renderer: TestRenderer.ReactTestRenderer, className: string
   assert.equal(roiButtons[0]!.props.className.includes('is-selected'), false);
   assert.equal(roiButtons[1]!.props.className.includes('is-active'), true);
   assert.equal(roiButtons[2]!.props.className.includes('is-selected'), true);
+  assert.equal(roiButtons[0]!.props.title, 'ROI 1');
+  assert.equal(roiButtons[1]!.props.title, 'ROI 2');
+  assert.equal(roiButtons[2]!.props.title, 'ROI 3');
 
   const badges = findByClass(renderer, 'roi-manager-selection-badge')
     .filter((node) => node.type === 'span' && !node.props.className.includes('is-active'));
@@ -88,8 +98,11 @@ function findByClass(renderer: TestRenderer.ReactTestRenderer, className: string
   assert.deepEqual(badges.map((badge) => badge.children.join('')), ['2']);
   assert.equal(
     renderer.root.findAll((node) => node.type === 'button' && node.children.join('') === 'Properties').length,
-    0,
+    1,
   );
+  const showAllCheckbox = renderer.root.findByProps({ id: 'roi-manager-show-all-toggle' });
+  assert.equal(showAllCheckbox.props.type, 'checkbox');
+  assert.equal(showAllCheckbox.props.checked, false);
 
   act(() => {
     roiButtons[0]!.props.onClick({ shiftKey: false });
@@ -97,11 +110,19 @@ function findByClass(renderer: TestRenderer.ReactTestRenderer, className: string
   act(() => {
     roiButtons[2]!.props.onClick({ shiftKey: true });
   });
+  act(() => {
+    renderer.root.find((node) => node.type === 'button' && node.children.join('') === 'Properties').props.onClick();
+  });
+  act(() => {
+    showAllCheckbox.props.onChange({ target: { checked: true } });
+  });
 
   assert.deepEqual(selectCalls, [
     { roiId: 'roi-1', additive: false },
     { roiId: 'roi-3', additive: true },
   ]);
+  assert.equal(propertiesCalls, 1);
+  assert.deepEqual(showAllChanges, [true]);
 
   renderer.unmount();
 })();

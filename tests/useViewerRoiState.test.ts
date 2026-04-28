@@ -17,8 +17,6 @@ console.log('Starting useViewerRoiState tests');
   assert.equal(hook.result.dimensionMode, '2d');
   assert.equal(hook.result.defaultColor, '#FACC15');
   assert.equal(hook.result.workingRoi, null);
-  assert.equal(hook.result.twoDCurrentZEnabled, false);
-  assert.equal(hook.result.twoDStartZIndex, 0);
   assert.equal(hook.result.savedRois.length, 0);
   assert.deepEqual(hook.result.selectedSavedRoiIds, []);
 
@@ -31,7 +29,7 @@ console.log('Starting useViewerRoiState tests');
       start: { x: 3, y: 12, z: 9 },
       end: { x: 3, y: 12, z: 9 },
       color: '#00ff00',
-    });
+    }, { detach: true });
   });
 
   assert.equal(hook.result.tool, 'line');
@@ -101,12 +99,11 @@ console.log('Starting useViewerRoiState tests');
       start: { x: 1, y: 2, z: 3 },
       end: { x: 4, y: 5, z: 3 },
       color: '#ff00ff',
-    });
+    }, { detach: true });
   });
 
   assert.equal(hook.result.tool, 'rectangle');
   assert.equal(hook.result.dimensionMode, '2d');
-  assert.equal(hook.result.twoDStartZIndex, 3);
 
   let secondSaved = null;
   hook.act(() => {
@@ -125,12 +122,11 @@ console.log('Starting useViewerRoiState tests');
       start: { x: 5, y: 6, z: 7 },
       end: { x: 8, y: 9, z: 7 },
       color: '#00ffaa',
-    });
+    }, { detach: true });
   });
 
   assert.equal(hook.result.tool, 'ellipse');
   assert.equal(hook.result.dimensionMode, '2d');
-  assert.equal(hook.result.twoDStartZIndex, 7);
 
   let thirdSaved = null;
   hook.act(() => {

@@ -182,15 +182,13 @@ export type ViewerRoiConfig = {
   tool: RoiTool;
   dimensionMode: RoiDimensionMode;
   selectedZIndex: number;
-  twoDCurrentZEnabled: boolean;
-  twoDStartZIndex: number;
   defaultColor: string;
   workingRoi: RoiDefinition | null;
   savedRois: SavedRoi[];
   activeSavedRoiId: string | null;
   editingSavedRoiId: string | null;
   showAllSavedRois: boolean;
-  onWorkingRoiChange: (roi: RoiDefinition | null) => void;
+  onWorkingRoiChange: (roi: RoiDefinition | null, options?: { detach?: boolean }) => void;
   onSavedRoiActivate: (roiId: string) => void;
 };
 

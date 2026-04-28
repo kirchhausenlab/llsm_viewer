@@ -11,6 +11,7 @@ Try it [here](https://kirchhausenlab.github.io/llsm_viewer/)!
 - [Three r184 Hard Cutover](./three-r184-hard-cutover/README.md)
 - [Orthographic Projection Mode Program](./orthographic-projection-mode/README.md)
 - [Projection-Aware Residency Refactor](./projection-aware-residency/README.md)
+- [GPU Segmentation Slice Rendering](./gpu-segmentation-slice-rendering/README.md)
 - [VR Input Regression Checklist](./vr-input-regression-checklist.md)
 
 ## Install locally

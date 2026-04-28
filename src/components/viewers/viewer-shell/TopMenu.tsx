@@ -395,7 +395,6 @@ export default function TopMenu(props: TopMenuProps) {
           disabled: annotateDisabled,
           title: annotateDisabledTitle
         },
-        { label: 'Draw ROI', onSelect: onOpenDrawRoiWindow },
         { label: 'ROI Manager', onSelect: onOpenRoiManagerWindow },
         { label: 'Set measurements', onSelect: onOpenSetMeasurementsWindow }
       ],
@@ -964,8 +963,8 @@ export default function TopMenu(props: TopMenuProps) {
               <button
                 type="button"
                 className="viewer-top-menu-button viewer-top-menu-tool-button viewer-top-menu-tool-settings-button"
-                aria-label="Open Draw ROI window"
-                title="Open Draw ROI window"
+                aria-label="Open ROI properties window"
+                title="Open ROI properties window"
                 onClick={onOpenDrawRoiWindow}
               >
                 <GearToolIcon className="viewer-top-menu-tool-icon" />

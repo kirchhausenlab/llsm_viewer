@@ -636,6 +636,18 @@
   gap: 0.45rem;
 }
 
+.roi-manager-show-all-toggle {
+  box-sizing: border-box;
+  min-height: var(--floating-window-control-size);
+  padding-inline: var(--floating-window-control-inline-padding);
+  justify-content: flex-start;
+}
+
+.roi-manager-show-all-toggle input[type='checkbox'] {
+  flex: 0 0 auto;
+  margin: 0;
+}
+
 .floating-window .viewer-window-manager-actions .viewer-window-button,
 .floating-window .global-controls .viewer-window-manager-actions .viewer-window-button,
 .floating-window .roi-manager-actions .viewer-window-button,
